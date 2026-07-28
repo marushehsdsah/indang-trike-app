@@ -6,9 +6,14 @@ import {
 import { Feather } from '@expo/vector-icons';
 
 export default function RegisterScreen({ navigation }) {
+  const [role, setRole] = useState('passenger'); // 'passenger' | 'driver'
   const [isPasswordVisible, setPasswordVisible] = useState(false);
   const [isConfirmVisible, setConfirmVisible] = useState(false);
   const [isChecked, setChecked] = useState(false);
+
+  // Driver-specific state
+  const [todaNumber, setTodaNumber] = useState('');
+  const [plateNumber, setPlateNumber] = useState('');
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -26,9 +31,33 @@ export default function RegisterScreen({ navigation }) {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           
+          {/* Title */}
           <View style={styles.titleContainer}>
             <Text style={styles.mainTitle}>Create Account</Text>
-            <Text style={styles.subTitle}>Join our neighborhood of reliable rides.</Text>
+            <Text style={styles.subTitle}>
+              {role === 'driver' 
+                ? 'Start your journey as a professional tricycle partner today.' 
+                : 'Join our neighborhood of reliable rides.'}
+            </Text>
+          </View>
+
+          {/* Role Selection Segmented Control */}
+          <View style={styles.roleContainer}>
+            <TouchableOpacity 
+              style={[styles.roleBtn, role === 'passenger' && styles.roleBtnActive]} 
+              onPress={() => setRole('passenger')}
+            >
+              <Feather name="user" size={18} color={role === 'passenger' ? '#FFF' : '#666'} style={{ marginRight: 8 }} />
+              <Text style={[styles.roleText, role === 'passenger' && styles.roleTextActive]}>Passenger</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.roleBtn, role === 'driver' && styles.roleBtnActive]} 
+              onPress={() => setRole('driver')}
+            >
+              <Feather name="truck" size={18} color={role === 'driver' ? '#FFF' : '#666'} style={{ marginRight: 8 }} />
+              <Text style={[styles.roleText, role === 'driver' && styles.roleTextActive]}>Driver</Text>
+            </TouchableOpacity>
           </View>
 
           {/* First Name */}
@@ -91,19 +120,71 @@ export default function RegisterScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
+          {/* --- DRIVER ONLY FIELDS --- */}
+          {role === 'driver' && (
+            <>
+              {/* Vehicle Details */}
+              <View>
+                <Text style={styles.sectionHeader}>Vehicle Details</Text>
+              </View>
+
+              <Text style={styles.label}>TODA Registration Number</Text>
+              <View style={styles.inputContainer}>
+                <Feather name="file-text" size={20} color="#999" style={styles.icon} />
+                <TextInput 
+                  style={styles.input} 
+                  placeholder="TODA-XXXX" 
+                  placeholderTextColor="#999" 
+                  value={todaNumber}
+                  onChangeText={setTodaNumber}
+                  autoCapitalize="characters"
+                />
+              </View>
+
+              <Text style={styles.label}>Tricycle Plate Number</Text>
+              <View style={styles.inputContainer}>
+                <Feather name="hash" size={20} color="#999" style={styles.icon} />
+                <TextInput 
+                  style={styles.input} 
+                  placeholder="ABC-1234" 
+                  placeholderTextColor="#999" 
+                  value={plateNumber}
+                  onChangeText={setPlateNumber}
+                  autoCapitalize="characters"
+                />
+              </View>
+
+              {/* Document Verification */}
+              <View>
+                <Text style={styles.sectionHeader}>Document Verification</Text>
+              </View>
+
+              <TouchableOpacity style={styles.uploadCard} activeOpacity={0.7}>
+                <Feather name="credit-card" size={28} color="#999" style={{ marginBottom: 8 }} />
+                <Text style={styles.uploadTitle}>Driver's License</Text>
+                <Text style={styles.uploadSubtitle}>Tap to upload clear photo</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
           {/* Terms Checkbox */}
           <View style={styles.checkboxRow}>
-            <TouchableOpacity style={[styles.checkbox, isChecked && styles.checkboxActive]} onPress={() => setChecked(!isChecked)}>
+            <TouchableOpacity 
+              style={[styles.checkbox, isChecked && styles.checkboxActive]} 
+              onPress={() => setChecked(!isChecked)}
+            >
               {isChecked && <Feather name="check" size={14} color="#FFF" />}
             </TouchableOpacity>
             <Text style={styles.checkboxText}>
-              By signing up, you agree to our <Text style={styles.linkText}>Terms of Service</Text> and <Text style={styles.linkText}>Privacy Policy</Text>.
+              By signing up, you agree to our <Text style={styles.linkText}>Terms of Service</Text> and <Text style={styles.linkText}>Privacy Policy</Text>{role === 'driver' ? ' regarding registration as a driver for Indang TODA.' : '.'}
             </Text>
           </View>
 
-          {/* Sign Up Button */}
+          {/* Sign Up / Submit Button */}
           <TouchableOpacity style={styles.signupBtn}>
-            <Text style={styles.signupBtnText}>Sign Up</Text>
+            <Text style={styles.signupBtnText}>
+              {role === 'driver' ? 'Complete Registration' : 'Sign Up'}
+            </Text>
             <Feather name="arrow-right" size={20} color="#333" style={{ marginLeft: 8 }} />
           </TouchableOpacity>
 
@@ -138,10 +219,52 @@ const styles = StyleSheet.create({
   
   scrollContent: { paddingHorizontal: 24, paddingBottom: 40 },
   
-  titleContainer: { alignItems: 'center', marginTop: 10, marginBottom: 30 },
+  titleContainer: { alignItems: 'center', marginTop: 10, marginBottom: 20 },
   mainTitle: { fontSize: 26, fontWeight: '700', color: '#333', marginBottom: 8 },
-  subTitle: { fontSize: 13, color: '#666' },
-  
+  subTitle: { fontSize: 13, color: '#666', textAlign: 'center' },
+
+  /* Role Selection Switcher */
+  roleContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#EAEAEA',
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: 24,
+  },
+  roleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    height: 42,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  roleBtnActive: {
+    backgroundColor: '#095C37',
+  },
+  roleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+  },
+  roleTextActive: {
+    color: '#FFF',
+  },
+
+  /* Section Header Titles for Driver Mode */
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#095C37',
+    marginLeft: 8,
+  },
+
   label: { fontSize: 12, fontWeight: '600', color: '#333', marginBottom: 8 },
   inputContainer: {
     flexDirection: 'row',
@@ -158,6 +281,29 @@ const styles = StyleSheet.create({
   input: { flex: 1, fontSize: 14, color: '#333' },
   prefix: { fontSize: 14, fontWeight: '600', color: '#333', marginRight: 8 },
   divider: { width: 1, height: 24, backgroundColor: '#E0E0E0', marginRight: 12 },
+
+  /* License Upload Box */
+  uploadCard: {
+    borderWidth: 1.5,
+    borderColor: '#C0C0C0',
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    backgroundColor: '#FFF',
+    paddingVertical: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  uploadTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 2,
+  },
+  uploadSubtitle: {
+    fontSize: 12,
+    color: '#888',
+  },
   
   checkboxRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 24, marginTop: 8 },
   checkbox: {

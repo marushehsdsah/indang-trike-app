@@ -5,8 +5,7 @@ import SplashScreen from '../screens/SplashScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import PassengerScreen from '../screens/PassengerScreen';
-import BookingScreen from '../screens/BookingScreen';
-import SearchingScreen from '../screens/SearchingScreen';
+import RideCancel from '../screens/RideCancel';
 import ActiveRideScreen from '../screens/ActiveRideScreen'; 
 import HistoryScreen from '../screens/HistoryScreen';
 
@@ -19,8 +18,7 @@ export default function AppNavigator() {
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Register" component={RegisterScreen} />
       <Stack.Screen name="Passenger" component={PassengerScreen} />
-      <Stack.Screen name="Booking" component={BookingScreen} />
-      <Stack.Screen name="Searching" component={SearchingScreen} />
+      <Stack.Screen name="RideCancel" component={RideCancel} />
       <Stack.Screen name="ActiveRide" component={ActiveRideScreen} /> 
       <Stack.Screen name="History" component={HistoryScreen} />
       {/* You can add BookingScreen, DriverScreen, and HistoryScreen here when you create them! */}

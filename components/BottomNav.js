@@ -15,7 +15,7 @@ export default function BottomNav({ active, navigation }) {
       
       <TouchableOpacity 
         style={[styles.navItem, active === 'bookings' && styles.navItemActive]} 
-        onPress={() => navigation.navigate('Booking')}
+        onPress={() => {}}
       >
         <Feather name="file-text" size={20} color={active === 'bookings' ? '#FFF' : '#999'} />
         <Text style={[styles.navText, active === 'bookings' && styles.navTextActive]}>Bookings</Text>
