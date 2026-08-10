@@ -72,6 +72,23 @@ export default function LoginScreen({ navigation }) {
               <Feather name="arrow-right" size={20} color="#333" style={{ marginLeft: 8 }} />
             </TouchableOpacity>
 
+            <View style={styles.register}>
+              <Text style={styles.footerText}>
+              New to Indang Go?{' '}
+                <Text 
+                  style={styles.registerLink} 
+                  onPress={() => navigation.navigate('Register')}
+                >
+                  Create Account
+                </Text>
+              </Text>
+            </View>
+            
+            
+          </View>
+
+          {/* Footer */}
+          <View style={styles.footer}>
             {/* ---- ADMIN ONLY ------------------------------------
                 Link into the admin app. Navigates to "AdminApp",
                 the nested AdminNavigator's entry point, which lands
@@ -83,19 +100,6 @@ export default function LoginScreen({ navigation }) {
             >
               <Text style={styles.adminLoginText}>Admin Login</Text>
             </TouchableOpacity>
-          </View>
-
-          {/* Footer */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              New to Indang Go?{' '}
-              <Text 
-                style={styles.footerLink} 
-                onPress={() => navigation.navigate('Register')}
-              >
-                Create Account
-              </Text>
-            </Text>
             <Text style={styles.copyright}>
               <Feather name="shield" size={10} /> Secure neighborhood transit{'\n'}
               © 2026 Indang Go
@@ -181,13 +185,13 @@ const styles = StyleSheet.create({
   adminLoginBtn: { alignSelf: 'center', marginTop: 18 },
   adminLoginText: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#1A73E8',
-    textDecorationLine: 'underline',
+    fontWeight: '400',
+    color: '#999',
+    textDecorationLine: 'none',
   },
-  
+  register: { marginTop: 22, alignItems: 'center' },
+  registerLink: { color: '#095C37', fontWeight: '700' },
   footer: { marginTop: 32, alignItems: 'center' },
   footerText: { fontSize: 13, color: '#666' },
-  footerLink: { color: '#095C37', fontWeight: '700' },
   copyright: { fontSize: 10, color: '#999', textAlign: 'center', marginTop: 16, lineHeight: 16 },
 });

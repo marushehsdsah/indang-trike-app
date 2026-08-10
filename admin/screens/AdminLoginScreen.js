@@ -21,7 +21,7 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import adminColors from '../theme/adminColors';
 
 export default function AdminLoginScreen({ navigation }) {
@@ -68,7 +68,7 @@ export default function AdminLoginScreen({ navigation }) {
           <View style={styles.labelRow}>
             <Text style={styles.label}>Password</Text>
             <TouchableOpacity onPress={() => {}}>
-              <Text style={styles.forgotText}>Forgot?</Text>
+              <Text style={styles.forgotText}>Forgot Password?</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.inputRow}>
@@ -97,16 +97,13 @@ export default function AdminLoginScreen({ navigation }) {
             <Text style={styles.loginButtonText}>Login</Text>
           </TouchableOpacity>
 
-          <View style={styles.createAccountRow}>
-            <Text style={styles.mutedText}>New to Indang Go? </Text>
-            <TouchableOpacity onPress={() => {}}>
-              <Text style={styles.createAccountText}>Create Account</Text>
-            </TouchableOpacity>
-          </View>
+          
         </View>
 
-        <Text style={styles.footerText}>Secure neighborhood transit</Text>
-        <Text style={styles.footerText}>© 2026 Indang Go</Text>
+        <Text style={styles.copyright}>
+          <Feather name="shield" size={10} /> Secure neighborhood transit{'\n'}
+          © 2026 Indang Go
+        </Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -143,4 +140,5 @@ const styles = StyleSheet.create({
   mutedText: { color: adminColors.textSecondary, fontSize: 13 },
   createAccountText: { color: adminColors.brandGreen, fontSize: 13, fontWeight: '700' },
   footerText: { fontSize: 11, color: adminColors.brandGreenDark, opacity: 0.7, marginTop: 6 },
+  copyright: { fontSize: 10, color: '#999', textAlign: 'center', marginTop: 16, lineHeight: 16 },
 });
