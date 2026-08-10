@@ -71,6 +71,18 @@ export default function LoginScreen({ navigation }) {
               <Text style={styles.loginBtnText}>Login</Text>
               <Feather name="arrow-right" size={20} color="#333" style={{ marginLeft: 8 }} />
             </TouchableOpacity>
+
+            {/* ---- ADMIN ONLY ------------------------------------
+                Link into the admin app. Navigates to "AdminApp",
+                the nested AdminNavigator's entry point, which lands
+                on the admin login screen. See navigation/AppNavigator.js
+                and admin/AdminNavigator.js. */}
+            <TouchableOpacity
+              style={styles.adminLoginBtn}
+              onPress={() => navigation.navigate('AdminApp')}
+            >
+              <Text style={styles.adminLoginText}>Admin Login</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Footer */}
@@ -164,6 +176,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   loginBtnText: { fontSize: 16, fontWeight: '700', color: '#333' },
+
+  // ---- ADMIN ONLY ----
+  adminLoginBtn: { alignSelf: 'center', marginTop: 18 },
+  adminLoginText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1A73E8',
+    textDecorationLine: 'underline',
+  },
   
   footer: { marginTop: 32, alignItems: 'center' },
   footerText: { fontSize: 13, color: '#666' },
