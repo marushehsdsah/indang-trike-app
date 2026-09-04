@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import MapView, { Marker } from 'react-native-maps';
-import BottomNav from '../components/BottomNav';
+import BottomNav from '../../components/BottomNav';
 
 const DRAG_RANGE = 220; 
 
@@ -138,7 +138,7 @@ export default function ActiveRideScreen({ navigation }) {
           {/* Back to Home Button */}
           <TouchableOpacity 
             style={styles.backHomeBtn} 
-            onPress={() => navigation.replace('Passenger')}
+            onPress={() => navigation.replace('Driver')}
             activeOpacity={0.7}
           >
             <Feather name="arrow-left" size={20} color="#2D5A34" style={{ marginRight: 8 }} />
@@ -167,11 +167,12 @@ export default function ActiveRideScreen({ navigation }) {
               { transform: [{ translateY }] }
             ]}
           >
-            <View style={styles.dragTouchArea} {...panResponder.panHandlers}>
+            <View style={styles.dragTouchArea}>
               <TouchableOpacity 
                 activeOpacity={0.8} 
                 onPress={() => snapTo(isCollapsed ? 0 : DRAG_RANGE, !isCollapsed)}
                 style={styles.dragHandleWrapper}
+                {...panResponder.panHandlers}
               >
                 <View style={styles.dragIndicator} />
               </TouchableOpacity>
@@ -187,7 +188,10 @@ export default function ActiveRideScreen({ navigation }) {
                   </View>
                 </View>
 
-                <TouchableOpacity style={styles.chatButton}>
+                <TouchableOpacity
+                  style={styles.chatButton}
+                  onPress={() => navigation.navigate('Messaging')}
+                >
                   <MaterialCommunityIcons name="message-processing-outline" size={24} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
@@ -229,7 +233,7 @@ export default function ActiveRideScreen({ navigation }) {
       )}
 
       {!isCancelled && (
-        <BottomNav active="bookings" navigation={navigation} />
+        <BottomNav active="home" navigation={navigation} homeRoute="Driver" />
       )}
     </SafeAreaView>
   );

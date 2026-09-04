@@ -1,12 +1,51 @@
 import React, { useState } from 'react';
 import { 
-  View, Text, TextInput, TouchableOpacity, StyleSheet, 
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert,
   SafeAreaView, KeyboardAvoidingView, Platform, ScrollView 
 } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 
 export default function LoginScreen({ navigation }) {
   const [isPasswordVisible, setPasswordVisible] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+
+  const handleLogin = async () => {
+    if (!phone || !password) {
+      Alert.alert('Incomplete form', 'Please enter your phone number and password.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await fetch('http://192.168.1.3:3000/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, password })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Login failed');
+
+      const profile = {
+        id: result.user?.id || String(Date.now()),
+        firstName: result.user?.firstName || '',
+        lastName: result.user?.lastName || '',
+        email: result.user?.email || '',
+        phone: result.user?.phone || phone,
+        role: result.role,
+        gender: result.user?.gender || 'Male',
+      };
+
+      await SecureStore.setItemAsync('indang_user_profile', JSON.stringify(profile));
+      navigation.replace(result.role === 'driver' ? 'Driver' : 'Passenger');
+    } catch (error) {
+      Alert.alert('Login failed', error.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -41,6 +80,8 @@ export default function LoginScreen({ navigation }) {
                 placeholderTextColor="#999"
                 keyboardType="email-address"
                 autoCapitalize="none"
+                value={phone}
+                onChangeText={setPhone}
               />
             </View>
 
@@ -53,6 +94,8 @@ export default function LoginScreen({ navigation }) {
                 placeholder="Enter Your Password" 
                 placeholderTextColor="#999"
                 secureTextEntry={!isPasswordVisible}
+                value={password}
+                onChangeText={setPassword}
               />
               <TouchableOpacity onPress={() => setPasswordVisible(!isPasswordVisible)}>
                 <Feather name={isPasswordVisible ? "eye" : "eye-off"} size={20} color="#999" />
@@ -66,10 +109,10 @@ export default function LoginScreen({ navigation }) {
             {/* Login Button */}
             <TouchableOpacity 
               style={styles.loginBtn} 
-              onPress={() => navigation.replace('Passenger')}
+              onPress={handleLogin}
+              disabled={isSubmitting}
             >
-              <Text style={styles.loginBtnText}>Login</Text>
-              <Feather name="arrow-right" size={20} color="#333" style={{ marginLeft: 8 }} />
+              <Text style={styles.loginBtnText}>{isSubmitting ? 'Signing In...' : 'Login'}</Text>
             </TouchableOpacity>
           </View>
 

@@ -2,12 +2,34 @@ import React from 'react';
 import { View, TouchableOpacity, Text, StyleSheet, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-export default function BottomNav({ active, navigation }) {
+export default function BottomNav({ active, navigation, homeRoute = 'Passenger' }) {
+  const routes = {
+    Passenger: {
+      home: 'Passenger',
+      bookings: 'ActiveRide',
+      history: 'History',
+      profile: 'Profile',
+    },
+    Driver: {
+      home: 'Driver',
+      bookings: 'DriverActiveRide',
+      history: 'DriverHistory',
+      profile: 'DriverProfile',
+    },
+  };
+
+  const handleNavigate = (tab) => {
+    if (!navigation) return;
+
+    const routeName = routes[homeRoute]?.[tab] || homeRoute;
+    navigation.navigate(routeName);
+  };
+
   return (
     <View style={styles.bottomNav}>
       <TouchableOpacity 
         style={[styles.navItem, active === 'home' && styles.navItemActive]} 
-        onPress={() => navigation.navigate('Passenger')}
+        onPress={() => handleNavigate('home')}
       >
         <Feather name="home" size={20} color={active === 'home' ? '#FFF' : '#999'} />
         <Text style={[styles.navText, active === 'home' && styles.navTextActive]}>Home</Text>
@@ -15,18 +37,24 @@ export default function BottomNav({ active, navigation }) {
       
       <TouchableOpacity 
         style={[styles.navItem, active === 'bookings' && styles.navItemActive]} 
-        onPress={() => {}}
+        onPress={() => handleNavigate('bookings')}
       >
         <Feather name="file-text" size={20} color={active === 'bookings' ? '#FFF' : '#999'} />
         <Text style={[styles.navText, active === 'bookings' && styles.navTextActive]}>Bookings</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={[styles.navItem, active === 'history' && styles.navItemActive]}>
+      <TouchableOpacity 
+        style={[styles.navItem, active === 'history' && styles.navItemActive]} 
+        onPress={() => handleNavigate('history')}
+      >
         <Feather name="clock" size={20} color={active === 'history' ? '#FFF' : '#999'} />
         <Text style={[styles.navText, active === 'history' && styles.navTextActive]}>History</Text>
       </TouchableOpacity>
       
-      <TouchableOpacity style={[styles.navItem, active === 'profile' && styles.navItemActive]}>
+      <TouchableOpacity 
+        style={[styles.navItem, active === 'profile' && styles.navItemActive]} 
+        onPress={() => handleNavigate('profile')}
+      >
         <Feather name="user" size={20} color={active === 'profile' ? '#FFF' : '#999'} />
         <Text style={[styles.navText, active === 'profile' && styles.navTextActive]}>Profile</Text>
       </TouchableOpacity>

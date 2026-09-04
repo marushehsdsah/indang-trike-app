@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Feather, MaterialCommunityIcons, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import MapView, { Marker } from 'react-native-maps';
-import BottomNav from '../components/BottomNav';
+import BottomNav from '../../components/BottomNav';
 
 export default function DriverHomeScreen({ navigation }) {
   const [isOnline, setIsOnline] = useState(true);
@@ -47,7 +47,7 @@ export default function DriverHomeScreen({ navigation }) {
 
   const handleAccept = () => {
     setIncomingRequest(null);
-    navigation.navigate('ActiveRide'); // Navigate to active trip screen
+    navigation.replace('DriverActiveRide');
   };
 
   const handleDecline = () => {
@@ -58,9 +58,7 @@ export default function DriverHomeScreen({ navigation }) {
     <SafeAreaView style={styles.safeArea}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity>
-          <Feather name="menu" size={24} color="#1C274C" />
-        </TouchableOpacity>
+        <View style={styles.headerSpacer} />
         <Text style={styles.headerTitle}>Indang GO</Text>
         <TouchableOpacity>
           <Feather name="user" size={24} color="#1C274C" />
@@ -187,7 +185,7 @@ export default function DriverHomeScreen({ navigation }) {
       </View>
 
       {/* Bottom Navigation - Now Active on Home */}
-      <BottomNav active="home" navigation={navigation} />
+      <BottomNav active="home" navigation={navigation} homeRoute="Driver" />
     </SafeAreaView>
   );
 }
@@ -205,6 +203,10 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === 'android' ? 16 : 12,
     backgroundColor: '#FAFAFA',
     zIndex: 10,
+  },
+  headerSpacer: {
+    width: 24,
+    height: 24,
   },
   headerTitle: {
     fontSize: 20,

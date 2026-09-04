@@ -9,8 +9,8 @@ app.use(cors());
 
 // 1. Connect to Local MongoDB
 mongoose.connect('mongodb://127.0.0.1:27017/indang_trike_db')
-    .then(() => console.log('✅ Connected to MongoDB Database!'))
-    .catch(err => console.error('❌ Database connection error:', err));
+    .then(() => console.log('Connected to MongoDB Database!'))
+    .catch(err => console.error(' Database connection error:', err));
 
 // 2. Create the User Database Table (Schema)
 const UserSchema = new mongoose.Schema({
@@ -64,5 +64,5 @@ app.post('/api/login', async (req, res) => {
 // 5. Start Server
 const PORT = 3000;
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Backend Server running on port ${PORT}`);
+    console.log(`Backend Server running on port ${PORT}`);
 });
