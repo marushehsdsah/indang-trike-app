@@ -1,19 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
-  SafeAreaView, 
   TouchableOpacity, 
   Platform
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import MapView, { Marker } from 'react-native-maps';
 import BottomNav from '../../components/BottomNav';
+import * as SecureStore from 'expo-secure-store';
+import { createSocket } from '../../services/socket';
 
 export default function DriverHomeScreen({ navigation }) {
   const [isOnline, setIsOnline] = useState(true);
   const [incomingRequest, setIncomingRequest] = useState(null);
+  const socketRef = useRef(null);
+  const [driverProfile, setDriverProfile] = useState({});
 
   // Exact coordinates for Cavite State University - Main Campus (Indang)
   const cvsuRegion = {
@@ -23,34 +27,52 @@ export default function DriverHomeScreen({ navigation }) {
     longitudeDelta: 0.02,
   };
 
-  // Timer: Simulates receiving a ride request after 3 seconds
   useEffect(() => {
-    let timer;
-    if (isOnline) {
-      timer = setTimeout(() => {
-        setIncomingRequest({
-          fare: '₱45.00',
-          passengerName: 'Jame Barrios',
-          rating: '4.9',
-          distance: '1.2 km away',
-          pickup: 'CvSU Main Campus',
-          dropoff: 'Harasan Cuevas Compound',
-          passengers: 1,
-        });
-      }, 3000); // Trigger request after 3 seconds
-    } else {
-      setIncomingRequest(null);
-    }
+    let isMounted = true;
+    const connectDriver = async () => {
+      if (!isOnline) {
+        setIncomingRequest(null);
+        return;
+      }
 
-    return () => clearTimeout(timer);
+      const savedProfile = await SecureStore.getItemAsync('indang_user_profile');
+      const profile = savedProfile ? JSON.parse(savedProfile) : {};
+      if (!isMounted) return;
+      setDriverProfile(profile);
+
+      const socket = createSocket({ role: 'driver', userId: profile.id });
+      socketRef.current = socket;
+      socket.on('ride:request', (request) => {
+        if (isMounted) setIncomingRequest(request);
+      });
+      socket.on('ride:cancelled', ({ rideId }) => {
+        if (isMounted && rideId === incomingRequest?.id) setIncomingRequest(null);
+      });
+      socket.connect();
+    };
+
+    connectDriver();
+
+    return () => {
+      isMounted = false;
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+      setIncomingRequest(null);
+    };
   }, [isOnline]);
 
   const handleAccept = () => {
+    socketRef.current?.emit('ride:accept', {
+      rideId: incomingRequest.id,
+      driverId: driverProfile.id,
+      driverName: `${driverProfile.firstName || ''} ${driverProfile.lastName || ''}`.trim(),
+    });
     setIncomingRequest(null);
-    navigation.replace('DriverActiveRide');
+    navigation.replace('DriverActiveRide', incomingRequest);
   };
 
   const handleDecline = () => {
+    socketRef.current?.emit('ride:decline', { rideId: incomingRequest.id });
     setIncomingRequest(null);
   };
 

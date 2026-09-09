@@ -4,6 +4,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
+const http = require('http');
+const { Server } = require('socket.io');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 
@@ -13,6 +15,7 @@ if (!mongoUri) {
 }
 
 const app = express();
+
 app.use(express.json());
 app.use(cors());
 
@@ -130,8 +133,76 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// 5. Start Server
-const PORT = 3000;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Backend Server running on port ${PORT}`);
+// 5. Attach Socket.IO to the same HTTP server as the REST API.
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: 'http://192.168.1.3:3000',
+        methods: ['GET', 'POST']
+    }
 });
+
+const rideQueue = new Map();
+
+const broadcastQueue = () => {
+    io.to('drivers').emit('ride:queue:update', Array.from(rideQueue.values()));
+};
+
+io.on('connection', (socket) => {
+    const { role, userId } = socket.handshake.auth || {};
+
+    if (role === 'driver') socket.join('drivers');
+    if (userId) socket.join(`user:${userId}`);
+    if (role === 'driver') socket.emit('ride:queue:update', Array.from(rideQueue.values()));
+
+    socket.on('ride:request', (ride, acknowledge) => {
+        const request = {
+            ...ride,
+            id: ride.id || `${Date.now()}-${socket.id}`,
+            passengerId: ride.passengerId || userId,
+            status: 'searching',
+            createdAt: new Date().toISOString()
+        };
+
+        rideQueue.set(request.id, request);
+        io.to('drivers').emit('ride:request', request);
+        broadcastQueue();
+        if (typeof acknowledge === 'function') acknowledge({ ok: true, ride: request });
+    });
+
+    socket.on('ride:accept', ({ rideId, driverId, driverName } = {}, acknowledge) => {
+        const ride = rideQueue.get(rideId);
+        if (!ride) {
+            if (typeof acknowledge === 'function') acknowledge({ ok: false, error: 'Ride is no longer available' });
+            return;
+        }
+
+        const acceptedRide = { ...ride, driverId: driverId || userId, driverName, status: 'accepted' };
+        rideQueue.delete(rideId);
+        io.to(`user:${ride.passengerId}`).emit('ride:accepted', acceptedRide);
+        broadcastQueue();
+        if (typeof acknowledge === 'function') acknowledge({ ok: true, ride: acceptedRide });
+    });
+
+    socket.on('ride:decline', ({ rideId } = {}) => {
+        socket.to('drivers').emit('ride:declined', { rideId });
+    });
+
+    socket.on('ride:cancel', ({ rideId } = {}) => {
+        const ride = rideQueue.get(rideId);
+        if (!ride) return;
+
+        rideQueue.delete(rideId);
+        io.to('drivers').emit('ride:cancelled', { rideId });
+        broadcastQueue();
+    });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+  });
+});
+
+const PORT = 3000;
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Backend and Socket.IO server running on port ${PORT}`);
+}); 

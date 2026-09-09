@@ -1,11 +1,16 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Platform, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import * as SecureStore from 'expo-secure-store';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { createSocket } from '../../services/socket';
 import MapView, { Marker } from 'react-native-maps';
 
 export default function SearchingScreen({ navigation, route }) {
   // Setup the animation value for the pulsing dot
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const socketRef = useRef(null);
+  const rideIdRef = useRef(null);
   const pickup = route?.params?.pickup || 'CvSU Main Campus';
   const destination = route?.params?.destination || 'Harasan Cuevas Compound';
   const passengers = route?.params?.passengers || 1;
@@ -22,11 +27,40 @@ export default function SearchingScreen({ navigation, route }) {
   }, [pulseAnim]);
 
   useEffect(() => {
-    // Automatically transition to the Active Ride screen after 4 seconds
-    const timer = setTimeout(() => {
-      navigation.replace('ActiveRide', { pickup, destination, passengers });
-    }, 4000);
-    return () => clearTimeout(timer);
+    let isMounted = true;
+
+    const requestRide = async () => {
+      const savedProfile = await SecureStore.getItemAsync('indang_user_profile');
+      const profile = savedProfile ? JSON.parse(savedProfile) : {};
+      const socket = createSocket({ role: 'passenger', userId: profile.id });
+      socketRef.current = socket;
+
+      socket.on('ride:accepted', (ride) => {
+        if (!isMounted) return;
+        navigation.replace('ActiveRide', ride);
+      });
+
+      socket.connect();
+      socket.emit('ride:request', {
+        pickup,
+        destination,
+        passengers,
+        fare: '₱45.00',
+        passengerName: `${profile.firstName || ''} ${profile.lastName || ''}`.trim() || 'Passenger',
+        passengerId: profile.id,
+      }, (result) => {
+        if (result?.ok) rideIdRef.current = result.ride.id;
+      });
+    };
+
+    requestRide();
+
+    return () => {
+      isMounted = false;
+      socketRef.current?.emit('ride:cancel', { rideId: rideIdRef.current });
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+    };
   }, [destination, navigation, passengers, pickup]);
 
   // Exact coordinates for Cavite State University - Main Campus (Indang)
@@ -111,7 +145,13 @@ export default function SearchingScreen({ navigation, route }) {
         </View>
 
         {/* Cancel Section */}
-        <TouchableOpacity style={styles.cancelBtn} onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          style={styles.cancelBtn}
+          onPress={() => {
+            socketRef.current?.emit('ride:cancel', { rideId: rideIdRef.current });
+            navigation.goBack();
+          }}
+        >
           <Text style={styles.cancelBtnText}>Cancel Request</Text>
         </TouchableOpacity>
         <Text style={styles.footerNote}>

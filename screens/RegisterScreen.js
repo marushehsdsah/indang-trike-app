@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { 
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert,
-  SafeAreaView, KeyboardAvoidingView, Platform, ScrollView 
+  KeyboardAvoidingView, Platform, ScrollView
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import { Feather } from '@expo/vector-icons';
 
