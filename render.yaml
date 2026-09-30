@@ -1,0 +1,18 @@
+# Render Blueprint for the IndangGO API on a free web service.
+# The backend shares data/ and utils/ with the app, so it builds from the
+# repository root but installs only the backend's own dependencies.
+services:
+  - type: web
+    name: indanggo-api
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci --prefix indang-trike-backend
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # MongoDB Atlas connection string, entered in the Render dashboard.
+      - key: MONGO_URL
+        sync: false

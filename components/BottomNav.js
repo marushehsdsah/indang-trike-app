@@ -1,68 +1,66 @@
 import React from 'react';
-import { View, TouchableOpacity, Text, StyleSheet, Platform } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COLORS, SPACE, TYPE } from '../theme';
+import { selectionFeedback } from '../utils/feedback';
+import { useApp } from '../context/AppContext';
+
+const TABS = [
+  { key: 'home', label: 'Home', icon: 'home', route: 'Passenger' },
+  { key: 'book', label: 'Book', icon: 'navigation', route: 'Booking' },
+  { key: 'history', label: 'History', icon: 'clock', route: 'History' },
+  { key: 'profile', label: 'Profile', icon: 'user', route: 'Profile' },
+];
 
 export default function BottomNav({ active, navigation }) {
-  return (
-    <View style={styles.bottomNav}>
-      <TouchableOpacity 
-        style={[styles.navItem, active === 'home' && styles.navItemActive]} 
-        onPress={() => navigation.navigate('Passenger')}
-      >
-        <Feather name="home" size={20} color={active === 'home' ? '#FFF' : '#999'} />
-        <Text style={[styles.navText, active === 'home' && styles.navTextActive]}>Home</Text>
-      </TouchableOpacity>
-      
-      <TouchableOpacity 
-        style={[styles.navItem, active === 'bookings' && styles.navItemActive]} 
-        onPress={() => navigation.navigate('Booking')}
-      >
-        <Feather name="file-text" size={20} color={active === 'bookings' ? '#FFF' : '#999'} />
-        <Text style={[styles.navText, active === 'bookings' && styles.navTextActive]}>Bookings</Text>
-      </TouchableOpacity>
+  const insets = useSafeAreaInsets();
+  const { user } = useApp();
+  const tabs = user?.role === 'driver' ? [
+    { key: 'home', label: 'Home', icon: 'home', route: 'Driver' },
+    { key: 'history', label: 'Trips', icon: 'clock', route: 'History' },
+    { key: 'profile', label: 'Profile', icon: 'user', route: 'Profile' },
+  ] : TABS;
 
-      <TouchableOpacity style={[styles.navItem, active === 'history' && styles.navItemActive]}>
-        <Feather name="clock" size={20} color={active === 'history' ? '#FFF' : '#999'} />
-        <Text style={[styles.navText, active === 'history' && styles.navTextActive]}>History</Text>
-      </TouchableOpacity>
-      
-      <TouchableOpacity style={[styles.navItem, active === 'profile' && styles.navItemActive]}>
-        <Feather name="user" size={20} color={active === 'profile' ? '#FFF' : '#999'} />
-        <Text style={[styles.navText, active === 'profile' && styles.navTextActive]}>Profile</Text>
-      </TouchableOpacity>
+  return (
+    <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, SPACE.sm) }]}>
+      {tabs.map((tab) => {
+        const selected = active === tab.key;
+        return (
+          <Pressable
+            key={tab.key}
+            style={({ pressed }) => [styles.tab, pressed && styles.pressed]}
+            onPress={() => {
+              if (selected) return;
+              selectionFeedback();
+              navigation.navigate(tab.route);
+            }}
+            accessibilityRole="tab"
+            accessibilityState={{ selected }}
+            accessibilityLabel={tab.label}
+          >
+            <Feather name={tab.icon} size={22} color={selected ? COLORS.brand : COLORS.inkMuted} />
+            <Text style={[TYPE.overline, styles.label, selected && styles.labelSelected]}>{tab.label}</Text>
+            <View style={[styles.indicator, selected && styles.indicatorSelected]} />
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  bottomNav: { 
-    flexDirection: 'row', 
-    backgroundColor: '#FFF', 
-    paddingVertical: 12, 
-    paddingHorizontal: 16,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-    justifyContent: 'space-between'
+  bar: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.surface,
+    borderTopWidth: 1, borderTopColor: COLORS.line,
+    paddingTop: SPACE.sm + 2,
   },
-  navItem: { 
-    alignItems: 'center', 
-    justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-  },
-  navItemActive: {
-    backgroundColor: '#095C37',
-  },
-  navText: { 
-    fontSize: 10, 
-    color: '#999', 
-    marginTop: 4,
-    fontWeight: '500'
-  },
-  navTextActive: { 
-    color: '#FFF', 
-    fontWeight: '700' 
-  },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: SPACE.xs },
+  pressed: { opacity: 0.7 },
+  label: { marginTop: SPACE.xs + 2, letterSpacing: 0.2, fontSize: 11, color: COLORS.inkMuted },
+  labelSelected: { color: COLORS.brand },
+  // Reserved height keeps labels from shifting when the dot appears.
+  indicator: { width: 4, height: 4, borderRadius: 2, marginTop: SPACE.xs, backgroundColor: 'transparent' },
+  indicatorSelected: { backgroundColor: COLORS.brand },
 });

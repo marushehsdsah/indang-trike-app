@@ -1,34 +1,73 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { COLORS } from '../theme';
+import { StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import Button from '../components/ui/Button';
+import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
+
+const HIGHLIGHTS = [
+  { icon: 'map-marker-path', label: 'Road-accurate routes' },
+  { icon: 'wifi-off', label: 'Offline route guidance' },
+  { icon: 'account-group-outline', label: 'Passenger and driver accounts' },
+];
 
 export default function SplashScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={styles.container}>
-      <View style={styles.logo}>
-        <Text style={{ fontSize: 36 }}>🛺</Text>
+    <LinearGradient colors={[COLORS.brand, COLORS.brandDark]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={styles.screen}>
+      <StatusBar style="light" />
+      <View style={[styles.content, { paddingTop: insets.top + SPACE.xxxl, paddingBottom: insets.bottom + SPACE.xxl }]}>
+        <View style={styles.brandRow}>
+          <View style={styles.mark}>
+            <MaterialCommunityIcons name="rickshaw" size={26} color={COLORS.brand} />
+          </View>
+          <Text style={styles.wordmark}>IndangGO</Text>
+        </View>
+
+        <View style={styles.pitch}>
+          <Text style={styles.headline}>Tricycle rides{'\n'}across Indang.</Text>
+          <Text style={styles.subhead}>
+            Book a trike, follow the real road route, and know the fare before you ride.
+          </Text>
+        </View>
+
+        <View style={styles.highlights}>
+          {HIGHLIGHTS.map(({ icon, label }) => (
+            <View key={label} style={styles.highlight}>
+              <MaterialCommunityIcons name={icon} size={16} color={COLORS.accent} />
+              <Text style={styles.highlightText}>{label}</Text>
+            </View>
+          ))}
+        </View>
+
+        <Button label="Get started" onPress={() => navigation.replace('Register')} style={styles.primary} />
+        <Button label="I already have an account" variant="outlineLight" onPress={() => navigation.replace('Login')} />
       </View>
-      <Text style={styles.title}>IndangGO</Text>
-      <Text style={styles.sub}>
-        Your tricycle ride-hailing app for Indang, Cavite. Fast, safe, and reliable transport at your fingertips.
-      </Text>
-      <TouchableOpacity style={styles.btn} onPress={() => navigation.replace('Login')}>
-        <Text style={styles.btnText}>Get started</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={[styles.btn, styles.btnOutline]} onPress={() => navigation.replace('Login')}>
-        <Text style={styles.btnOutlineText}>Sign in</Text>
-      </TouchableOpacity>
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.green, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  logo: { width: 80, height: 80, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  title: { color: '#fff', fontSize: 32, fontWeight: '600', marginBottom: 12 },
-  sub: { color: 'rgba(255,255,255,0.8)', fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 32 },
-  btn: { width: '100%', padding: 16, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center', marginBottom: 12 },
-  btnText: { color: COLORS.green, fontSize: 16, fontWeight: '600' },
-  btnOutline: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.6)' },
-  btnOutlineText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  screen: { flex: 1 },
+  content: { flex: 1, paddingHorizontal: SPACE.xxl },
+  brandRow: { flexDirection: 'row', alignItems: 'center' },
+  mark: {
+    width: 44, height: 44, borderRadius: RADIUS.md, backgroundColor: COLORS.surface,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  wordmark: { ...TYPE.heading, color: COLORS.onBrand, marginLeft: SPACE.md },
+
+  // The pitch takes the space between the brand row and the actions.
+  pitch: { flex: 1, justifyContent: 'center' },
+  headline: { ...TYPE.display, fontSize: 38, lineHeight: 44, color: COLORS.onBrand },
+  subhead: { ...TYPE.body, color: 'rgba(255,255,255,0.78)', marginTop: SPACE.lg, maxWidth: 320 },
+
+  highlights: { marginBottom: SPACE.xxl },
+  highlight: { flexDirection: 'row', alignItems: 'center', marginBottom: SPACE.md },
+  highlightText: { ...TYPE.caption, color: 'rgba(255,255,255,0.85)', marginLeft: SPACE.sm + 2 },
+
+  primary: { marginBottom: SPACE.md },
 });

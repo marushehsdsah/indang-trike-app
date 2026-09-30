@@ -2,6 +2,8 @@
 
 # dependencies
 node_modules/
+.gis-*-readonly-backup/
+assets/.gis-*-readonly-backup/
 
 # Expo
 .expo/
@@ -31,6 +33,9 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.*
+!.env.example
 .env*.local
 
 # typescript

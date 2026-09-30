@@ -2,9 +2,10 @@
   "name": "indang-trike-backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node ../server.js",
+    "test": "node ../tests/backend.integration.js"
   },
   "keywords": [],
   "author": "",
@@ -13,6 +14,7 @@
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "mongoose": "^9.6.0"
+    "mongoose": "^9.6.0",
+    "socket.io": "^4.8.4"
   }
 }

@@ -1,93 +1,90 @@
 import React, { useState } from 'react';
-import { 
-  View, Text, TextInput, TouchableOpacity, StyleSheet, 
-  SafeAreaView, KeyboardAvoidingView, Platform, ScrollView 
-} from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import Button from '../components/ui/Button';
+import Field from '../components/ui/Field';
+import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
+import { useApp } from '../context/AppContext';
 
 export default function LoginScreen({ navigation }) {
-  const [isPasswordVisible, setPasswordVisible] = useState(false);
+  const insets = useSafeAreaInsets();
+  const [account, setAccount] = useState('');
+  const [password, setPassword] = useState('');
+  const { signIn, error: sessionError, restore } = useApp();
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+  const login = async () => {
+    if (submitting) return;
+    setSubmitting(true); setError(null);
+    try { await signIn(account, password); }
+    catch (failure) { setError(failure.message); }
+    finally { setSubmitting(false); }
+  };
 
   return (
-    <View style={styles.container}>
-      {/* Background Green Header */}
-      <View style={styles.greenHeader}>
-        <SafeAreaView>
-          <View style={styles.logoContainer}>
-            <MaterialCommunityIcons name="truck-fast" size={32} color="#095C37" />
-          </View>
-          <Text style={styles.headerTitle}>Indang GO</Text>
-          <Text style={styles.headerSub}>Your neighborhood ride, faster.</Text>
-        </SafeAreaView>
-      </View>
+    <View style={styles.screen}>
+      <StatusBar style="light" />
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        {/* Hero and card scroll together: the card's negative offset overlaps a
+            sibling, which Android will not clip the way it clips scroll content. */}
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: insets.bottom + SPACE.xxl }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <LinearGradient
+            colors={[COLORS.brand, COLORS.brandDark]}
+            start={{ x: 0.1, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.hero, { paddingTop: insets.top + SPACE.xxl }]}
+          >
+            <View style={styles.mark}>
+              <MaterialCommunityIcons name="rickshaw" size={24} color={COLORS.brand} />
+            </View>
+            <Text style={styles.heroTitle}>Welcome back</Text>
+            <Text style={styles.heroSub}>Sign in to ride or drive around Indang.</Text>
+          </LinearGradient>
 
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* Overlapping White Card */}
-          <View style={styles.card}>
-            <Text style={styles.welcomeTitle}>Welcome</Text>
-            <Text style={styles.welcomeSub}>Enter your details to catch a trike.</Text>
-
-            {/* Phone/Email Input */}
-            <Text style={styles.label}>Phone or Email</Text>
-            <View style={styles.inputContainer}>
-              <Feather name="at-sign" size={20} color="#999" style={styles.icon} />
-              <TextInput 
-                style={styles.input} 
-                placeholder="e.g. +63 912 345 6789" 
-                placeholderTextColor="#999"
-                keyboardType="email-address"
+          <View style={styles.body}>
+            <View style={styles.card}>
+              <Field
+                label="Mobile number"
+                icon="phone"
+                placeholder="0912 345 6789"
+                keyboardType="phone-pad"
                 autoCapitalize="none"
+                autoCorrect={false}
+                value={account}
+                onChangeText={setAccount}
               />
+              <Field
+                label="Password"
+                icon="lock"
+                placeholder="Your password"
+                secure
+                value={password}
+                onChangeText={setPassword}
+                style={styles.lastField}
+              />
+
+              {(error || sessionError) && <Text accessibilityRole="alert" style={[TYPE.caption, { color: COLORS.danger, marginBottom: SPACE.md }]}>{error || sessionError}</Text>}
+              {sessionError && <Button label="Retry saved session" variant="ghost" size="sm" onPress={restore} />}
+              <Button label="Log in" trailingIcon="arrow-right" loading={submitting} onPress={login} />
             </View>
 
-            {/* Password Input */}
-            <Text style={styles.label}>Password</Text>
-            <View style={styles.inputContainer}>
-              <Feather name="lock" size={20} color="#999" style={styles.icon} />
-              <TextInput 
-                style={styles.input} 
-                placeholder="Enter Your Password" 
-                placeholderTextColor="#999"
-                secureTextEntry={!isPasswordVisible}
-              />
-              <TouchableOpacity onPress={() => setPasswordVisible(!isPasswordVisible)}>
-                <Feather name={isPasswordVisible ? "eye" : "eye-off"} size={20} color="#999" />
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={styles.forgotBtn}>
-              <Text style={styles.forgotText}>Forgot Password?</Text>
-            </TouchableOpacity>
-
-            {/* Login Button */}
-            <TouchableOpacity 
-              style={styles.loginBtn} 
-              onPress={() => navigation.replace('Passenger')}
-            >
-              <Text style={styles.loginBtnText}>Login</Text>
-              <Feather name="arrow-right" size={20} color="#333" style={{ marginLeft: 8 }} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Footer */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              New to Indang Go?{' '}
-              <Text 
-                style={styles.footerLink} 
+            <View style={styles.footer}>
+              <Text style={TYPE.caption}>New to IndangGO? </Text>
+              <Pressable
                 onPress={() => navigation.navigate('Register')}
+                accessibilityRole="button"
+                style={({ pressed }) => pressed && styles.pressed}
               >
-                Create Account
-              </Text>
-            </Text>
-            <Text style={styles.copyright}>
-              <Feather name="shield" size={10} /> Secure neighborhood transit{'\n'}
-              © 2026 Indang Go
-            </Text>
+                <Text style={[TYPE.captionStrong, styles.footerLink]}>Create an account</Text>
+              </Pressable>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -96,77 +93,29 @@ export default function LoginScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
-  greenHeader: {
-    backgroundColor: '#095C37',
-    height: '45%',
-    width: '100%',
-    position: 'absolute',
-    top: 0,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    alignItems: 'center',
-    paddingTop: Platform.OS === 'android' ? 40 : 0,
+  screen: { flex: 1, backgroundColor: COLORS.canvas },
+  flex: { flex: 1 },
+  hero: {
+    paddingHorizontal: SPACE.xxl, paddingBottom: SPACE.xxxl + SPACE.xxl,
+    borderBottomLeftRadius: RADIUS.xxl, borderBottomRightRadius: RADIUS.xxl,
   },
-  logoContainer: {
-    backgroundColor: '#FFF',
-    width: 60,
-    height: 60,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-    marginTop: 20,
-    marginBottom: 12,
+  mark: {
+    width: 44, height: 44, borderRadius: RADIUS.md, backgroundColor: COLORS.surface,
+    alignItems: 'center', justifyContent: 'center', marginBottom: SPACE.lg,
   },
-  headerTitle: { color: '#FFF', fontSize: 24, fontWeight: '700', textAlign: 'center', marginBottom: 4 },
-  headerSub: { color: 'rgba(255,255,255,0.8)', fontSize: 14, textAlign: 'center' },
-  
-  scrollContent: { flexGrow: 1, paddingTop: '55%', paddingHorizontal: 24, paddingBottom: 24 },
-  
+  heroTitle: { ...TYPE.title, color: COLORS.onBrand },
+  heroSub: { ...TYPE.body, color: 'rgba(255,255,255,0.78)', marginTop: SPACE.xs + 2 },
+
+  body: { paddingHorizontal: SPACE.xl, marginTop: -SPACE.xxxl },
   card: {
-    backgroundColor: '#FFF',
-    borderRadius: 20,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.xl, padding: SPACE.xl,
+    shadowColor: '#0E1512', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.1, shadowRadius: 18, elevation: 6,
   },
-  welcomeTitle: { fontSize: 22, fontWeight: '700', color: '#333', marginBottom: 6 },
-  welcomeSub: { fontSize: 13, color: '#666', marginBottom: 24 },
-  
-  label: { fontSize: 12, fontWeight: '600', color: '#333', marginBottom: 8 },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 50,
-    marginBottom: 16,
-  },
-  icon: { marginRight: 10 },
-  input: { flex: 1, fontSize: 14, color: '#333' },
-  
-  forgotBtn: { alignSelf: 'flex-end', marginBottom: 24 },
-  forgotText: { fontSize: 12, fontWeight: '600', color: '#967000' },
-  
-  loginBtn: {
-    backgroundColor: '#FFD700',
-    borderRadius: 12,
-    height: 54,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loginBtnText: { fontSize: 16, fontWeight: '700', color: '#333' },
-  
-  footer: { marginTop: 32, alignItems: 'center' },
-  footerText: { fontSize: 13, color: '#666' },
-  footerLink: { color: '#095C37', fontWeight: '700' },
-  copyright: { fontSize: 10, color: '#999', textAlign: 'center', marginTop: 16, lineHeight: 16 },
+  lastField: { marginBottom: SPACE.sm },
+  forgot: { alignSelf: 'flex-end', paddingVertical: SPACE.sm, marginBottom: SPACE.md },
+  forgotText: { color: COLORS.brand },
+  pressed: { opacity: 0.6 },
+
+  footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: SPACE.xxl },
+  footerLink: { color: COLORS.brand },
 });

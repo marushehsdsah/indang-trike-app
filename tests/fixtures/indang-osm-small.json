@@ -1,0 +1,74 @@
+{
+  "version": 0.6,
+  "generator": "Hand-checked fixture for tests/roadGraphBuilder.test.js",
+  "osm3s": {
+    "timestamp_osm_base": "2026-09-22T08:45:51Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+    { "type": "node", "id": 1, "lat": 14.195, "lon": 120.88 },
+    { "type": "node", "id": 2, "lat": 14.196, "lon": 120.88 },
+    { "type": "node", "id": 3, "lat": 14.197, "lon": 120.88 },
+    { "type": "node", "id": 4, "lat": 14.197, "lon": 120.881 },
+    { "type": "node", "id": 5, "lat": 14.198, "lon": 120.881 },
+    { "type": "node", "id": 6, "lat": 14.198, "lon": 120.882 },
+    { "type": "node", "id": 7, "lat": 14.199, "lon": 120.882 },
+    { "type": "node", "id": 8, "lat": 14.198, "lon": 120.881 },
+    { "type": "node", "id": 9, "lat": 14.199, "lon": 120.881 },
+    { "type": "node", "id": 10, "lat": 14.3, "lon": 120.9 },
+    { "type": "node", "id": 12, "lat": 14.1975, "lon": 120.882 },
+    {
+      "type": "node", "id": 200, "lat": 14.1985, "lon": 120.8815,
+      "tags": { "amenity": "school", "name": "Cavite State University" }
+    },
+    {
+      "type": "node", "id": 201, "lat": 14.2, "lon": 120.95,
+      "tags": { "amenity": "cafe", "name": "Outside Cafe" }
+    },
+    { "type": "node", "id": 202, "lat": 14.1955, "lon": 120.8805, "tags": { "amenity": "bench" } },
+    { "type": "node", "id": 301, "lat": 14.1942, "lon": 120.879 },
+    { "type": "node", "id": 302, "lat": 14.1944, "lon": 120.879 },
+    { "type": "node", "id": 303, "lat": 14.1944, "lon": 120.8793 },
+    { "type": "node", "id": 304, "lat": 14.1942, "lon": 120.8793 },
+    {
+      "type": "way", "id": 100, "nodes": [1, 2, 2, 3],
+      "tags": { "highway": "residential", "name": "Mabini Street" }
+    },
+    {
+      "type": "way", "id": 101, "nodes": [3, 4],
+      "tags": { "highway": "residential", "name": "Rizal Street", "oneway": "-1" }
+    },
+    {
+      "type": "way", "id": 102, "nodes": [4, 5, 12, 4],
+      "tags": { "highway": "unclassified", "junction": "roundabout" }
+    },
+    {
+      "type": "way", "id": 90, "nodes": [5, 6],
+      "tags": { "highway": "service", "access": "private", "name": "Private Driveway" }
+    },
+    {
+      "type": "way", "id": 91, "nodes": [6, 7],
+      "tags": { "highway": "footway", "name": "Plaza Walk" }
+    },
+    {
+      "type": "way", "id": 103, "nodes": [8, 9],
+      "tags": { "highway": "tertiary", "name": "Indang-Trece Martires Road", "maxspeed": "40" }
+    },
+    {
+      "type": "way", "id": 104, "nodes": [9, 10],
+      "tags": { "highway": "residential", "name": "Boundary Road" }
+    },
+    {
+      "type": "way", "id": 105, "nodes": [7, 9],
+      "tags": { "highway": "unclassified", "motor_vehicle": "no" }
+    },
+    {
+      "type": "way", "id": 106, "nodes": [9, 999],
+      "tags": { "highway": "residential" }
+    },
+    {
+      "type": "way", "id": 300, "nodes": [301, 302, 303, 304, 301],
+      "tags": { "amenity": "marketplace", "name": "Indang Public Market" }
+    }
+  ]
+}
