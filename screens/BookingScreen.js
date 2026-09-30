@@ -1,181 +1,400 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, SafeAreaView, Platform, TextInput } from 'react-native';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, BackHandler, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import RouteMap from '../components/RouteMap';
+import LocationSearchPanel from '../components/LocationSearchPanel';
+import BookingSheet from '../components/BookingSheet';
+import MapPickBar from '../components/MapPickBar';
+import LiveLocationMarker from '../components/LiveLocationMarker';
+import { BleedScreen } from '../components/ui/Screen';
+import IconButton from '../components/ui/IconButton';
+import { Divider } from '../components/ui/Surfaces';
+import useCurrentPickup from '../hooks/useCurrentPickup';
+import { isInIndangServiceArea } from '../data/indangMap';
+import { useApp } from '../context/AppContext';
+import { ACTIVE_STATUSES, formatFare } from '../utils/rideState';
+import { getRoadGraph, getSearchablePlaces } from '../data/roadNetwork';
+import { createBookingPayload, getBookingState, resolveBookingRoute } from '../utils/bookingRoute';
+import { findNearestRoadNode, getRoadNameAtNode } from '../utils/roadGraph';
+import { searchPlaces } from '../utils/placeSearch';
+import { COLORS, ELEVATION, HIT_SLOP, RADIUS, SPACE, TYPE } from '../theme';
 
-export default function BookingScreen({ navigation }) {
+// Lets the "calculating" state paint before A* occupies the JS thread.
+const ROUTE_CALCULATION_DELAY_MS = 30;
+const OUTSIDE_SERVICE_AREA_NOTICE = 'That point is outside the Indang service area. Choose a point inside Indang.';
+const RIDER_OUTSIDE_MESSAGE = 'You are outside Indang. Tricycle rides can only be booked inside Indang.';
+
+function createPinnedPlace(coordinate) {
+  const graph = getRoadGraph();
+  const snap = graph.status === 'ready' ? findNearestRoadNode(graph.graph, coordinate) : null;
+  const roadName = snap && getRoadNameAtNode(graph.graph, snap.nodeId);
+  return {
+    id: `pin/${coordinate.latitude.toFixed(6)},${coordinate.longitude.toFixed(6)}`,
+    name: roadName ? `Pin near ${roadName}` : 'Pinned location',
+    kind: 'pin',
+    coordinate: { latitude: coordinate.latitude, longitude: coordinate.longitude },
+  };
+}
+
+function LocationRow({ label, place, active, isPickup, onPress, onPinPress }) {
+  return (
+    <View style={[styles.locationRow, active && styles.locationRowActive]}>
+      <Pressable
+        style={styles.locationMain}
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}: ${place?.name || 'Not selected'}. Search for a ${label.toLowerCase()}`}
+      >
+        <View style={isPickup ? styles.pickupDot : styles.destinationSquare} />
+        <View style={styles.locationText}>
+          <Text style={TYPE.overline}>{label.toUpperCase()}</Text>
+          <Text style={[TYPE.body, styles.locationName]} numberOfLines={1}>{place?.name || `Choose ${label.toLowerCase()}`}</Text>
+        </View>
+      </Pressable>
+      <Pressable
+        style={({ pressed }) => [styles.pinButton, pressed && styles.pressed]}
+        onPress={onPinPress}
+        hitSlop={HIT_SLOP}
+        accessibilityRole="button"
+        accessibilityLabel={`Set ${label.toLowerCase()} on the map`}
+      >
+        <MaterialCommunityIcons
+          name="map-marker-radius-outline"
+          size={22}
+          color={active ? COLORS.brand : COLORS.inkSecondary}
+        />
+      </Pressable>
+    </View>
+  );
+}
+
+export default function BookingScreen({ navigation, route: screenRoute }) {
+  const params = screenRoute?.params;
+  const { bookRide, ride: activeRide, config, connected, error: connectionError } = useApp();
+  const [pickup, setPickup] = useState(null);
+  const [destination, setDestination] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const bookingKeyRef = useRef(null);
+  const [activeEndpoint, setActiveEndpoint] = useState(null);
+  // Map-pick mode: which endpoint the next map tap sets. Picking pickup moves
+  // straight on to destination, so both take one tap each.
+  const [pickTarget, setPickTarget] = useState(null);
+  const [query, setQuery] = useState('');
+  const [routeResult, setRouteResult] = useState({ status: 'calculating' });
   const [passengers, setPassengers] = useState(1);
+  const [note, setNote] = useState('');
+  // Transient, non-blocking messages (location fallback, outside-area taps).
+  const [notice, setNotice] = useState(null);
 
-  const adjustPassengers = (val) => {
-    if (passengers + val > 0 && passengers + val <= 4) {
-      setPassengers(passengers + val);
-    }
+  const insets = useSafeAreaInsets();
+  const [topHeight, setTopHeight] = useState(0);
+  const [sheetHeight, setSheetHeight] = useState(0);
+  const location = useCurrentPickup();
+  // Device location drives pickup until the rider picks one themselves.
+  const followLocationRef = useRef(true);
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    if (params?.destination && isInIndangServiceArea(params.destination.coordinate)) setDestination(params.destination);
+  }, [params?.destination]);
+  useEffect(() => {
+    if (activeRide && ACTIVE_STATUSES.includes(activeRide.status)) navigation.replace(activeRide.status === 'searching' ? 'Searching' : 'ActiveRide');
+  }, [activeRide?.id, activeRide?.status, navigation]);
+
+  // Arriving from "Where to?" or a recent ride: open that endpoint's search,
+  // already filled in.
+  useEffect(() => {
+    if (!params?.focus) return;
+    setActiveEndpoint(params.focus);
+    setQuery(params.query ?? '');
+  }, [params?.focus, params?.query]);
+
+  useEffect(() => {
+    if (!followLocationRef.current || submitting) return;
+    // A lookup that is only starting keeps the current pickup; a last-known
+    // fix or a finished lookup (current fix or fallback) replaces it.
+    if (location.status === 'loading') return;
+    setPickup(location.pickup);
+    if (location.message) setNotice(location.message);
+  }, [location.pickup, location.status, location.source, location.message, submitting]);
+
+  const pickupLatitude = pickup?.coordinate.latitude, pickupLongitude = pickup?.coordinate.longitude;
+  const destinationLatitude = destination?.coordinate.latitude, destinationLongitude = destination?.coordinate.longitude;
+
+  useEffect(() => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    if (!pickup || !destination) { setRouteResult({ status: 'missing-endpoints' }); return undefined; }
+    setRouteResult({ status: 'calculating' });
+    const timer = setTimeout(() => {
+      const result = resolveBookingRoute({
+        roadGraph: getRoadGraph(),
+        pickup: { coordinate: { latitude: pickupLatitude, longitude: pickupLongitude } },
+        destination: { coordinate: { latitude: destinationLatitude, longitude: destinationLongitude } },
+        isInServiceArea: isInIndangServiceArea,
+      });
+      // A newer endpoint change supersedes this result.
+      if (requestIdRef.current === requestId) setRouteResult(result);
+    }, ROUTE_CALCULATION_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude]);
+
+  const routeState = getBookingState(routeResult, routeResult.details);
+  // Live GPS keeps working outside Indang, but booking does not, even for a
+  // pickup chosen inside Indang: no driver should wait for an absent rider.
+  const bookingState = !connected || !config ? { ...routeState, canConfirm: false, message: connectionError || 'Connect to the backend before booking.' }
+    : location.outsideServiceArea ? { ...routeState, canConfirm: false, message: RIDER_OUTSIDE_MESSAGE } : routeState;
+  const route = routeResult.status === 'ok' ? routeResult.details : null;
+  const results = useMemo(
+    () => (activeEndpoint ? searchPlaces(getSearchablePlaces(), query) : []),
+    [activeEndpoint, query],
+  );
+
+  const closeSearch = useCallback(() => {
+    Keyboard.dismiss();
+    setActiveEndpoint(null);
+    setQuery('');
+  }, []);
+
+  const closeMapPick = useCallback(() => setPickTarget(null), []);
+
+  // Hardware back leaves search or map-pick mode before it leaves the screen.
+  useEffect(() => {
+    if (!activeEndpoint && !pickTarget) return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      closeSearch();
+      closeMapPick();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [activeEndpoint, pickTarget, closeSearch, closeMapPick]);
+
+  const openSearch = (endpoint) => {
+    setNotice(null);
+    setQuery('');
+    closeMapPick();
+    setActiveEndpoint(endpoint);
   };
 
+  const startMapPick = (endpoint) => {
+    closeSearch();
+    setNotice(null);
+    setPickTarget(endpoint);
+  };
+
+  // Returns false, with a notice, for a place outside the service area.
+  const setEndpoint = (endpoint, place) => {
+    if (!isInIndangServiceArea(place.coordinate)) {
+      setNotice(OUTSIDE_SERVICE_AREA_NOTICE);
+      return false;
+    }
+    if (endpoint === 'pickup') {
+      followLocationRef.current = false;
+      setPickup(place);
+    } else {
+      setDestination(place);
+    }
+    setNotice(null);
+    return true;
+  };
+
+  const applyPlace = (endpoint, place) => {
+    if (setEndpoint(endpoint, place)) closeSearch();
+  };
+
+  const handleMapPress = (coordinate) => {
+    const endpoint = pickTarget ?? activeEndpoint;
+    if (!endpoint) return;
+    if (!isInIndangServiceArea(coordinate)) {
+      setNotice(OUTSIDE_SERVICE_AREA_NOTICE);
+      return;
+    }
+    setEndpoint(endpoint, createPinnedPlace(coordinate));
+    if (!pickTarget) closeSearch();
+    else setPickTarget(endpoint === 'pickup' ? 'destination' : null);
+  };
+
+  const handleUseCurrentLocation = () => {
+    followLocationRef.current = true;
+    setNotice(null);
+    if (activeEndpoint === 'pickup') closeSearch();
+    location.retry();
+  };
+
+  const createPayload = () => createBookingPayload({
+    trip: { pickup, dropoff: destination },
+    route: routeResult.details,
+    passengers,
+    note,
+  });
+
+  const handleConfirm = async () => {
+    if (!bookingState.canConfirm || submitting) return;
+    setSubmitting(true);
+    if (!bookingKeyRef.current) bookingKeyRef.current = `booking-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      await bookRide({ ...createPayload(), idempotencyKey: bookingKeyRef.current });
+    } catch (failure) { Alert.alert('Unable to book', failure.message); }
+    finally { setSubmitting(false); }
+  };
+
+  const handlePreviewRoute = () => {
+    if (!bookingState.canConfirm) return;
+    const { trip, route: previewRoute } = createPayload();
+    navigation.navigate('Navigation', { trip, route: previewRoute });
+  };
+
+  const selecting = activeEndpoint !== null;
+  const picking = pickTarget !== null;
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}><Feather name="menu" size={24} color="#333" /></TouchableOpacity>
-        <Text style={styles.headerTitle}>Indang GO</Text>
-        <TouchableOpacity><Feather name="bell" size={24} color="#333" /></TouchableOpacity>
-      </View>
+    <BleedScreen>
+      <RouteMap
+        pickup={pickup}
+        destination={destination}
+        route={route}
+        onMapPress={handleMapPress}
+        onUseCurrentLocation={handleUseCurrentLocation}
+        locating={location.status === 'loading'}
+        // Picking holds the camera still, so the next tap lands where the rider
+        // is looking; leaving map-pick mode frames the new route.
+        autoFit={!picking}
+        topInset={topHeight}
+        // Kept while search or map-pick mode hides the sheet, so neither moves the camera.
+        bottomInset={sheetHeight}
+      >
+        {/* The rider's live position, when the pickup marker is somewhere else. */}
+        {location.pickup && pickup?.kind !== 'current-location' && (
+          <LiveLocationMarker coordinate={location.pickup.coordinate} title="Your location" />
+        )}
+      </RouteMap>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <Text style={styles.pageTitle}>Booking Details</Text>
+      <View style={[styles.top, { paddingTop: insets.top + SPACE.md }]} pointerEvents="box-none">
+        {/* The card and any notice under it are framed around; the search
+            panel is not, so opening search never moves the camera. */}
+        <View
+          pointerEvents="box-none"
+          onLayout={({ nativeEvent }) => setTopHeight(nativeEvent.layout.y + nativeEvent.layout.height)}
+        >
+          <View style={styles.topRow} pointerEvents="box-none">
+            <IconButton
+              icon="arrow-left"
+              size={44}
+              label={selecting ? 'Close search' : picking ? 'Stop setting points on the map' : 'Go back'}
+              onPress={() => {
+                if (selecting) closeSearch();
+                else if (picking) closeMapPick();
+                else navigation.goBack();
+              }}
+            />
+          </View>
 
-        {/* Location Card */}
-        <View style={styles.card}>
-          <View style={styles.locationRow}>
-            <View style={styles.dotLineContainer}>
-              <View style={[styles.dot, { backgroundColor: '#FFD700' }]} />
-              <View style={styles.dottedLine} />
-              <MaterialCommunityIcons name="map-marker" size={16} color="#095C37" style={{ marginLeft: -2 }} />
+          <View style={styles.card}>
+            <LocationRow
+              label="Pickup"
+              place={pickup}
+              isPickup
+              active={activeEndpoint === 'pickup' || pickTarget === 'pickup'}
+              onPress={() => openSearch('pickup')}
+              onPinPress={() => startMapPick('pickup')}
+            />
+            <Divider inset={SPACE.xxl + SPACE.sm} />
+            <LocationRow
+              label="Destination"
+              place={destination}
+              active={activeEndpoint === 'destination' || pickTarget === 'destination'}
+              onPress={() => openSearch('destination')}
+              onPinPress={() => startMapPick('destination')}
+            />
+          </View>
+
+          {notice && (
+            <View style={styles.notice} accessibilityLiveRegion="polite">
+              <MaterialCommunityIcons name="information-outline" size={18} color={COLORS.brand} />
+              <Text style={[TYPE.caption, styles.noticeText]}>{notice}</Text>
+              <Pressable
+                onPress={() => setNotice(null)}
+                hitSlop={HIT_SLOP}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss message"
+              >
+                <MaterialCommunityIcons name="close" size={18} color={COLORS.inkMuted} />
+              </Pressable>
             </View>
-            
-            <View style={styles.inputStack}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>PICKUP LOCATION</Text>
-                <View style={styles.inputWrapper}>
-                  <TextInput style={styles.input} defaultValue="CvSU Main Campus" />
-                </View>
-              </View>
-              
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>WHERE TO?</Text>
-                <View style={styles.inputWrapper}>
-                  <TextInput style={styles.input} defaultValue="Harasan Cuevas Compound" />
-                </View>
-              </View>
-            </View>
-          </View>
+          )}
         </View>
 
-        {/* Passengers Card */}
-        <View style={styles.cardRow}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Feather name="users" size={20} color="#666" />
-            <Text style={styles.cardRowTitle}>Number of{'\n'}Passengers</Text>
-          </View>
-          <View style={styles.counterControl}>
-            <TouchableOpacity onPress={() => adjustPassengers(-1)} style={styles.counterBtn}>
-              <Feather name="minus" size={16} color="#333" />
-            </TouchableOpacity>
-            <Text style={styles.counterText}>{passengers}</Text>
-            <TouchableOpacity onPress={() => adjustPassengers(1)} style={styles.counterBtn}>
-              <Feather name="plus" size={16} color="#333" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Type of Ride */}
-        <Text style={styles.sectionLabel}>Type of Ride</Text>
-        <View style={[styles.card, styles.rideTypeCard]}>
-          <View style={styles.rideIconBg}>
-            <MaterialCommunityIcons name="rickshaw" size={24} color="#095C37" />
-          </View>
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.rideTitle}>Standard Trike</Text>
-            <Text style={styles.rideSub}>Direct & Private Ride</Text>
-          </View>
-          <MaterialCommunityIcons name="radiobox-marked" size={24} color="#095C37" />
-        </View>
-
-        {/* Note */}
-        <Text style={styles.sectionLabel}>Note</Text>
-        <View style={styles.noteWrapper}>
-          <TextInput 
-            style={styles.noteInput} 
-            placeholder="E.g., Wait near the green bench, or carry heavy grocery bags..." 
-            placeholderTextColor="#AAA"
-            multiline
-            numberOfLines={3}
+        {selecting && (
+          <LocationSearchPanel
+            activeEndpoint={activeEndpoint}
+            query={query}
+            results={results}
+            onQueryChange={setQuery}
+            onSelect={(place) => applyPlace(activeEndpoint, place)}
+            onClose={closeSearch}
+            onUseCurrentLocation={handleUseCurrentLocation}
+            onChooseOnMap={() => startMapPick(activeEndpoint)}
           />
-        </View>
-        
-        {/* Extra space for absolute bottom sheet */}
-        <View style={{ height: 220 }} />
-      </ScrollView>
-
-      {/* Floating Bottom Sheet */}
-      <View style={styles.bottomSheet}>
-        <View style={styles.dragIndicator} />
-        
-        <View style={styles.fareRow}>
-          <View>
-            <Text style={styles.fareLabel}>Estimated Fare</Text>
-            <Text style={styles.fareAmount}>₱45.00</Text>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Feather name="info" size={14} color="#666" style={{ marginRight: 4 }} />
-            <Text style={styles.fareInfo}>Includes base fare</Text>
-          </View>
-        </View>
-
-        <TouchableOpacity style={styles.confirmBtn} onPress={() => navigation.navigate('Searching')}>
-          <Text style={styles.confirmBtnText}>Confirm & Book Tricycle</Text>
-          <Feather name="chevron-right" size={20} color="#333" />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.cancelBtn} onPress={() => navigation.goBack()}>
-          <Text style={styles.cancelBtnText}>Cancel</Text>
-        </TouchableOpacity>
+        )}
       </View>
-    </SafeAreaView>
+
+      {picking && (
+        <MapPickBar
+          target={pickTarget}
+          state={bookingState}
+          calculating={routeResult.status === 'calculating'}
+          onTargetChange={setPickTarget}
+          onDone={closeMapPick}
+          bottomPadding={insets.bottom}
+        />
+      )}
+
+      {!selecting && !picking && (
+        <BookingSheet
+          state={bookingState}
+          calculating={routeResult.status === 'calculating'}
+          passengers={passengers}
+          note={note}
+          fare={config ? formatFare(config.fare) : '—'}
+          submitting={submitting}
+          onPassengersChange={setPassengers}
+          onNoteChange={setNote}
+          onConfirm={handleConfirm}
+          onPreviewRoute={handlePreviewRoute}
+          bottomPadding={insets.bottom}
+          onLayout={({ nativeEvent }) => setSheetHeight(nativeEvent.layout.height)}
+        />
+      )}
+    </BleedScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F8F9FA' },
-  header: { 
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', 
-    paddingHorizontal: 20, paddingVertical: Platform.OS === 'android' ? 20 : 10,
-    backgroundColor: '#F8F9FA'
+  top: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: SPACE.lg },
+  topRow: { flexDirection: 'row', marginBottom: SPACE.md },
+
+  card: {
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.xl,
+    paddingHorizontal: SPACE.lg, ...ELEVATION.floating,
   },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#095C37' },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 10 },
-  pageTitle: { fontSize: 20, fontWeight: '700', color: '#333', marginBottom: 20 },
-  
-  card: { backgroundColor: '#FFF', borderRadius: 16, padding: 16, marginBottom: 16 },
-  locationRow: { flexDirection: 'row' },
-  dotLineContainer: { width: 24, alignItems: 'center', paddingTop: 16 },
-  dot: { width: 12, height: 12, borderRadius: 6 },
-  dottedLine: { width: 1, flex: 1, backgroundColor: '#DDD', marginVertical: 4, borderStyle: 'dashed', borderWidth: 1, borderColor: '#DDD' },
-  inputStack: { flex: 1, marginLeft: 8 },
-  inputGroup: { marginBottom: 12 },
-  inputLabel: { fontSize: 10, fontWeight: '700', color: '#666', marginBottom: 4 },
-  inputWrapper: { borderWidth: 1, borderColor: '#EEE', borderRadius: 10, paddingHorizontal: 12, height: 46, justifyContent: 'center' },
-  input: { fontSize: 14, color: '#333' },
-
-  cardRow: { flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 16, padding: 16, marginBottom: 24, alignItems: 'center', justifyContent: 'space-between' },
-  cardRowTitle: { fontSize: 13, fontWeight: '600', color: '#333', marginLeft: 12 },
-  counterControl: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#EEE', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 4 },
-  counterBtn: { padding: 8 },
-  counterText: { fontSize: 16, fontWeight: '700', marginHorizontal: 12, color: '#333' },
-
-  sectionLabel: { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 12, marginLeft: 4 },
-  rideTypeCard: { flexDirection: 'row', alignItems: 'center' },
-  rideIconBg: { backgroundColor: '#E1F5EE', padding: 12, borderRadius: 12 },
-  rideTitle: { fontSize: 15, fontWeight: '700', color: '#333' },
-  rideSub: { fontSize: 12, color: '#666', marginTop: 2 },
-
-  noteWrapper: { backgroundColor: '#FFF', borderRadius: 16, padding: 16, minHeight: 100 },
-  noteInput: { fontSize: 14, color: '#333', textAlignVertical: 'top' },
-
-  bottomSheet: {
-    position: 'absolute', bottom: 0, width: '100%',
-    backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 24, paddingBottom: Platform.OS === 'ios' ? 34 : 24, paddingTop: 12,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 15,
+  locationRow: { flexDirection: 'row', alignItems: 'center', minHeight: 60, borderRadius: RADIUS.md },
+  locationRowActive: { backgroundColor: COLORS.brandTint },
+  locationMain: { flex: 1, flexDirection: 'row', alignItems: 'center', minHeight: 60, paddingLeft: SPACE.xs },
+  pickupDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 3.5, borderColor: COLORS.brand },
+  destinationSquare: {
+    width: 12, height: 12, borderRadius: 3,
+    backgroundColor: COLORS.accent, borderWidth: 2, borderColor: COLORS.accentDark,
   },
-  dragIndicator: { width: 40, height: 4, backgroundColor: '#DDD', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-  fareRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 },
-  fareLabel: { fontSize: 12, color: '#666', marginBottom: 2 },
-  fareAmount: { fontSize: 24, fontWeight: '800', color: '#095C37' },
-  fareInfo: { fontSize: 11, color: '#666' },
-  
-  confirmBtn: { backgroundColor: '#FFD700', borderRadius: 12, height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  confirmBtnText: { fontSize: 16, fontWeight: '700', color: '#333', marginRight: 4 },
-  
-  cancelBtn: { backgroundColor: '#FFF', borderRadius: 12, height: 54, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E24B4A' },
-  cancelBtnText: { fontSize: 15, fontWeight: '600', color: '#E24B4A' },
+  locationText: { flex: 1, marginLeft: SPACE.md },
+  locationName: { marginTop: 1 },
+  pinButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  pressed: { opacity: 0.6 },
+
+  notice: {
+    flexDirection: 'row', alignItems: 'center', marginTop: SPACE.sm,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACE.lg, paddingVertical: SPACE.md, ...ELEVATION.card,
+  },
+  noticeText: { flex: 1, marginHorizontal: SPACE.sm },
 });

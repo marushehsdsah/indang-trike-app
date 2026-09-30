@@ -1,0 +1,3 @@
+# Keep line endings fixed per script type so they run after any checkout (autocrlf).
+*.sh text eol=lf
+*.bat text eol=crlf
