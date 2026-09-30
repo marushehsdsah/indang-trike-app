@@ -22,7 +22,7 @@ const SHORTCUTS = [
   { label: 'Municipal hall', icon: 'office-building-outline', query: 'Municipal' },
 ];
 
-const GPS_RETRY_STATUSES = ['denied', 'disabled', 'unavailable', 'inaccurate', 'stale'];
+const GPS_RETRY_STATUSES = ['denied', 'approximate', 'disabled', 'unavailable', 'inaccurate', 'stale'];
 
 // Passenger GPS runs whenever the app is open; this line shows whether it is
 // live and whether the rider is somewhere a tricycle can be booked.

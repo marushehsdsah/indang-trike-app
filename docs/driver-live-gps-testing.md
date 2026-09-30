@@ -58,6 +58,10 @@ Also check:
 - No available drivers: search ends with a real no-driver result.
 - Cancellation before pickup: both accounts update and the driver is released.
 - GPS denied/inaccurate: the driver cannot receive new requests.
+- Phone with Google Location Accuracy off and location not yet granted: the
+  permission prompt appears once, no "turn on Location Accuracy" dialog follows,
+  and GPS stays on (plain GPS works without it). Approximate-only permission
+  shows its own message asking for precise location.
 - Outside Indang: both apps keep tracking live GPS. The passenger cannot book
   (the booking sheet says rides are Indang-only), and an online driver shows
   "Outside Indang" and receives no requests until back inside.

@@ -23,6 +23,8 @@ import { COLORS, ELEVATION, HIT_SLOP, RADIUS, SPACE, TYPE } from '../theme';
 // Lets the "calculating" state paint before A* occupies the JS thread.
 const ROUTE_CALCULATION_DELAY_MS = 30;
 const OUTSIDE_SERVICE_AREA_NOTICE = 'That point is outside the Indang service area. Choose a point inside Indang.';
+// The free backend sleeps when idle and needs up to a minute to wake.
+const WAITING_FOR_SERVER = 'Connecting to IndangGO… If the server was asleep this takes up to a minute.';
 const RIDER_OUTSIDE_MESSAGE = 'You are outside Indang. Tricycle rides can only be booked inside Indang.';
 
 function createPinnedPlace(coordinate) {
@@ -143,7 +145,7 @@ export default function BookingScreen({ navigation, route: screenRoute }) {
   const routeState = getBookingState(routeResult, routeResult.details);
   // Live GPS keeps working outside Indang, but booking does not, even for a
   // pickup chosen inside Indang: no driver should wait for an absent rider.
-  const bookingState = !connected || !config ? { ...routeState, canConfirm: false, message: connectionError || 'Connect to the backend before booking.' }
+  const bookingState = !connected || !config ? { ...routeState, canConfirm: false, message: connectionError || WAITING_FOR_SERVER }
     : location.outsideServiceArea ? { ...routeState, canConfirm: false, message: RIDER_OUTSIDE_MESSAGE } : routeState;
   const route = routeResult.status === 'ok' ? routeResult.details : null;
   const results = useMemo(

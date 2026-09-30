@@ -7,6 +7,6 @@ export default function ConnectionBanner() {
   const { connected, error, refresh, syncing } = useApp();
   if (connected && !error) return null;
   return <Pressable accessibilityRole="button" onPress={refresh} style={{ backgroundColor: COLORS.surface, borderRadius: RADIUS.md, padding: SPACE.md, marginBottom: SPACE.sm }}>
-    <Text style={[TYPE.caption, { color: COLORS.danger }]}>{error || (syncing ? 'Reconnecting and restoring your trip…' : 'Live connection lost. Tap to refresh.')}</Text>
+    <Text style={[TYPE.caption, { color: COLORS.danger }]}>{error || (syncing ? 'Connecting to IndangGO…' : 'Not connected to IndangGO. Tap to retry; a sleeping server takes up to a minute to wake.')}</Text>
   </Pressable>;
 }

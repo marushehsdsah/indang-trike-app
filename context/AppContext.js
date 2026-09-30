@@ -126,7 +126,7 @@ export function AppProvider({ children }) {
   }, [gps.fix, gps.status, publishing, driver, activeRide, request]);
 
   useEffect(() => {
-    if (user?.role !== 'driver' || !foreground || !connected || (!user.available && !activeRide) || !['inaccurate', 'stale', 'denied', 'disabled', 'unavailable'].includes(gps.status)) return;
+    if (user?.role !== 'driver' || !foreground || !connected || (!user.available && !activeRide) || !['inaccurate', 'stale', 'denied', 'approximate', 'disabled', 'unavailable'].includes(gps.status)) return;
     const generation = sessionGeneration.current;
     request('/driver/location/unavailable', { reason: gps.status }).then(() => {
       if (generation === sessionGeneration.current) refresh();
