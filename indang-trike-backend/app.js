@@ -2,14 +2,16 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const { createServer } = require('node:http');
+const path = require('node:path');
 const { Server } = require('socket.io');
 const { createModels } = require('./models');
 const { createAuth } = require('./auth');
 const { createDispatch } = require('./dispatch');
+const { createAdmin } = require('./admin');
 const { requireValue, profileFields, publicUser } = require('./policy');
-const { SERVICE_AREA_NAME } = require('../data/indangMap');
+const { SERVICE_AREA_NAME, INDANG_BOUNDARY_SHAPE } = require('../data/indangMap');
 
-async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://127.0.0.1:27017/indang_trike_db', clock = Date.now, dispatchOptions } = {}) {
+async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://127.0.0.1:27017/indang_trike_db', clock = Date.now, dispatchOptions, adminPhones = process.env.GOD_VIEW_ADMIN_PHONES || '' } = {}) {
   const connection = await mongoose.createConnection(mongoUri, { serverSelectionTimeoutMS: 5000 }).asPromise();
   const models = createModels(connection);
   await Promise.all(Object.values(models).map((model) => model.init()));
@@ -18,7 +20,16 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   const io = new Server(server, { cors: { origin: process.env.CORS_ORIGIN || '*' }, maxHttpBufferSize: 20000 });
   const presence = new Map(), auth = createAuth(models, clock);
   const dispatch = createDispatch({ models, io, clock, presence, options: dispatchOptions });
+  const admin = createAdmin({ models, presence, clock, adminPhones });
   app.disable('x-powered-by');
+  app.use('/god-view', (req, res, next) => {
+    res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
+      'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data: blob: https:; connect-src 'self' https://tiles.openfreemap.org https://*.openfreemap.org; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" });
+    next();
+  });
+  const mapAssets = path.join(path.dirname(require.resolve('maplibre-gl/package.json')), 'dist');
+  for (const asset of ['maplibre-gl.mjs', 'maplibre-gl-shared.mjs', 'maplibre-gl-worker.mjs', 'maplibre-gl.css']) app.get(`/god-view/vendor/${asset}`, (req, res) => res.sendFile(path.join(mapAssets, asset)));
+  app.use('/god-view', express.static(path.join(__dirname, '../web/god-view'), { etag: false, maxAge: 0 }));
   app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
   app.use(express.json({ limit: '32kb' }));
   const attempts = new Map();
@@ -35,6 +46,9 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   app.post('/api/register', async (req, res) => res.status(201).json({ user: await auth.register(req.body), message: 'Account created successfully.' }));
   app.post('/api/login', async (req, res) => res.json(await auth.login(req.body)));
   app.use('/api', auth.middleware);
+  app.use('/api/admin', admin.middleware);
+  app.get('/api/admin/overview', async (req, res) => res.json(await admin.overview()));
+  app.get('/api/admin/map', (req, res) => res.json({ boundary: INDANG_BOUNDARY_SHAPE }));
   app.get('/api/config', (req, res) => res.json({ fare: 45, currency: 'PHP', maxPassengers: 4, gpsMaxAgeMs: 30000 }));
   app.get('/api/me', (req, res) => res.json({ user: publicUser(req.user) }));
   app.patch('/api/me', async (req, res) => {
@@ -53,6 +67,7 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   });
   app.post('/api/driver/location', async (req, res) => res.json(await dispatch.run(() => dispatch.location(req.user, req.body))));
   app.post('/api/passenger/location', async (req, res) => res.json(await dispatch.run(() => dispatch.passengerLocation(req.user, req.body))));
+  app.post('/api/passenger/location/unavailable', async (req, res) => res.json(await dispatch.run(() => dispatch.passengerLocationUnavailable(req.user))));
   app.post('/api/driver/location/unavailable', async (req, res) => res.json(await dispatch.run(() => dispatch.locationUnavailable(req.user))));
   app.post('/api/driver/availability', async (req, res) => res.json(await dispatch.run(() => dispatch.availability(req.user, req.body.available))));
   app.post('/api/rides', async (req, res) => {

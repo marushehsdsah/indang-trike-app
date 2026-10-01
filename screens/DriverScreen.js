@@ -23,7 +23,7 @@ export default function DriverScreen({ navigation }) {
   const active = ride && ACTIVE_STATUSES.includes(ride.status);
   const seconds = offer ? Math.max(0, Math.ceil((new Date(offer.offerExpiresAt).getTime() - now - serverOffset) / 1000)) : 0;
   const fresh = gps.status === 'ready' && isFreshFix(gps.fix, now), available = user.available && connected && fresh;
-  // Location is still shared outside Indang, but requests only go to drivers inside it.
+  // Location is still shared outside the service area; requests stay inside it.
   const outside = fresh && gps.inServiceArea === false;
   const perform = async (fn) => {
     if (busy) return;
@@ -62,6 +62,7 @@ export default function DriverScreen({ navigation }) {
             <Text style={[TYPE.caption, styles.subtitle]}>{!user.available ? 'Go online to receive nearby passenger requests.'
               : outside ? `Your live location is still shared, but ride requests only reach drivers inside ${SERVICE_AREA_NAME}.` : 'Keep this app open. Nearby bookings will appear here.'}</Text>
             <Text style={[TYPE.caption, { color: fresh ? COLORS.brand : COLORS.inkMuted, marginBottom: SPACE.md }]}>{gps.message}</Text>
+            <Text style={[TYPE.caption, { marginBottom: SPACE.md }]}>Your live location is shared with pilot admins while this app is open, even when you are unavailable for rides.</Text>
             <View style={styles.summary}>
               <View><Text style={TYPE.overline}>TRIPS TODAY</Text><Text style={TYPE.heading}>{stats?.todayTrips ?? '—'}</Text></View>
               <View><Text style={TYPE.overline}>CASH FARES TODAY</Text><Text style={TYPE.heading}>{stats ? formatFare(stats.todayFare) : '—'}</Text></View>

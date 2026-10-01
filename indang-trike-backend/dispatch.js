@@ -146,17 +146,22 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     if (ride) io.to(`user:${ride.passengerId}`).emit('driver:location', { rideId: String(ride._id), location: fix, connected: connected(user._id) });
     await tickUnsafe(); return { ok: true };
   }
-  // Passenger GPS is stored only on the passenger's account and forwarded only
-  // to the driver who holds their ride; it never affects matching.
+  // Passenger GPS supports the authorized admin overview. Private socket
+  // updates still go only to the driver who holds their ride.
   async function passengerLocation(user, body) {
     requireValue(user.role !== 'driver', 403, 'Passenger account required.');
     let fix;
     try { fix = validateFix(body, clock()); } catch (error) { throw new HttpError(400, error.message); }
     const current = await User.findById(user._id);
     requireValue(!current.location || fix.timestamp >= current.location.timestamp, 409, 'This GPS fix is older than your last update.');
-    await User.updateOne({ _id: user._id }, { $set: { location: { ...fix, receivedAt: clock() } } });
+    await User.updateOne({ _id: user._id }, { $set: { location: { ...fix, receivedAt: clock() }, locationAvailable: true } });
     const ride = await Ride.findOne({ active: true, passengerId: String(user._id), status: { $in: ASSIGNED_STATUSES } });
     if (ride?.driverId) io.to(`user:${ride.driverId}`).emit('passenger:location', { rideId: String(ride._id), location: fix });
+    return { ok: true };
+  }
+  async function passengerLocationUnavailable(user) {
+    requireValue(user.role !== 'driver', 403, 'Passenger account required.');
+    await User.updateOne({ _id: user._id }, { $set: { locationAvailable: false } });
     return { ok: true };
   }
   async function availability(user, available) {
@@ -186,7 +191,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     if (ride) notifyRide(ride);
     await tickUnsafe(); notify(user._id); return { ok: true };
   }
-  return { run, view, snapshot, book, action, location, passengerLocation, locationUnavailable, availability, disconnect, notify, tick: () => run(tickUnsafe), connected };
+  return { run, view, snapshot, book, action, location, passengerLocation, passengerLocationUnavailable, locationUnavailable, availability, disconnect, notify, tick: () => run(tickUnsafe), connected };
 }
 
 module.exports = { createDispatch };

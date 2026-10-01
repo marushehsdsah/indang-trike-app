@@ -54,7 +54,7 @@ test('booking sends only endpoints and booking fields, not route geometry', asyn
   } finally { await app.close(); }
 });
 
-test('a passenger shares live GPS only while a driver holds their ride', async () => {
+test('a passenger publishes foreground GPS before booking for the admin overview', async () => {
   const published = [];
   const fix = { latitude: 14.1978, longitude: 120.8816, accuracy: 8, timestamp: Date.now(), heading: null, speed: null };
   const app = await mountApp((path, options) => {
@@ -64,11 +64,41 @@ test('a passenger shares live GPS only while a driver holds their ride', async (
     app.snapshot.ride = { id: 'ride-one', version: 1, status: 'searching' };
     await renderer.act(async () => { await app.value.signIn('09170000000', 'password'); });
     await flush();
-    assert.deepEqual(published, [], 'no one receives passenger GPS before a driver accepts');
+    assert.deepEqual(published, [{ path: '/passenger/location', body: fix }], 'pilot admins can locate a waiting passenger');
     app.snapshot.ride = { id: 'ride-one', version: 2, status: 'accepted' };
     await renderer.act(async () => { await app.value.refresh(); });
     await flush();
     assert.deepEqual(published, [{ path: '/passenger/location', body: fix }]);
+  } finally { await app.close(); }
+});
+
+test('an unavailable driver publishes foreground GPS without going available', async () => {
+  const published = [];
+  const fix = { latitude: 14.385026, longitude: 120.880477, accuracy: 8, timestamp: Date.now() };
+  const app = await mountApp((path, options) => {
+    if (path.endsWith('/location')) { published.push({ path, body: options.body }); return { ok: true }; }
+  }, 'driver', { fix, status: 'ready' });
+  try {
+    await renderer.act(async () => { await app.value.signIn('09170000000', 'password'); });
+    await flush();
+    assert.deepEqual(published, [{ path: '/driver/location', body: fix }]);
+    assert.equal(app.value.user.available, false);
+    await renderer.act(async () => { app.stateEvents.emit('change', 'background'); });
+    app.location.current = { fix: { ...fix, timestamp: Date.now() + 1000 }, status: 'ready' };
+    await renderer.act(async () => { await app.value.refresh(); });
+    assert.equal(published.length, 1, 'backgrounded apps stop publishing');
+  } finally { await app.close(); }
+});
+
+test('passenger GPS invalidation tells the server the position is unavailable', async () => {
+  const invalidations = [];
+  const app = await mountApp((path) => {
+    if (path === '/passenger/location/unavailable') { invalidations.push(path); return { ok: true }; }
+  }, 'passenger', { fix: null, status: 'denied' });
+  try {
+    await renderer.act(async () => { await app.value.signIn('09170000000', 'password'); });
+    await flush();
+    assert.equal(invalidations.length, 1);
   } finally { await app.close(); }
 });
 

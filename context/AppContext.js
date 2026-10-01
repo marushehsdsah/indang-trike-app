@@ -25,9 +25,10 @@ export function AppProvider({ children }) {
   const [online, setOnline] = useState(true);
   const tokenRef = useRef(null), socketRef = useRef(null), refreshSequence = useRef(0), current = useRef(null);
   const sessionGeneration = useRef(0), configRef = useRef(null), expiresAtRef = useRef(null), persistedRef = useRef(null);
-  const activeRide = ride && ACTIVE_STATUSES.includes(ride.status), assignedRide = ride && ASSIGNED_STATUSES.includes(ride.status);
-  // Passengers track GPS whenever the app is open; drivers while online or on a trip.
-  const gps = useLiveLocation(Boolean(user) && foreground && (user.role === 'driver' ? (user.available || Boolean(activeRide)) : true));
+  const activeRide = ride && ACTIVE_STATUSES.includes(ride.status);
+  // Pilot admins can locate connected users while their app is open. Driver
+  // availability remains a separate choice controlling ride requests.
+  const gps = useLiveLocation(Boolean(user) && foreground);
   current.current = { user, ride, token, foreground, gps, connected };
 
   const clearSession = useCallback(async () => {
@@ -151,11 +152,11 @@ export function AppProvider({ children }) {
     return () => { clearInterval(timer); socket.removeAllListeners(); socket.disconnect(); if (socketRef.current === socket) socketRef.current = null; };
   }, [token, foreground, refresh]);
 
-  // Drivers publish GPS while online or on a trip; passengers only to the driver
-  // holding their ride.
+  // The backend exposes these fixes to authorized pilot admins; private ride
+  // events still reach only the assigned counterpart.
   const lastPublish = useRef({ timestamp: 0, wall: 0 });
   const driver = user?.role === 'driver';
-  const publishing = Boolean(user) && foreground && connected && (driver ? (user.available || Boolean(activeRide)) : Boolean(assignedRide));
+  const publishing = Boolean(user) && foreground && connected;
   useEffect(() => {
     if (!publishing || gps.status !== 'ready' || !isFreshFix(gps.fix)) return;
     const interval = activeRide ? 2000 : 5000;
@@ -166,12 +167,12 @@ export function AppProvider({ children }) {
   }, [gps.fix, gps.status, publishing, driver, activeRide, request]);
 
   useEffect(() => {
-    if (user?.role !== 'driver' || !foreground || !connected || (!user.available && !activeRide) || !['inaccurate', 'stale', 'denied', 'approximate', 'disabled', 'unavailable'].includes(gps.status)) return;
+    if (!user || !foreground || !connected || !['inaccurate', 'stale', 'denied', 'approximate', 'disabled', 'unavailable'].includes(gps.status)) return;
     const generation = sessionGeneration.current;
-    request('/driver/location/unavailable', { reason: gps.status }).then(() => {
-      if (generation === sessionGeneration.current) refresh();
+    request(driver ? '/driver/location/unavailable' : '/passenger/location/unavailable', { reason: gps.status }).then(() => {
+      if (driver && generation === sessionGeneration.current) refresh();
     }).catch((failure) => { if (generation === sessionGeneration.current) setError(failure.message); });
-  }, [gps.status, user?.role, user?.available, foreground, connected, Boolean(activeRide), request, refresh]);
+  }, [gps.status, user?.id, driver, foreground, connected, request, refresh]);
 
   const setAvailable = useCallback(async (available) => {
     const generation = sessionGeneration.current;

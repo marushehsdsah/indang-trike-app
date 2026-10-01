@@ -101,6 +101,7 @@ export default function PassengerScreen({ navigation }) {
         </Pressable>
 
         <GpsStatus gps={gps} />
+        <Text style={[TYPE.caption, { marginTop: SPACE.xs }]}>Your live location is shared with pilot admins while this app is open.</Text>
 
         <ScrollView
           horizontal

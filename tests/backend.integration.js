@@ -9,11 +9,12 @@ let backend, base, sequence = 1000000;
 let now = Date.now();
 const sockets = [];
 const dbName = `indang_test_${randomUUID().replaceAll('-', '')}`;
+const adminPhone = '09179999999';
 const fix = (latitude = 14.385026) => ({ latitude, longitude: 120.880477, accuracy: 5, timestamp: now, speed: 0, heading: 0 });
 
 before(async () => {
   const mongoRoot = process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017';
-  backend = await createBackend({ mongoUri: `${mongoRoot}/${dbName}`, clock: () => now });
+  backend = await createBackend({ mongoUri: `${mongoRoot}/${dbName}`, clock: () => now, adminPhones: adminPhone });
   await new Promise((resolve) => backend.server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${backend.server.address().port}`;
 });
@@ -34,8 +35,8 @@ async function request(path, token, body, method = body ? 'POST' : 'GET') {
   });
   return { status: response.status, body: await response.json() };
 }
-async function account(role = 'passenger') {
-  const phone = `0917${sequence++}`;
+async function account(role = 'passenger', phoneOverride) {
+  const phone = phoneOverride || `0917${sequence++}`;
   const result = await request('/register', null, {
     phone, password: 'strong-password', firstName: 'Test', lastName: role, email: `${sequence}@example.com`, role,
     ...(role === 'driver' ? { plate: `TEST-${sequence}`, toda: 'Test TODA', capacity: 4 } : {}),
@@ -65,6 +66,37 @@ async function action(accountValue, rideId, name, body = {}) { return request(`/
 
 test('health reports the database and the service area bookings are accepted in', async () => {
   assert.deepEqual(await request('/health'), { status: 200, body: { ok: true, serviceArea: 'General Trias' } });
+});
+
+test('God view serves a shell but protects every overview with admin authorization', async () => {
+  const shell = await fetch(`${base}/god-view/`);
+  assert.equal(shell.status, 200);
+  assert.match(await shell.text(), /God view/);
+  assert.equal((await request('/admin/overview')).status, 401);
+  const ordinary = await account();
+  assert.equal((await request('/admin/overview', ordinary.token)).status, 403);
+  const admin = await account('passenger', adminPhone);
+  const initial = await request('/admin/overview', admin.token);
+  assert.equal(initial.status, 200);
+  assert.equal(initial.body.users.some(item => item.id === admin.user.id), false, 'dashboard login is not mobile presence');
+  const first = await connect(ordinary.token), second = await connect(ordinary.token);
+  assert.equal((await request('/passenger/location', ordinary.token, fix())).status, 200);
+  const snapshot = (await request('/admin/overview', admin.token)).body;
+  const person = snapshot.users.find(item => item.id === ordinary.user.id);
+  assert.equal(person.locationStatus, 'live');
+  assert.equal(person.location.latitude, fix().latitude);
+  assert.equal(Object.hasOwn(person, 'phone'), false);
+  assert.equal(Object.hasOwn(person, 'password'), false);
+  first.disconnect();
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.ok((await request('/admin/overview', admin.token)).body.users.some(item => item.id === ordinary.user.id));
+  await request('/passenger/location/unavailable', ordinary.token, {});
+  assert.equal((await request('/admin/overview', admin.token)).body.users.find(item => item.id === ordinary.user.id).locationStatus, 'unavailable');
+  second.disconnect();
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal((await request('/admin/overview', admin.token)).body.users.some(item => item.id === ordinary.user.id), false);
+  await request('/logout', admin.token, {});
+  assert.equal((await request('/admin/overview', admin.token)).status, 401);
 });
 
 test('a booking outside the service area is rejected before any ride is created', async () => {

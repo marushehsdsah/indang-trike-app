@@ -4,6 +4,12 @@ The app supports passenger and driver accounts in the same installation. GPS
 updates only while the app is open. No simulated driver, automatic acceptance,
 or simulated navigation is included.
 
+Pilot admins can monitor connected accounts at `/god-view/`; see
+[God view setup](god-view.md). Both roles now publish foreground GPS, including
+idle passengers and drivers who are not accepting requests. Driver availability
+still controls matching, and private ride updates still reach only the assigned
+counterpart. Missing or stale GPS is labelled separately in the dashboard.
+
 ## Local setup
 
 1. Install app and backend dependencies with `npm ci` in the repository root and

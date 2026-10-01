@@ -1,4 +1,10 @@
 const { createBackend } = require('./indang-trike-backend/app');
+const path = require('node:path');
+
+// Local backend-only settings, kept out of Expo's public app configuration.
+// Exported environment variables (including Render settings) take precedence.
+try { process.loadEnvFile(path.join(__dirname, '.env.backend')); }
+catch (error) { if (error.code !== 'ENOENT') throw error; }
 
 createBackend().then((backend) => {
   const port = Number(process.env.PORT || 3000);

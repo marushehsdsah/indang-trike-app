@@ -34,6 +34,12 @@ runs `node server.js`, and checks `/api/health`.
 
 Each push to the branch redeploys automatically.
 
+For the admin web dashboard, set the server environment variable
+`GOD_VIEW_ADMIN_PHONES` to the approved existing account's mobile number (or a
+comma-separated list). Open `https://<service>.onrender.com/god-view/` after
+deploying. The local `.env.backend` file is not uploaded. See
+[God view](god-view.md) for access setup and the mobile app rollout.
+
 ## 3. App: standalone APK
 
 A standalone build bundles the JavaScript, so it needs no Metro and no PC; it
