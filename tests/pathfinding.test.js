@@ -114,7 +114,7 @@ test('measures one degree of latitude with Haversine', () => {
 });
 
 test('matches Dijkstra on the production graph', () => {
-  const production = require('../assets/routing/general-trias-road-graph.json');
+  const production = require('../assets/routing/service-area-road-graph.json');
   const dijkstraGraph = { ...production, metadata: { ...production.metadata, maxSpeedKph: Infinity } };
   const nodeIds = Object.keys(production.nodes);
   let seed = 20260922;

@@ -23,7 +23,7 @@ test('saved history keeps what the history screen shows, newest first', () => {
   const ride = (index) => ({
     id: `ride-${index}`, status: 'completed', createdAt: `2026-09-${String(30 - (index % 28)).padStart(2, '0')}`, fare: 45,
     trip: { pickup: { name: 'Pickup', coordinate: { latitude: 14.38, longitude: 120.88 } }, dropoff: { name: 'Drop-off', coordinate: { latitude: 14.32, longitude: 120.91 } } },
-    route: { coordinates: Array(500).fill({ latitude: 14.3, longitude: 120.9 }) }, driver: { phone: '+639170000000' },
+    route: { distanceLabel: '2.4 km', coordinates: Array(500).fill({ latitude: 14.3, longitude: 120.9 }) }, driver: { phone: '+639170000000' },
   });
   const trimmed = trimHistory(Array.from({ length: 80 }, (_, index) => ride(index)));
   assert.equal(trimmed.length, CACHED_HISTORY_LIMIT);
@@ -31,6 +31,7 @@ test('saved history keeps what the history screen shows, newest first', () => {
   assert.deepEqual(trimmed[0], {
     id: 'ride-0', status: 'completed', createdAt: '2026-09-30', fare: 45,
     trip: { pickup: { name: 'Pickup' }, dropoff: { name: 'Drop-off', coordinate: { latitude: 14.32, longitude: 120.91 } } },
-  });
+    route: { distanceLabel: '2.4 km' },
+  }, 'the home screen lists recent rides with their distance');
   assert.ok(JSON.stringify(trimmed).length < 15000, 'the saved copy stays small');
 });

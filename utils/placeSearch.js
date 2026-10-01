@@ -24,9 +24,12 @@ function compareText(a, b) {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-function searchPlaces(places, query, limit = DEFAULT_RESULT_LIMIT) {
+// preferTown lists places in that town first (before the limit applies), so
+// a rider sees their own town's market before the other town's.
+function searchPlaces(places, query, limit = DEFAULT_RESULT_LIMIT, { preferTown } = {}) {
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return [];
+  const away = (place) => (preferTown && place.town !== preferTown ? 1 : 0);
 
   return places
     .map((place) => {
@@ -35,6 +38,7 @@ function searchPlaces(places, query, limit = DEFAULT_RESULT_LIMIT) {
     })
     .filter(({ score }) => score !== Infinity)
     .sort((a, b) => (
+      away(a.place) - away(b.place) ||
       a.score - b.score ||
       compareText(a.name, b.name) ||
       compareText(String(a.place.id ?? ''), String(b.place.id ?? ''))

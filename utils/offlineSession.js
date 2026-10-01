@@ -21,10 +21,11 @@ function canOpenOffline(cache, now = Date.now()) {
   return Boolean(cache?.user?.id && cache.config && Number.isFinite(cache.expiresAt) && cache.expiresAt > now);
 }
 
-// Only what the history screen shows and Rebook needs, newest first.
+// Only what the history and home screens show and Rebook needs, newest first.
 function trimHistory(rides = []) {
-  return rides.slice(0, CACHED_HISTORY_LIMIT).map(({ id, status, createdAt, fare, trip }) => ({
+  return rides.slice(0, CACHED_HISTORY_LIMIT).map(({ id, status, createdAt, fare, trip, route }) => ({
     id, status, createdAt, fare, trip: { pickup: { name: trip?.pickup?.name }, dropoff: trip?.dropoff },
+    route: { distanceLabel: route?.distanceLabel },
   }));
 }
 

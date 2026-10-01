@@ -1,6 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { ASSIGNED_STATUSES, GPS_MAX_AGE_MS, isFreshFix, rankDrivers, validateFix, nextRideStatus } = require('../utils/rideState');
-const { MATCH_RADIUS_METERS, isInIndangServiceArea } = require('../data/indangMap');
+const { getMunicipalityAt } = require('../data/indangMap');
 const { HttpError, requireValue, publicUser, bookingFields, cleanText } = require('./policy');
 
 function createDispatch({ models, io, clock, presence, options = {} }) {
@@ -73,11 +73,13 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
       }
       const [users, occupied] = await Promise.all([User.find({ role: 'driver', available: true }), Ride.find({ active: true, driverSlot: { $exists: true } }).select('driverSlot')]);
       const slots = new Set(occupied.map((entry) => entry.driverSlot));
-      // Drivers share GPS from anywhere, but only those inside the service area get offers.
+      // Drivers share GPS from anywhere, but only those in the pickup's town get
+      // its offers, within that town's radius: the towns' roads do not connect.
+      const town = getMunicipalityAt(ride.trip.pickup.coordinate);
       const candidates = rankDrivers(users.filter((user) => publicUser(user).profileComplete && user.locationAvailable &&
-        user.location && isInIndangServiceArea(user.location) && !ride.attemptedDrivers.includes(String(user._id)))
+        user.location && town && getMunicipalityAt(user.location) === town && !ride.attemptedDrivers.includes(String(user._id)))
         .map((user) => ({ id: String(user._id), available: user.available, capacity: user.capacity, location: user.location, connected: connected(user._id), busy: slots.has(String(user._id)) })),
-      ride.trip.pickup.coordinate, ride.passengers, clock(), options.radius ?? MATCH_RADIUS_METERS);
+      ride.trip.pickup.coordinate, ride.passengers, clock(), options.radius ?? town?.matchRadiusMeters ?? 0);
       for (const candidate of candidates) {
         try {
           const offered = await Ride.findOneAndUpdate({ _id: ride._id, status: 'searching', version: ride.version, driverSlot: { $exists: false } }, {

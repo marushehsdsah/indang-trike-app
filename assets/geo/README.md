@@ -1,4 +1,9 @@
-# Indang municipal boundary
+# Service area boundaries
+
+The app serves Indang and General Trias. Both polygons are loaded together
+(`data/indangMap.js`); each town is its own network of roads and drivers.
+
+## Indang
 
 `indang-municipality.json` contains the WGS 84 municipal polygon for Indang,
 Cavite (PSGC `0402110000`). It was retrieved on 2026-09-22 from the Philippine
@@ -11,10 +16,10 @@ check. It is not a cadastral or turn-by-turn routing dataset. Confirm the source
 service's current terms and the boundary version before redistributing a
 production dataset.
 
-# General Trias city boundary (pilot)
+## General Trias
 
-`general-trias-municipality.json` is the boundary the app currently uses: the
-pilot runs in General Trias, Cavite (PSGC `0402108000`), for now. The GeoRiskPH
+`general-trias-municipality.json` is the boundary of General Trias, Cavite
+(PSGC `0402108000`). The GeoRiskPH
 service above now requires a token, so this polygon comes from the
 OpenStreetMap administrative boundary instead, relation
 [1489187](https://www.openstreetmap.org/relation/1489187), snapshot

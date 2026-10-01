@@ -20,7 +20,7 @@ test('overview includes connected users only, retaining people with no GPS', () 
   assert.equal(result.summary.online, 2);
   assert.equal(result.summary.drivers, 1);
   assert.equal(result.summary.passengers, 1);
-  assert.equal(result.serviceArea.name, 'General Trias');
+  assert.equal(result.serviceArea.name, 'Indang and General Trias');
 });
 
 test('overview distinguishes live, stale, invalidated and out-of-area measured positions', () => {

@@ -4,7 +4,7 @@
 const OFFLINE_MAP_TAG = 'indanggo-offline-map';
 // OpenFreeMap's vector tiles stop at zoom 14 and MapLibre enlarges them for
 // closer zooms, so deeper tiles are never needed. The maps stop zooming out at
-// 10.5, so zoom 10 is the widest view.
+// zoom 10, the widest view.
 const OFFLINE_MAP_MIN_ZOOM = 10;
 const OFFLINE_MAP_MAX_ZOOM = 14;
 // About 1 km around the boundary, so its outline and the map edge render fully.

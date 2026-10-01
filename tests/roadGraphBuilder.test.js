@@ -123,11 +123,11 @@ test('extracts named places and routable named roads deterministically', () => {
   const graph = buildRoadGraph(fixture, municipality);
 
   assert.deepEqual(graph.places, [
-    { id: 'node/200', name: 'Cavite State University', kind: 'school', coordinate: [14.1985, 120.8815] },
-    { id: 'way/100', name: 'Mabini Street', kind: 'road', coordinate: [14.196, 120.88] },
-    { id: 'way/101', name: 'Rizal Street', kind: 'road', coordinate: [14.197, 120.88] },
-    { id: 'way/103', name: 'Indang-Trece Martires Road', kind: 'road', coordinate: [14.198, 120.881] },
-    { id: 'way/300', name: 'Indang Public Market', kind: 'marketplace', coordinate: [14.1943, 120.87915] },
+    { id: 'node/200', name: 'Cavite State University', kind: 'school', town: 'Indang', coordinate: [14.1985, 120.8815] },
+    { id: 'way/100', name: 'Mabini Street', kind: 'road', town: 'Indang', coordinate: [14.196, 120.88] },
+    { id: 'way/101', name: 'Rizal Street', kind: 'road', town: 'Indang', coordinate: [14.197, 120.88] },
+    { id: 'way/103', name: 'Indang-Trece Martires Road', kind: 'road', town: 'Indang', coordinate: [14.198, 120.881] },
+    { id: 'way/300', name: 'Indang Public Market', kind: 'marketplace', town: 'Indang', coordinate: [14.1943, 120.87915] },
   ]);
   assert.equal(JSON.stringify(buildRoadGraph(fixture, municipality)), JSON.stringify(graph));
 });
@@ -183,10 +183,21 @@ test('CLI writes the graph and reports concise errors', () => {
       BUILDER_PATH,
       '--input', path.join(__dirname, 'fixtures/indang-osm-small.json'),
       '--output', output,
+      '--municipality', path.join(__dirname, '../assets/geo/indang-municipality.json'),
     ], { encoding: 'utf8' });
     assert.equal(built.status, 0, built.stderr);
     assert.match(built.stdout, /nodes=7 edges=10 places=5 bytes=\d+ sourceTimestamp=2026-09-22T08:45:51Z/);
     assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')), buildRoadGraph(fixture, municipality));
+
+    // Without --municipality the builder uses the whole service area. The
+    // fixture's Boundary Road lies outside Indang but inside General Trias.
+    const serviceArea = spawnSync(process.execPath, [
+      BUILDER_PATH, '--input', path.join(__dirname, 'fixtures/indang-osm-small.json'), '--output', output,
+    ], { encoding: 'utf8' });
+    assert.equal(serviceArea.status, 0, serviceArea.stderr);
+    assert.match(serviceArea.stdout, /nodes=8 edges=12 places=6 /);
+    const boundaryRoad = JSON.parse(fs.readFileSync(output, 'utf8')).places.find(({ id }) => id === 'way/104');
+    assert.deepEqual(boundaryRoad, { id: 'way/104', name: 'Boundary Road', kind: 'road', town: 'General Trias', coordinate: [14.3, 120.9] });
 
     const missing = spawnSync(process.execPath, [BUILDER_PATH, '--output', output], { encoding: 'utf8' });
     assert.notEqual(missing.status, 0);

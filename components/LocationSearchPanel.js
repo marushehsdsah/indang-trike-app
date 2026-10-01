@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Divider, ListRow } from './ui/Surfaces';
 import { COLORS, ELEVATION, HIT_SLOP, RADIUS, SPACE, TYPE } from '../theme';
-import { SERVICE_AREA_NAME } from '../data/indangMap';
+import { SERVICE_AREA_EITHER, SERVICE_AREA_NAME } from '../data/indangMap';
 
 const ENDPOINT_NAMES = { pickup: 'pickup', destination: 'destination' };
 const SCHOOL_KINDS = new Set(['school', 'university', 'college', 'kindergarten']);
@@ -44,7 +44,7 @@ export default function LocationSearchPanel({
           style={[TYPE.body, styles.input]}
           value={query}
           onChangeText={onQueryChange}
-          placeholder={`Search ${endpointName} in ${SERVICE_AREA_NAME}`}
+          placeholder={`Search ${endpointName} in ${SERVICE_AREA_EITHER}`}
           placeholderTextColor={COLORS.inkMuted}
           autoFocus
           autoCorrect={false}
@@ -112,7 +112,7 @@ export default function LocationSearchPanel({
               icon={getKindIcon(place.kind)}
               iconTone="neutral"
               title={place.name}
-              subtitle={formatKind(place.kind)}
+              subtitle={place.town ? `${formatKind(place.kind)} · ${place.town}` : formatKind(place.kind)}
               onPress={() => onSelect(place)}
               chevron={false}
               style={styles.resultRow}

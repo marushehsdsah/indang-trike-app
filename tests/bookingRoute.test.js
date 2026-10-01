@@ -14,7 +14,7 @@ const {
 const { loadRoadGraph } = require('../utils/roadGraph');
 const { buildRoadGraph } = require('../scripts/build-road-graph');
 const { createMapPolygons, isCoordinateInPolygons } = require('../utils/geojson');
-const { DEFAULT_TRIP, SERVICE_AREA_NAME, isInIndangServiceArea } = require('../data/indangMap');
+const { DEFAULT_TRIP, isInIndangServiceArea } = require('../data/indangMap');
 
 const NO_METRICS = { distanceLabel: '—', durationLabel: '—' };
 const staleDetails = {
@@ -48,7 +48,7 @@ test('describes every booking state with literal copy', () => {
   });
   assert.deepEqual(getBookingState({ status: 'outside-service-area', endpoint: 'destination' }), {
     canConfirm: false,
-    message: `Destination is outside the ${SERVICE_AREA_NAME} service area. Choose a point inside ${SERVICE_AREA_NAME}.`,
+    message: 'Destination is outside Indang and General Trias. Choose a point inside Indang or General Trias.',
     ...NO_METRICS,
   });
   assert.deepEqual(getBookingState({ status: 'unsnappable', endpoint: 'pickup' }), {
@@ -158,7 +158,7 @@ test('requires a calculated route and named endpoints', () => {
 });
 
 test('books the default trip with the production road route', () => {
-  const roadGraph = loadRoadGraph(require('../assets/routing/general-trias-road-graph.json'));
+  const roadGraph = loadRoadGraph(require('../assets/routing/service-area-road-graph.json'));
   const result = resolveBookingRoute({
     roadGraph,
     pickup: DEFAULT_TRIP.pickup,

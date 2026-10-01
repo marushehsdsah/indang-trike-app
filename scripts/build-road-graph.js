@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Converts an Overpass JSON snapshot of Indang into the compact road graph the
-// app routes on. See assets/routing/README.md for the query and rebuild steps.
+// Converts an Overpass JSON snapshot into the compact road graph the app routes
+// on, clipped to the service area's municipal boundaries. See
+// assets/routing/README.md for the query and rebuild steps.
 //
 // Usage: node scripts/build-road-graph.js --input <overpass.json> --output <graph.json>
-//        [--municipality <boundary.geojson>]
+//        [--municipality <boundary.geojson>]...  (repeat for each town; default: the service area)
 const fs = require('node:fs');
 const path = require('node:path');
 const { createMapPolygons, isCoordinateInPolygons } = require('../utils/geojson');
@@ -11,9 +12,12 @@ const { haversineDistance } = require('../utils/pathfinding');
 const { SPATIAL_CELL_SIZE_DEGREES, getSpatialCellKey, validateRoadGraph } = require('../utils/roadGraph');
 const { getRoadSpeedKph, getWayDirection, isRoutableWay } = require('../utils/roadRules');
 
-const DEFAULT_MUNICIPALITY_PATH = path.join(__dirname, '../assets/geo/indang-municipality.json');
+const DEFAULT_MUNICIPALITY_PATHS = [
+  path.join(__dirname, '../assets/geo/general-trias-municipality.json'),
+  path.join(__dirname, '../assets/geo/indang-municipality.json'),
+];
 const USAGE = 'Usage: node scripts/build-road-graph.js --input <overpass.json> --output <graph.json> ' +
-  '[--municipality <boundary.geojson>]';
+  '[--municipality <boundary.geojson>]...';
 const COORDINATE_DECIMALS = 6;
 const UNNAMED_ROAD = 'Unnamed road';
 // The first tag present names the place's kind, e.g. amenity=school -> "school".
@@ -99,9 +103,20 @@ function createCanonicalNodeLookup(routableWays, sourceNodes) {
   };
 }
 
+function getFeatures(geoJson) {
+  return geoJson.type === 'FeatureCollection' ? geoJson.features : [geoJson];
+}
+
+// municipality: GeoJSON with one feature per town. A feature's
+// properties.city_name becomes the `town` of the places inside it.
 function buildRoadGraph(osm, municipality) {
   validateOsm(osm);
   const polygons = createMapPolygons(municipality);
+  const towns = getFeatures(municipality).map((feature) => ({
+    name: feature.properties?.city_name,
+    polygons: createMapPolygons({ type: 'FeatureCollection', features: [feature] }),
+  })).filter(({ name }) => typeof name === 'string' && name.trim() !== '');
+  const getTown = ([latitude, longitude]) => towns.find((town) => isCoordinateInPolygons({ latitude, longitude }, town.polygons))?.name;
   const { nodes: sourceNodes, ways, relations } = groupElements(osm.elements);
   const insideCache = new Map();
   // Caches OSM nodes by ID; computed points such as centroids have no ID.
@@ -170,7 +185,11 @@ function buildRoadGraph(osm, municipality) {
     throw new Error('Invalid OSM document: no routable roads inside the municipality');
   }
 
-  const places = extractPlaces({ sourceNodes, ways, relations, isInside, namedRoads, nodes });
+  const places = extractPlaces({ sourceNodes, ways, relations, isInside, namedRoads, nodes })
+    .map((place) => {
+      const town = getTown(place.coordinate);
+      return town ? { id: place.id, name: place.name, kind: place.kind, town, coordinate: place.coordinate } : place;
+    });
   // The app loads this exact contract, so never emit a graph it would reject.
   return validateRoadGraph(finalizeGraph({ osm, nodes, edges, places, nominalMaxSpeedKph }));
 }
@@ -307,13 +326,14 @@ function finalizeGraph({ osm, nodes, edges, places, nominalMaxSpeedKph }) {
 }
 
 function parseArgs(argv) {
-  const args = {};
+  const args = { municipality: [] };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (!['--input', '--output', '--municipality'].includes(flag) || !argv[index + 1]) {
       throw new Error(USAGE);
     }
-    args[flag.slice(2)] = argv[index + 1];
+    if (flag === '--municipality') args.municipality.push(argv[index + 1]);
+    else args[flag.slice(2)] = argv[index + 1];
     index += 1;
   }
   if (!args.input || !args.output) throw new Error(USAGE);
@@ -331,7 +351,8 @@ function readJson(filePath, label) {
 function main(argv) {
   const args = parseArgs(argv);
   const osm = readJson(args.input, 'OSM snapshot');
-  const municipality = readJson(args.municipality ?? DEFAULT_MUNICIPALITY_PATH, 'municipality boundary');
+  const paths = args.municipality.length ? args.municipality : DEFAULT_MUNICIPALITY_PATHS;
+  const municipality = { type: 'FeatureCollection', features: paths.flatMap((file) => getFeatures(readJson(file, 'municipality boundary'))) };
   const graph = buildRoadGraph(osm, municipality);
   const json = `${JSON.stringify(graph)}\n`;
   fs.writeFileSync(args.output, json);

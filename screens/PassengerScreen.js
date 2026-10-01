@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import BottomNav from '../components/BottomNav';
@@ -6,7 +6,7 @@ import Screen from '../components/ui/Screen';
 import IconButton from '../components/ui/IconButton';
 import { Avatar, Card, Chip, Divider, ListRow } from '../components/ui/Surfaces';
 import { preloadRoadGraph } from '../data/roadNetwork';
-import { SERVICE_AREA_NAME } from '../data/indangMap';
+import { MUNICIPALITIES, SERVICE_AREA_EITHER, SERVICE_AREA_NAME, getMunicipalityAt } from '../data/indangMap';
 import { COLORS, ELEVATION, RADIUS, SPACE, TYPE } from '../theme';
 import { tapFeedback } from '../utils/feedback';
 import { useApp } from '../context/AppContext';
@@ -16,22 +16,30 @@ import Button from '../components/ui/Button';
 import { ACTIVE_STATUSES, formatFare, userName } from '../utils/rideState';
 
 // Tapping any of these opens booking with the destination search already
-// filled in, so the rider never types a whole place name.
-const SHORTCUTS = [
-  { label: 'CvSU Gentri', icon: 'school-outline', query: 'Cavite State University' },
-  { label: 'Public market', icon: 'storefront-outline', query: 'Market' },
-  { label: 'City hall', icon: 'office-building-outline', query: 'City Hall' },
-];
+// filled in, so the rider never types a whole place name. Each town has its
+// own; search lists the rider's town first, so the shared queries find its places.
+const SHORTCUTS = {
+  'General Trias': [
+    { label: 'CvSU Gentri', icon: 'school-outline', query: 'Cavite State University' },
+    { label: 'Public market', icon: 'storefront-outline', query: 'Market' },
+    { label: 'City hall', icon: 'office-building-outline', query: 'City Hall' },
+  ],
+  Indang: [
+    { label: 'CvSU Main', icon: 'school-outline', query: 'Cavite State University' },
+    { label: 'Public market', icon: 'storefront-outline', query: 'Indang Public Market' },
+    { label: 'Municipal hall', icon: 'office-building-outline', query: 'Municipal Hall' },
+  ],
+};
 
 const GPS_RETRY_STATUSES = ['denied', 'approximate', 'disabled', 'unavailable', 'inaccurate', 'stale'];
 
 // Passenger GPS runs whenever the app is open; this line shows whether it is
 // live and whether the rider is somewhere a tricycle can be booked.
-function GpsStatus({ gps }) {
+function GpsStatus({ gps, town }) {
   const ready = gps.status === 'ready', outside = ready && gps.inServiceArea === false;
   const retryable = GPS_RETRY_STATUSES.includes(gps.status);
-  const message = outside ? `Live GPS · You are outside ${SERVICE_AREA_NAME}. Tricycle rides can only be booked inside ${SERVICE_AREA_NAME}.`
-    : ready ? `Live GPS · You are in ${SERVICE_AREA_NAME}.` : gps.message + (retryable ? ' Tap to retry.' : '');
+  const message = outside ? `Live GPS · You are outside ${SERVICE_AREA_NAME}. Tricycle rides can only be booked inside ${SERVICE_AREA_EITHER}.`
+    : ready ? `Live GPS · You are in ${town ?? SERVICE_AREA_NAME}.` : gps.message + (retryable ? ' Tap to retry.' : '');
   const color = outside ? COLORS.danger : ready ? COLORS.brand : COLORS.inkMuted;
   return (
     <Pressable
@@ -59,6 +67,10 @@ export default function PassengerScreen({ navigation }) {
   const { rides } = useAccountHistory();
   const recent = rides.filter((item) => item.status === 'completed').slice(0, 3).map((item) => ({ id: item.id, title: item.trip.dropoff.name, subtitle: item.route.distanceLabel, query: item.trip.dropoff.name }));
   const active = ride && ACTIVE_STATUSES.includes(ride.status);
+  // The town the rider is in, from measured GPS; it picks the shortcuts.
+  const fixLatitude = gps.status === 'ready' ? gps.fix?.latitude : undefined, fixLongitude = gps.fix?.longitude;
+  const town = useMemo(() => (Number.isFinite(fixLatitude) ? getMunicipalityAt({ latitude: fixLatitude, longitude: fixLongitude }) : null),
+    [fixLatitude, fixLongitude]);
   const resume = () => navigation.navigate(ride.status === 'searching' ? 'Searching' : 'ActiveRide');
   // Loads the offline road graph while the rider is idle here, so booking
   // shows its first route without waiting for the one-time load.
@@ -100,7 +112,7 @@ export default function PassengerScreen({ navigation }) {
           </View>
         </Pressable>
 
-        <GpsStatus gps={gps} />
+        <GpsStatus gps={gps} town={town?.name} />
         <Text style={[TYPE.caption, { marginTop: SPACE.xs }]}>Your live location is shared with pilot admins while this app is open.</Text>
 
         <ScrollView
@@ -109,7 +121,7 @@ export default function PassengerScreen({ navigation }) {
           contentContainerStyle={styles.shortcuts}
           style={styles.shortcutsScroll}
         >
-          {SHORTCUTS.map((shortcut) => (
+          {SHORTCUTS[(town ?? MUNICIPALITIES[0]).name].map((shortcut) => (
             <Chip
               key={shortcut.label}
               label={shortcut.label}

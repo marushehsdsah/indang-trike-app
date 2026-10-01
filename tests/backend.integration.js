@@ -65,7 +65,7 @@ async function state(accountValue) { return (await request('/state', accountValu
 async function action(accountValue, rideId, name, body = {}) { return request(`/rides/${rideId}/${name}`, accountValue.token, body); }
 
 test('health reports the database and the service area bookings are accepted in', async () => {
-  assert.deepEqual(await request('/health'), { status: 200, body: { ok: true, serviceArea: 'General Trias' } });
+  assert.deepEqual(await request('/health'), { status: 200, body: { ok: true, serviceArea: 'Indang and General Trias' } });
 });
 
 test('God view serves a shell but protects every overview with admin authorization', async () => {
@@ -99,13 +99,51 @@ test('God view serves a shell but protects every overview with admin authorizati
   assert.equal((await request('/admin/overview', admin.token)).status, 401);
 });
 
-test('a booking outside the service area is rejected before any ride is created', async () => {
+test('a booking outside both towns, or between them, is rejected before any ride is created', async () => {
   const passenger = await account();
-  const outside = { ...DEFAULT_TRIP, dropoff: { ...DEFAULT_TRIP.dropoff, coordinate: { latitude: 14.197805, longitude: 120.881639 } } };
-  const result = await request('/rides', passenger.token, { trip: outside, passengers: 1, note: '', idempotencyKey: `outside-${randomUUID()}` });
-  assert.equal(result.status, 400);
-  assert.equal(result.body.error, 'Pickup and destination must be inside General Trias.');
+  const book = (dropoff) => request('/rides', passenger.token, {
+    trip: { pickup: DEFAULT_TRIP.pickup, dropoff: { name: 'Elsewhere', coordinate: dropoff } }, passengers: 1, note: '', idempotencyKey: randomUUID(),
+  });
+  // Tanza, just west of General Trias.
+  const outside = await book({ latitude: 14.385026, longitude: 120.86 });
+  assert.equal(outside.status, 400);
+  assert.equal(outside.body.error, 'Pickup and destination must be inside Indang or General Trias.');
+  // CvSU Main Campus in Indang: inside the service area, but another town.
+  const crossTown = await book({ latitude: 14.197805, longitude: 120.881639 });
+  assert.equal(crossTown.status, 400);
+  assert.equal(crossTown.body.error, 'Pickup and destination must be in the same town.');
   assert.equal(await backend.models.Ride.countDocuments({ passengerId: String(passenger.user.id) }), 0);
+});
+
+test('an Indang pickup is offered only to Indang drivers within Indang\'s 5 km radius', async () => {
+  // A pickup 330 m inside Indang, near where the towns are closest.
+  const trip = {
+    pickup: { name: 'Near the General Trias boundary', coordinate: { latitude: 14.222498, longitude: 120.893654 } },
+    dropoff: { name: 'CvSU Main Campus', coordinate: { latitude: 14.197805, longitude: 120.881639 } },
+  };
+  const spots = {
+    generalTrias: { latitude: 14.227011, longitude: 120.899407 }, // 0.8 km, but in General Trias
+    cvsuMain: { latitude: 14.197805, longitude: 120.881639 }, // 3.0 km, in Indang
+    harasan: { latitude: 14.15988, longitude: 120.86997 }, // 7.4 km: beyond 5 km, though within General Trias' 8 km
+  };
+  const passenger = await account(), drivers = {};
+  for (const [name, coordinate] of Object.entries(spots)) {
+    drivers[name] = await account('driver');
+    await connect(drivers[name].token);
+    assert.equal((await request('/driver/location', drivers[name].token, { ...fix(), ...coordinate })).status, 200);
+    assert.equal((await request('/driver/availability', drivers[name].token, { available: true })).status, 200);
+  }
+  const booked = await request('/rides', passenger.token, { trip, passengers: 1, note: '', idempotencyKey: randomUUID() });
+  assert.equal(booked.status, 201, JSON.stringify(booked.body));
+  const rideId = booked.body.ride.id;
+  assert.equal((await state(drivers.cvsuMain)).offer?.id, rideId, 'the nearest Indang driver is offered');
+  assert.equal((await state(drivers.generalTrias)).offer, null, 'a closer driver in the other town is not');
+  const offer = (await state(drivers.cvsuMain)).offer;
+  assert.equal((await action(drivers.cvsuMain, rideId, 'decline', { offerId: offer.offerId })).status, 200);
+  assert.equal((await state(drivers.harasan)).offer, null, 'nobody beyond Indang\'s radius is asked');
+  assert.equal((await state(drivers.generalTrias)).offer, null);
+  await action(passenger, rideId, 'cancel');
+  for (const driver of Object.values(drivers)) await request('/driver/availability', driver.token, { available: false });
 });
 
 test('General Trias matching offers the nearest driver inside the city and radius, then the next one', async () => {

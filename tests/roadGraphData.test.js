@@ -7,7 +7,7 @@ const { DEFAULT_TRIP } = require('../data/indangMap');
 const { searchPlaces } = require('../utils/placeSearch');
 const { calculateRoute, validateRoadGraph } = require('../utils/roadGraph');
 
-const GRAPH_PATH = path.join(__dirname, '../assets/routing/general-trias-road-graph.json');
+const GRAPH_PATH = path.join(__dirname, '../assets/routing/service-area-road-graph.json');
 const GRAPH = require(GRAPH_PATH);
 
 function median(values) {
@@ -27,13 +27,15 @@ function measureFiveRuns(run) {
   return { medianMs: median(samples), result: lastResult, samples };
 }
 
-test('ships a bounded non-empty road graph', () => {
-  // General Trias' graph is about 6 MB, 2.5 times Indang's.
-  assert.ok(fs.statSync(GRAPH_PATH).size < 7 * 1024 * 1024);
+test('ships a bounded non-empty road graph for both towns', () => {
+  // Indang and General Trias together are about 8.5 MB.
+  assert.ok(fs.statSync(GRAPH_PATH).size < 10 * 1024 * 1024);
   assert.equal(GRAPH.metadata.source, 'OpenStreetMap');
   assert.ok(Object.keys(GRAPH.nodes).length > 100);
   assert.ok(Object.values(GRAPH.edges).flat().length > 100);
   assert.ok(GRAPH.places.length > 0);
+  const towns = new Set(GRAPH.places.map(({ town }) => town));
+  assert.deepEqual([...towns].sort(), ['General Trias', 'Indang'], 'every place is tagged with its town');
   assert.match(GRAPH.metadata.sourceTimestamp, /^\d{4}-\d{2}-\d{2}T/);
 });
 
@@ -61,6 +63,7 @@ test('keeps graph initialization, routing, and local search within their budgets
     'School', 'Church', 'Health', 'Dental', 'Farm',
     'Street', 'Road', 'Jollibee', 'Alfamart', '7 eleven',
     'Manggahan', 'Pasong Kawayan', 'Biclatan', 'Tapia', 'Santiago',
+    'Indang', 'Lumampong', 'Kaytapos', 'Daine', 'Buna',
   ];
   const searchStartedAt = performance.now();
   const searchResults = representativeQueries.map((query) => searchPlaces(GRAPH.places, query));
@@ -68,7 +71,7 @@ test('keeps graph initialization, routing, and local search within their budgets
 
   assert.equal(defaultRoute.result.status, 'ok');
   assert.equal(farRoute.result.status, 'ok');
-  assert.equal(searchResults.length, 20);
+  assert.equal(searchResults.length, 25);
   assert.ok(validationMs < 500, `graph validation took ${validationMs.toFixed(1)} ms (budget: <500 ms)`);
   assert.ok(
     defaultRoute.medianMs < 150,
@@ -78,13 +81,13 @@ test('keeps graph initialization, routing, and local search within their budgets
     farRoute.medianMs < 150,
     `far route median took ${farRoute.medianMs.toFixed(1)} ms (budget: <150 ms; samples: ${farRoute.samples.map((value) => value.toFixed(1)).join(', ')})`,
   );
-  assert.ok(searchMs < 1000, `20 searches took ${searchMs.toFixed(1)} ms (budget: <1000 ms)`);
+  assert.ok(searchMs < 1000, `25 searches took ${searchMs.toFixed(1)} ms (budget: <1000 ms)`);
 
   console.log([
     'routing-performance',
     `validation=${validationMs.toFixed(1)}ms`,
     `defaultMedian=${defaultRoute.medianMs.toFixed(1)}ms`,
     `farMedian=${farRoute.medianMs.toFixed(1)}ms`,
-    `search20=${searchMs.toFixed(1)}ms`,
+    `search25=${searchMs.toFixed(1)}ms`,
   ].join(' '));
 });
