@@ -76,6 +76,45 @@ test('a booking outside the service area is rejected before any ride is created'
   assert.equal(await backend.models.Ride.countDocuments({ passengerId: String(passenger.user.id) }), 0);
 });
 
+test('General Trias matching offers the nearest driver inside the city and radius, then the next one', async () => {
+  // Real places around the CvSU General Trias pickup.
+  const spots = {
+    cityHall: { latitude: 14.386264, longitude: 120.880802 }, // 142 m
+    tanza: { latitude: 14.385026, longitude: 120.86 }, // 2.2 km, outside General Trias
+    annunciation: { latitude: 14.362451, longitude: 120.89572 }, // 3.0 km
+    vistaMall: { latitude: 14.324209, longitude: 120.912052 }, // 7.6 km, beyond the 5 km radius
+  };
+  const passenger = await account(), drivers = {};
+  for (const [name, coordinate] of Object.entries(spots)) {
+    drivers[name] = await account('driver');
+    await connect(drivers[name].token);
+    assert.equal((await request('/driver/location', drivers[name].token, { ...fix(), ...coordinate })).status, 200);
+    assert.equal((await request('/driver/availability', drivers[name].token, { available: true })).status, 200);
+  }
+  const booked = await book(passenger);
+  assert.equal(booked.status, 201);
+  const rideId = booked.body.ride.id;
+
+  const first = (await state(drivers.cityHall)).offer;
+  assert.equal(first?.id, rideId, 'the closest driver is offered first');
+  for (const name of ['tanza', 'annunciation', 'vistaMall']) assert.equal((await state(drivers[name])).offer, null, `${name} waits`);
+  assert.equal((await action(drivers.cityHall, rideId, 'decline', { offerId: first.offerId })).status, 200);
+
+  const second = (await state(drivers.annunciation)).offer;
+  assert.equal(second?.id, rideId, 'the next driver inside General Trias is offered, skipping Tanza');
+  assert.equal((await state(drivers.tanza)).offer, null);
+  assert.equal((await state(drivers.vistaMall)).offer, null);
+  assert.equal((await state(drivers.cityHall)).offer, null, 'a driver who declined is not asked again');
+
+  assert.equal((await action(drivers.annunciation, rideId, 'accept', { offerId: second.offerId })).body.ride.status, 'accepted');
+  for (const step of ['arrive', 'start', 'complete']) assert.equal((await action(drivers.annunciation, rideId, step)).status, 200);
+  const done = await backend.models.Ride.findById(rideId);
+  assert.equal(done.status, 'completed');
+  assert.equal(done.driverId, String(drivers.annunciation.user.id));
+  assert.deepEqual(done.attemptedDrivers, [String(drivers.cityHall.user.id), String(drivers.annunciation.user.id)]);
+  for (const driver of Object.values(drivers)) await request('/driver/availability', driver.token, { available: false });
+});
+
 test('auth validates credentials, returns stored identity, rejects foreign roles and revokes sessions', async () => {
   const passenger = await account();
   assert.equal(passenger.user.firstName, 'Test');
