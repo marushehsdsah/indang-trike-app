@@ -42,8 +42,11 @@ export default function DriverScreen({ navigation }) {
     </View>
     <View style={{ flex: 1 }}>
       <RouteMap pickup={offer?.trip.pickup} destination={offer?.trip.dropoff} route={offer?.route} currentLocation={fresh ? gps.fix : null} bottomInset={sheetHeight}>
+        {/* MapLibre draws a marker into a bitmap on every layout and crashes on a
+            zero-width one, which a bare icon (text) can briefly have; the
+            fixed-size frame never does. */}
         {fresh && <ViewAnnotation lngLat={[gps.fix.longitude, gps.fix.latitude]} title="Your GPS location" anchor="center">
-          <MaterialCommunityIcons name="rickshaw" size={32} color={COLORS.brand} />
+          <View style={styles.gpsMarker}><MaterialCommunityIcons name="rickshaw" size={32} color={COLORS.brand} /></View>
         </ViewAnnotation>}
       </RouteMap>
       <View style={styles.connection}><ConnectionBanner /></View>
@@ -78,6 +81,7 @@ export default function DriverScreen({ navigation }) {
   </Screen>;
 }
 const styles = StyleSheet.create({
+  gpsMarker: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   header: { flexDirection: 'row', alignItems: 'center', padding: SPACE.lg, backgroundColor: COLORS.surface },
   status: { paddingHorizontal: SPACE.md, paddingVertical: SPACE.sm, backgroundColor: COLORS.surfaceAlt, borderRadius: RADIUS.pill },
   online: { backgroundColor: COLORS.brandTint }, connection: { position: 'absolute', top: SPACE.md, left: SPACE.md, right: SPACE.md },
