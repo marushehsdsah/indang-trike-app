@@ -1,8 +1,8 @@
 // The pilot runs in General Trias for now, so the INDANG_* names below hold
 // General Trias. To switch back, require indang-municipality.json here, set the
-// name to 'Indang', restore the CvSU Main Campus -> Harasan default trip and the
-// PassengerScreen shortcuts, and point data/roadNetwork.js and the tests at the
-// Indang graph.
+// name to 'Indang', set the match radius back to 5 km, restore the CvSU Main
+// Campus -> Harasan default trip and the PassengerScreen shortcuts, and point
+// data/roadNetwork.js and the tests at the Indang graph.
 const municipality = require('../assets/geo/general-trias-municipality.json');
 const {
   createMapPolygons,
@@ -14,6 +14,11 @@ const {
 
 // Shown wherever the app names its service area, e.g. "You are outside ...".
 const SERVICE_AREA_NAME = 'General Trias';
+// Drivers within this straight-line distance of a pickup can be offered the
+// ride. General Trias runs about 22 km north to south, so 8 km lets drivers in
+// the town centre reach southern pickups such as Vista Mall (7.6 km); Indang,
+// about 13 km across, used 5 km.
+const MATCH_RADIUS_METERS = 8000;
 const INDANG_POLYGONS = createMapPolygons(municipality);
 const { northEast, southWest } = getBoundsForPolygons(INDANG_POLYGONS);
 // Where maps open: [west, south, east, north].
@@ -57,6 +62,7 @@ module.exports = {
   INDANG_MASK_SHAPE,
   INDANG_MIN_ZOOM,
   INDANG_POLYGONS,
+  MATCH_RADIUS_METERS,
   SERVICE_AREA_NAME,
   isInIndangServiceArea,
 };

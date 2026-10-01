@@ -82,7 +82,7 @@ test('General Trias matching offers the nearest driver inside the city and radiu
     cityHall: { latitude: 14.386264, longitude: 120.880802 }, // 142 m
     tanza: { latitude: 14.385026, longitude: 120.86 }, // 2.2 km, outside General Trias
     annunciation: { latitude: 14.362451, longitude: 120.89572 }, // 3.0 km
-    vistaMall: { latitude: 14.324209, longitude: 120.912052 }, // 7.6 km, beyond the 5 km radius
+    manggahan: { latitude: 14.291231, longitude: 120.910972 }, // 10.9 km, beyond the 8 km radius
   };
   const passenger = await account(), drivers = {};
   for (const [name, coordinate] of Object.entries(spots)) {
@@ -97,13 +97,13 @@ test('General Trias matching offers the nearest driver inside the city and radiu
 
   const first = (await state(drivers.cityHall)).offer;
   assert.equal(first?.id, rideId, 'the closest driver is offered first');
-  for (const name of ['tanza', 'annunciation', 'vistaMall']) assert.equal((await state(drivers[name])).offer, null, `${name} waits`);
+  for (const name of ['tanza', 'annunciation', 'manggahan']) assert.equal((await state(drivers[name])).offer, null, `${name} waits`);
   assert.equal((await action(drivers.cityHall, rideId, 'decline', { offerId: first.offerId })).status, 200);
 
   const second = (await state(drivers.annunciation)).offer;
   assert.equal(second?.id, rideId, 'the next driver inside General Trias is offered, skipping Tanza');
   assert.equal((await state(drivers.tanza)).offer, null);
-  assert.equal((await state(drivers.vistaMall)).offer, null);
+  assert.equal((await state(drivers.manggahan)).offer, null);
   assert.equal((await state(drivers.cityHall)).offer, null, 'a driver who declined is not asked again');
 
   assert.equal((await action(drivers.annunciation, rideId, 'accept', { offerId: second.offerId })).body.ride.status, 'accepted');
@@ -113,6 +113,20 @@ test('General Trias matching offers the nearest driver inside the city and radiu
   assert.equal(done.driverId, String(drivers.annunciation.user.id));
   assert.deepEqual(done.attemptedDrivers, [String(drivers.cityHall.user.id), String(drivers.annunciation.user.id)]);
   for (const driver of Object.values(drivers)) await request('/driver/availability', driver.token, { available: false });
+});
+
+test('a southern General Trias pickup reaches a driver waiting in the town centre', async () => {
+  const passenger = await account(), driver = await account('driver');
+  await connect(driver.token);
+  // General Trias City Hall, 7.7 km from the Vista Mall terminal pickup.
+  assert.equal((await request('/driver/location', driver.token, { ...fix(), latitude: 14.386264, longitude: 120.880802 })).status, 200);
+  assert.equal((await request('/driver/availability', driver.token, { available: true })).status, 200);
+  const southbound = { pickup: DEFAULT_TRIP.dropoff, dropoff: DEFAULT_TRIP.pickup };
+  const booked = await request('/rides', passenger.token, { trip: southbound, passengers: 1, note: '', idempotencyKey: randomUUID() });
+  assert.equal(booked.status, 201, JSON.stringify(booked.body));
+  assert.equal((await state(driver)).offer?.id, booked.body.ride.id);
+  await action(passenger, booked.body.ride.id, 'cancel');
+  await request('/driver/availability', driver.token, { available: false });
 });
 
 test('auth validates credentials, returns stored identity, rejects foreign roles and revokes sessions', async () => {
