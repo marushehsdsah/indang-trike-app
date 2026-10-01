@@ -7,6 +7,7 @@ const { createModels } = require('./models');
 const { createAuth } = require('./auth');
 const { createDispatch } = require('./dispatch');
 const { requireValue, profileFields, publicUser } = require('./policy');
+const { SERVICE_AREA_NAME } = require('../data/indangMap');
 
 async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://127.0.0.1:27017/indang_trike_db', clock = Date.now, dispatchOptions } = {}) {
   const connection = await mongoose.createConnection(mongoUri, { serverSelectionTimeoutMS: 5000 }).asPromise();
@@ -29,7 +30,8 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
     if (entry.count > 15) return res.status(429).json({ error: 'Too many attempts. Try again in five minutes.' });
     next();
   });
-  app.get('/api/health', (req, res) => res.status(connection.readyState === 1 ? 200 : 503).json({ ok: connection.readyState === 1 }));
+  // serviceArea shows which municipality a deployed server accepts bookings in.
+  app.get('/api/health', (req, res) => res.status(connection.readyState === 1 ? 200 : 503).json({ ok: connection.readyState === 1, serviceArea: SERVICE_AREA_NAME }));
   app.post('/api/register', async (req, res) => res.status(201).json({ user: await auth.register(req.body), message: 'Account created successfully.' }));
   app.post('/api/login', async (req, res) => res.json(await auth.login(req.body)));
   app.use('/api', auth.middleware);

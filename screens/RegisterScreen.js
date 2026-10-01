@@ -10,6 +10,7 @@ import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
 import { SegmentedControl } from '../components/ui/Surfaces';
 import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
+import { SERVICE_AREA_NAME } from '../data/indangMap';
 import { successFeedback, warningFeedback } from '../utils/feedback';
 import { getApiBaseUrl, submitRegistration } from '../utils/registration';
 
@@ -77,7 +78,7 @@ export default function RegisterScreen({ navigation }) {
         >
           <Text style={TYPE.title}>{role === 'driver' ? 'Join as a driver' : 'Let’s get you riding'}</Text>
           <Text style={[TYPE.bodyMuted, styles.subtitle]}>
-            {role === 'driver' ? 'Receive ride requests and guide passengers around Indang.' : 'Book a trike with a real driver in Indang.'}
+            {role === 'driver' ? `Receive ride requests and guide passengers around ${SERVICE_AREA_NAME}.` : `Book a trike with a real driver in ${SERVICE_AREA_NAME}.`}
           </Text>
           <SegmentedControl value={role} onChange={setRole} options={[{ value: 'passenger', label: 'Passenger' }, { value: 'driver', label: 'Driver' }]} style={{ marginBottom: SPACE.xl }} />
 

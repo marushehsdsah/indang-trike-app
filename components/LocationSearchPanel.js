@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Divider, ListRow } from './ui/Surfaces';
 import { COLORS, ELEVATION, HIT_SLOP, RADIUS, SPACE, TYPE } from '../theme';
+import { SERVICE_AREA_NAME } from '../data/indangMap';
 
 const ENDPOINT_NAMES = { pickup: 'pickup', destination: 'destination' };
 const SCHOOL_KINDS = new Set(['school', 'university', 'college', 'kindergarten']);
@@ -43,7 +44,7 @@ export default function LocationSearchPanel({
           style={[TYPE.body, styles.input]}
           value={query}
           onChangeText={onQueryChange}
-          placeholder={`Search ${endpointName} in Indang`}
+          placeholder={`Search ${endpointName} in ${SERVICE_AREA_NAME}`}
           placeholderTextColor={COLORS.inkMuted}
           autoFocus
           autoCorrect={false}
@@ -96,12 +97,12 @@ export default function LocationSearchPanel({
 
         {!hasQuery && (
           <Text style={[TYPE.caption, styles.hint]}>
-            Or type a place or road name to search Indang offline.
+            Or type a place or road name to search {SERVICE_AREA_NAME} offline.
           </Text>
         )}
 
         {hasQuery && results.length === 0 && (
-          <Text style={[TYPE.caption, styles.hint]}>No matching places in the offline Indang map.</Text>
+          <Text style={[TYPE.caption, styles.hint]}>No matching places in the offline {SERVICE_AREA_NAME} map.</Text>
         )}
 
         {hasQuery && results.map((place, index) => (

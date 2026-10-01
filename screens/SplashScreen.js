@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import Button from '../components/ui/Button';
 import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
+import { SERVICE_AREA_NAME } from '../data/indangMap';
 
 const HIGHLIGHTS = [
   { icon: 'map-marker-path', label: 'Road-accurate routes' },
@@ -28,7 +29,7 @@ export default function SplashScreen({ navigation }) {
         </View>
 
         <View style={styles.pitch}>
-          <Text style={styles.headline}>Tricycle rides{'\n'}across Indang.</Text>
+          <Text style={styles.headline}>Tricycle rides{'\n'}across {SERVICE_AREA_NAME}.</Text>
           <Text style={styles.subhead}>
             Book a trike, follow the real road route, and know the fare before you ride.
           </Text>

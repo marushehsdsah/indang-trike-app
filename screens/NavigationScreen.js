@@ -11,7 +11,7 @@ import MapAttribution from '../components/MapAttribution';
 import RouteLine from '../components/RouteLine';
 import { NAVIGATION_STYLE_URL } from '../components/mapStyles';
 import { getManeuverIcon } from '../components/maneuverIcons';
-import { INDANG_MIN_ZOOM, isInIndangServiceArea } from '../data/indangMap';
+import { INDANG_MIN_ZOOM, SERVICE_AREA_NAME, isInIndangServiceArea } from '../data/indangMap';
 import { getRoadGraph } from '../data/roadNetwork';
 import { resolveBookingRoute } from '../utils/bookingRoute';
 import { haversineDistance } from '../utils/pathfinding';
@@ -59,7 +59,7 @@ const GPS_MESSAGES = {
   locating: 'Finding your location…',
   denied: 'Location access is off. Enable location permission in Settings.',
   unavailable: 'Your location is unavailable right now.',
-  outside: 'You are outside Indang. Head back to the blue route to resume guidance.',
+  outside: `You are outside ${SERVICE_AREA_NAME}. Head back to the blue route to resume guidance.`,
   'off-route': 'Off the route. Finding a new one…',
   'follow-route': 'Head to the blue route to start the new directions.',
   'no-route': 'No drivable route from here. Head back to the blue route.',

@@ -6,6 +6,7 @@ import Screen from '../components/ui/Screen';
 import IconButton from '../components/ui/IconButton';
 import { Avatar, Card, Chip, Divider, ListRow } from '../components/ui/Surfaces';
 import { preloadRoadGraph } from '../data/roadNetwork';
+import { SERVICE_AREA_NAME } from '../data/indangMap';
 import { COLORS, ELEVATION, RADIUS, SPACE, TYPE } from '../theme';
 import { tapFeedback } from '../utils/feedback';
 import { useApp } from '../context/AppContext';
@@ -17,9 +18,9 @@ import { ACTIVE_STATUSES, formatFare, userName } from '../utils/rideState';
 // Tapping any of these opens booking with the destination search already
 // filled in, so the rider never types a whole place name.
 const SHORTCUTS = [
-  { label: 'CvSU Main', icon: 'school-outline', query: 'Cavite State University' },
+  { label: 'CvSU Gentri', icon: 'school-outline', query: 'Cavite State University' },
   { label: 'Public market', icon: 'storefront-outline', query: 'Market' },
-  { label: 'Municipal hall', icon: 'office-building-outline', query: 'Municipal' },
+  { label: 'City hall', icon: 'office-building-outline', query: 'City Hall' },
 ];
 
 const GPS_RETRY_STATUSES = ['denied', 'approximate', 'disabled', 'unavailable', 'inaccurate', 'stale'];
@@ -29,8 +30,8 @@ const GPS_RETRY_STATUSES = ['denied', 'approximate', 'disabled', 'unavailable', 
 function GpsStatus({ gps }) {
   const ready = gps.status === 'ready', outside = ready && gps.inServiceArea === false;
   const retryable = GPS_RETRY_STATUSES.includes(gps.status);
-  const message = outside ? 'Live GPS · You are outside Indang. Tricycle rides can only be booked inside Indang.'
-    : ready ? 'Live GPS · You are in Indang.' : gps.message + (retryable ? ' Tap to retry.' : '');
+  const message = outside ? `Live GPS · You are outside ${SERVICE_AREA_NAME}. Tricycle rides can only be booked inside ${SERVICE_AREA_NAME}.`
+    : ready ? `Live GPS · You are in ${SERVICE_AREA_NAME}.` : gps.message + (retryable ? ' Tap to retry.' : '');
   const color = outside ? COLORS.danger : ready ? COLORS.brand : COLORS.inkMuted;
   return (
     <Pressable

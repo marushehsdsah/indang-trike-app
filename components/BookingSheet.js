@@ -41,13 +41,16 @@ export default function BookingSheet({
   onNoteChange,
   onConfirm,
   onPreviewRoute,
+  // Whether a drivable route exists. The guide runs on the phone, so it stays
+  // available while booking is not (offline, or the server is unreachable).
+  routeReady = state.canConfirm,
   bottomPadding = 0,
   onLayout,
 }) {
   const [noteOpen, setNoteOpen] = useState(Boolean(note));
   const canDecrease = passengers > MIN_PASSENGERS;
   const canIncrease = passengers < MAX_PASSENGERS;
-  const hasRoute = state.canConfirm;
+  const canBook = state.canConfirm;
 
   return (
     <Sheet style={[styles.sheet, { paddingBottom: bottomPadding + SPACE.lg }]} onLayout={onLayout}>
@@ -61,11 +64,11 @@ export default function BookingSheet({
         {onPreviewRoute && (
           <Pressable
             onPress={onPreviewRoute}
-            disabled={!hasRoute}
+            disabled={!routeReady}
             accessibilityRole="button"
             accessibilityLabel="Preview the route in the 3D route guide"
-            accessibilityState={{ disabled: !hasRoute }}
-            style={({ pressed }) => [styles.preview, !hasRoute && styles.previewDisabled, pressed && styles.pressed]}
+            accessibilityState={{ disabled: !routeReady }}
+            style={({ pressed }) => [styles.preview, !routeReady && styles.previewDisabled, pressed && styles.pressed]}
           >
             <MaterialCommunityIcons name="navigation-variant" size={15} color={COLORS.route} />
             <Text style={[TYPE.captionStrong, styles.previewText]}>GPS guide</Text>
@@ -129,9 +132,9 @@ export default function BookingSheet({
       )}
 
       <Button
-        label={hasRoute ? `Book trike · ${fare}` : 'Book trike'}
+        label={canBook ? `Book trike · ${fare}` : 'Book trike'}
         onPress={onConfirm}
-        disabled={!hasRoute}
+        disabled={!canBook}
         loading={submitting}
         trailingIcon="arrow-right"
         accessibilityLabel="Confirm and book tricycle"

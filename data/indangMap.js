@@ -1,4 +1,9 @@
-const indangMunicipality = require('../assets/geo/indang-municipality.json');
+// The pilot runs in General Trias for now, so the INDANG_* names below hold
+// General Trias. To switch back, require indang-municipality.json here, set the
+// name to 'Indang', restore the CvSU Main Campus -> Harasan default trip and the
+// PassengerScreen shortcuts, and point data/roadNetwork.js and the tests at the
+// Indang graph.
+const municipality = require('../assets/geo/general-trias-municipality.json');
 const {
   createMapPolygons,
   createOutsideMask,
@@ -7,7 +12,9 @@ const {
   toPolygonFeature,
 } = require('../utils/geojson');
 
-const INDANG_POLYGONS = createMapPolygons(indangMunicipality);
+// Shown wherever the app names its service area, e.g. "You are outside ...".
+const SERVICE_AREA_NAME = 'General Trias';
+const INDANG_POLYGONS = createMapPolygons(municipality);
 const { northEast, southWest } = getBoundsForPolygons(INDANG_POLYGONS);
 // Where maps open: [west, south, east, north].
 const INDANG_BOUNDS = [southWest.longitude, southWest.latitude, northEast.longitude, northEast.latitude];
@@ -22,16 +29,16 @@ const INDANG_BOUNDARY_SHAPE = { type: 'FeatureCollection', features: INDANG_POLY
 
 const DEFAULT_TRIP = {
   pickup: {
-    id: 'default/cvsu-main-campus',
-    name: 'CvSU Main Campus',
+    id: 'default/cvsu-general-trias-campus',
+    name: 'CvSU General Trias Campus',
     kind: 'university',
-    coordinate: { latitude: 14.197805, longitude: 120.881639 },
+    coordinate: { latitude: 14.385026, longitude: 120.880477 },
   },
   dropoff: {
-    id: 'default/harasan-cuevas-compound',
-    name: 'Harasan Cuevas Compound',
-    kind: 'residential',
-    coordinate: { latitude: 14.15988, longitude: 120.86997 },
+    id: 'default/vista-mall-general-trias-terminal',
+    name: 'Vista Mall General Trias Terminal',
+    kind: 'bus_station',
+    coordinate: { latitude: 14.324209, longitude: 120.912052 },
   },
 };
 
@@ -50,5 +57,6 @@ module.exports = {
   INDANG_MASK_SHAPE,
   INDANG_MIN_ZOOM,
   INDANG_POLYGONS,
+  SERVICE_AREA_NAME,
   isInIndangServiceArea,
 };

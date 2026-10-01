@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { loadSource, renderer, React } = require('./helpers/reactHarness');
+const { DEFAULT_TRIP } = require('../data/indangMap');
 
 const GRANTED = { status: 'granted', canAskAgain: true, android: { accuracy: 'fine' } };
 
@@ -27,9 +28,9 @@ function mountLiveLocation({ permission = GRANTED, afterRequest } = {}) {
   mounted.unmount = async () => { if (mounted.tree) await renderer.act(async () => mounted.tree.unmount()); };
   return mounted;
 }
-const position = (longitude, accuracy = 5, timestamp = Date.now()) => ({ timestamp, coords: { latitude: 14.197805, longitude, accuracy, speed: 0, heading: 0 } });
+const position = (longitude, accuracy = 5, timestamp = Date.now()) => ({ timestamp, coords: { latitude: DEFAULT_TRIP.pickup.coordinate.latitude, longitude, accuracy, speed: 0, heading: 0 } });
 
-test('GPS keeps tracking outside Indang and flags the fix as outside the service area', async () => {
+test('GPS keeps tracking outside the service area and flags the fix as outside the service area', async () => {
   const gps = mountLiveLocation();
   try {
     await gps.render();
@@ -38,7 +39,7 @@ test('GPS keeps tracking outside Indang and flags the fix as outside the service
     assert.equal(gps.value.inServiceArea, true);
     await gps.act(() => gps.update(position(121)));
     assert.equal(gps.value.status, 'ready');
-    assert.equal(gps.value.fix.longitude, 121, 'the measured position outside Indang is the current fix');
+    assert.equal(gps.value.fix.longitude, 121, 'the measured position outside the service area is the current fix');
     assert.equal(gps.value.inServiceArea, false);
   } finally { await gps.unmount(); }
 });

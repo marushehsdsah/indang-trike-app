@@ -11,7 +11,7 @@ let searchablePlaces = null;
 // warm it with preloadRoadGraph while idle so the first route is not slowed.
 function getRoadGraph() {
   if (!roadGraph) {
-    roadGraph = loadRoadGraph(require('../assets/routing/indang-road-graph.json'));
+    roadGraph = loadRoadGraph(require('../assets/routing/general-trias-road-graph.json'));
     if (roadGraph.status === 'ready') compileGraph(roadGraph.graph);
   }
   return roadGraph;

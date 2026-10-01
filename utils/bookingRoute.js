@@ -1,5 +1,6 @@
 const { calculateRoute } = require('./roadGraph');
 const { buildRouteDirections } = require('./routeDirections');
+const { SERVICE_AREA_NAME } = require('../data/indangMap');
 
 const NO_METRIC = '—';
 const MIN_PASSENGERS = 1;
@@ -22,8 +23,8 @@ function getBookingState(routeResult, routeDetails) {
       return blocked(CALCULATING_MESSAGE);
     case 'outside-service-area':
       return blocked(endpoint
-        ? `${endpoint} is outside the Indang service area. Choose a point inside Indang.`
-        : 'Choose points inside the Indang service area.');
+        ? `${endpoint} is outside the ${SERVICE_AREA_NAME} service area. Choose a point inside ${SERVICE_AREA_NAME}.`
+        : `Choose points inside the ${SERVICE_AREA_NAME} service area.`);
     case 'unsnappable':
       return blocked(`${endpoint ?? 'A stop'} is too far from a road. Choose a point nearer a road.`);
     case 'no-route':

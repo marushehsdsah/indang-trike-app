@@ -8,12 +8,13 @@ import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
 import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
 import { useApp } from '../context/AppContext';
+import { SERVICE_AREA_NAME } from '../data/indangMap';
 
 export default function LoginScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
-  const { signIn, error: sessionError, restore } = useApp();
+  const { signIn, error: sessionError, online, restore } = useApp();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const login = async () => {
@@ -45,7 +46,7 @@ export default function LoginScreen({ navigation }) {
               <MaterialCommunityIcons name="rickshaw" size={24} color={COLORS.brand} />
             </View>
             <Text style={styles.heroTitle}>Welcome back</Text>
-            <Text style={styles.heroSub}>Sign in to ride or drive around Indang.</Text>
+            <Text style={styles.heroSub}>Sign in to ride or drive around {SERVICE_AREA_NAME}.</Text>
           </LinearGradient>
 
           <View style={styles.body}>
@@ -71,6 +72,7 @@ export default function LoginScreen({ navigation }) {
               />
 
               {(error || sessionError) && <Text accessibilityRole="alert" style={[TYPE.caption, { color: COLORS.danger, marginBottom: SPACE.md }]}>{error || sessionError}</Text>}
+              {!online && <Text style={[TYPE.caption, { marginBottom: SPACE.md }]}>You are offline. Logging in needs internet; after that, IndangGO opens without internet for up to 7 days.</Text>}
               {sessionError && <Button label="Retry saved session" variant="ghost" size="sm" onPress={restore} />}
               <Button label="Log in" trailingIcon="arrow-right" loading={submitting} onPress={login} />
             </View>

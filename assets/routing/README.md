@@ -169,3 +169,34 @@ WSL_ETH0_ADDRESS=$(ip -4 addr show eth0 | awk '/inet / { sub(/\/.*/, "", $2); pr
 Keep the `--localhost` flag: ADB reverse makes the API at port 3000 and Metro
 at port 8081 reachable from the emulator even though the explicit Expo deep
 link uses WSL's current address to work around incorrect host selection.
+
+# General Trias offline road graph (pilot)
+
+`general-trias-road-graph.json` is the graph the app currently ships: the pilot
+runs in General Trias for now (see `data/indangMap.js`). The Indang graph above
+stays in the repository for switching back. The graph was built the same way,
+with `--municipality assets/geo/general-trias-municipality.json`.
+
+| Field | Value |
+| --- | --- |
+| Snapshot timestamp (`osm3s.timestamp_osm_base`) | `2026-10-01T06:32:36Z` |
+| Bounding box (south, west, north, east) | `14.220186, 120.859841, 14.417857, 120.932959` |
+| Clip polygon | `assets/geo/general-trias-municipality.json` (PSGC `0402108000`) |
+| Raw snapshot SHA-256 | `d0f5fc809822f8ab90984078979d43df774ba1185e371c5458fc4e5e8d3e8a55` |
+
+| Nodes | Directed edges | Places | Bytes |
+| ---: | ---: | ---: | ---: |
+| 27,980 | 58,116 | 2,356 | 6,055,457 |
+
+Of the 27,980 nodes, 27,896 form one connected road network; the other 84 are
+13 small fragments. The Overpass query is the Indang one above with the
+General Trias bounding box. General Trias is long and slanted, so its
+bounding-box corners are more than 750 m from any road; the performance test
+routes between the network's northern and southern tips (about 26 km by road)
+instead.
+
+```bash
+node scripts/build-road-graph.js --input /tmp/general-trias-overpass.json \
+  --output assets/routing/general-trias-road-graph.json \
+  --municipality assets/geo/general-trias-municipality.json
+```

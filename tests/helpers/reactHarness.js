@@ -23,11 +23,15 @@ async function flush() { await renderer.act(async () => { await new Promise((res
 
 const GPS_OFF = { fix: null, status: 'idle', retry: () => {}, getCurrentFix: async () => null };
 
-async function mountApp(service, role = 'passenger', gps = GPS_OFF) {
+// options: savedToken (in SecureStore), cache (the offline copy), online.
+async function mountApp(service, role = 'passenger', gps = GPS_OFF, options = {}) {
   const stateEvents = new EventEmitter(), sockets = [];
   const account = { id: 'account-one', firstName: 'Real', lastName: 'User', role, available: false, profileComplete: true };
   const snapshot = { user: account, ride: null, offer: null, lastRide: null, serverTime: Date.now() };
   const location = { current: gps };
+  const secure = { token: options.savedToken ?? null }, stored = { cache: options.cache ?? null };
+  const network = { listener: null, setOnline(online) { network.listener?.({ isConnected: online, isInternetReachable: online }); } };
+  const copy = (value) => value && JSON.parse(JSON.stringify(value));
   const requestApi = async (route, options) => {
     const supplied = service?.(route, options, snapshot);
     if (supplied !== undefined) return supplied;
@@ -39,7 +43,16 @@ async function mountApp(service, role = 'passenger', gps = GPS_OFF) {
   };
   const mocks = {
     'react-native': { AppState: { currentState: 'active', addEventListener: (name, handler) => { stateEvents.on(name, handler); return { remove: () => stateEvents.off(name, handler) }; } } },
-    'expo-secure-store': { getItemAsync: async () => null, setItemAsync: async () => {}, deleteItemAsync: async () => {} },
+    'expo-secure-store': { getItemAsync: async () => secure.token, setItemAsync: async (key, value) => { secure.token = value; }, deleteItemAsync: async () => { secure.token = null; } },
+    '@react-native-community/netinfo': { __esModule: true, default: { addEventListener: (listener) => {
+      network.listener = listener; listener({ isConnected: options.online ?? true, isInternetReachable: options.online ?? true });
+      return () => { network.listener = null; };
+    } } },
+    '../services/sessionCache': {
+      readSessionCache: () => copy(stored.cache), writeSessionCache: (cache) => { stored.cache = copy(cache); },
+      updateSessionCache: (userId, patch) => { if (stored.cache?.user?.id === userId) stored.cache = { ...stored.cache, ...copy(patch) }; },
+      clearSessionCache: () => { stored.cache = null; },
+    },
     'socket.io-client': { io: () => {
       const socket = new EventEmitter(); socket.disconnect = () => socket.emit('disconnect', 'io client disconnect'); sockets.push(socket);
       queueMicrotask(() => socket.emit('connect')); return socket;
@@ -52,7 +65,7 @@ async function mountApp(service, role = 'passenger', gps = GPS_OFF) {
   function Consumer() { value = useApp(); return null; }
   await renderer.act(async () => { tree = renderer.create(React.createElement(AppProvider, null, React.createElement(Consumer))); });
   await flush();
-  return { get value() { return value; }, snapshot, account, sockets, stateEvents, location,
+  return { get value() { return value; }, snapshot, account, sockets, stateEvents, location, secure, stored, network,
     close: async () => renderer.act(async () => tree.unmount()) };
 }
 
