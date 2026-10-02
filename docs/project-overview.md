@@ -93,10 +93,10 @@ The nearest eligible driver within 5 km receives an exclusive 20-second offer;
 searching lasts up to 120 seconds. Eligibility requires availability, capacity,
 connection, and fresh, accurate GPS inside Indang. Database unique indexes,
 idempotent bookings, and ordered transitions prevent duplicate assignments.
-Driver GPS is shared only with the assigned passenger. Passenger GPS runs
-whenever the passenger app is open and is shared only with the driver holding
-their ride (accepted through completion). Backgrounding the app stops new
-matching without discarding an assigned trip.
+Both roles publish GPS while the app is open for the protected
+[God view dashboard](god-view.md). Private ride updates reach only the assigned
+passenger or driver (accepted through completion). Backgrounding the app stops
+location publication and new matching without discarding an assigned trip.
 
 ### 1.7 Tests
 

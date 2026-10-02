@@ -7,6 +7,7 @@ import Field from '../components/ui/Field';
 import { Avatar, Card } from '../components/ui/Surfaces';
 import BottomNav from '../components/BottomNav';
 import ConnectionBanner from '../components/ConnectionBanner';
+import OfflineMapCard from '../components/OfflineMapCard';
 import { useApp } from '../context/AppContext';
 import useAccountHistory from '../hooks/useAccountHistory';
 import { formatFare, userName } from '../utils/rideState';
@@ -60,6 +61,7 @@ export default function ProfileScreen({ navigation }) {
             <Button label="Edit profile" variant="secondary" onPress={() => setEditing(true)} style={{ marginTop: SPACE.lg }} />
           </>}
         </Card>
+        <OfflineMapCard style={styles.section} />
         <Text style={[TYPE.caption, { marginVertical: SPACE.lg }]}>Location is used while this app is open. Drivers must keep the app open to receive requests and share live trip location.</Text>
         <Button label="Log out" variant="danger" onPress={() => signOut().catch(() => Alert.alert('Logged out on this device', 'The server could not be reached. Your local session has been removed.'))} />
       </ScrollView>

@@ -13,6 +13,7 @@ const {
 } = require('../utils/bookingRoute');
 const { loadRoadGraph } = require('../utils/roadGraph');
 const { buildRoadGraph } = require('../scripts/build-road-graph');
+const { createMapPolygons, isCoordinateInPolygons } = require('../utils/geojson');
 const { DEFAULT_TRIP, isInIndangServiceArea } = require('../data/indangMap');
 
 const NO_METRICS = { distanceLabel: '—', durationLabel: '—' };
@@ -47,7 +48,7 @@ test('describes every booking state with literal copy', () => {
   });
   assert.deepEqual(getBookingState({ status: 'outside-service-area', endpoint: 'destination' }), {
     canConfirm: false,
-    message: 'Destination is outside the Indang service area. Choose a point inside Indang.',
+    message: 'Destination is outside Indang and General Trias. Choose a point inside Indang or General Trias.',
     ...NO_METRICS,
   });
   assert.deepEqual(getBookingState({ status: 'unsnappable', endpoint: 'pickup' }), {
@@ -157,7 +158,7 @@ test('requires a calculated route and named endpoints', () => {
 });
 
 test('books the default trip with the production road route', () => {
-  const roadGraph = loadRoadGraph(require('../assets/routing/indang-road-graph.json'));
+  const roadGraph = loadRoadGraph(require('../assets/routing/service-area-road-graph.json'));
   const result = resolveBookingRoute({
     roadGraph,
     pickup: DEFAULT_TRIP.pickup,
@@ -190,16 +191,16 @@ test('books the default trip with the production road route', () => {
 });
 
 test('resolves booking routes to each failure state', () => {
-  const fixtureGraph = loadRoadGraph(buildRoadGraph(
-    require('./fixtures/indang-osm-small.json'),
-    require('../assets/geo/indang-municipality.json'),
-  ));
+  // The fixture is Indang data, so check it against Indang whatever area the app serves.
+  const indang = require('../assets/geo/indang-municipality.json');
+  const indangPolygons = createMapPolygons(indang);
+  const fixtureGraph = loadRoadGraph(buildRoadGraph(require('./fixtures/indang-osm-small.json'), indang));
   const at = (latitude, longitude) => ({ name: 'Pin', coordinate: { latitude, longitude } });
   const resolve = (roadGraph, pickup, destination) => resolveBookingRoute({
     roadGraph,
     pickup,
     destination,
-    isInServiceArea: isInIndangServiceArea,
+    isInServiceArea: (coordinate) => isCoordinateInPolygons(coordinate, indangPolygons),
   });
   const nearNode1 = at(14.19505, 120.88);
   const nearNode9 = at(14.19905, 120.881);
@@ -217,7 +218,7 @@ test('resolves booking routes to each failure state', () => {
     endpoint: 'destination',
   });
   // Harasan is inside Indang but kilometres from the fixture's few roads.
-  assert.deepEqual(resolve(fixtureGraph, nearNode9, DEFAULT_TRIP.dropoff), {
+  assert.deepEqual(resolve(fixtureGraph, nearNode9, at(14.15988, 120.86997)), {
     status: 'unsnappable',
     endpoint: 'destination',
   });

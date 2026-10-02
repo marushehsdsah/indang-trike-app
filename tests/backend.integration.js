@@ -9,11 +9,12 @@ let backend, base, sequence = 1000000;
 let now = Date.now();
 const sockets = [];
 const dbName = `indang_test_${randomUUID().replaceAll('-', '')}`;
-const fix = (latitude = 14.197805) => ({ latitude, longitude: 120.881639, accuracy: 5, timestamp: now, speed: 0, heading: 0 });
+const adminPhone = '09179999999';
+const fix = (latitude = 14.385026) => ({ latitude, longitude: 120.880477, accuracy: 5, timestamp: now, speed: 0, heading: 0 });
 
 before(async () => {
   const mongoRoot = process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017';
-  backend = await createBackend({ mongoUri: `${mongoRoot}/${dbName}`, clock: () => now });
+  backend = await createBackend({ mongoUri: `${mongoRoot}/${dbName}`, clock: () => now, adminPhones: adminPhone });
   await new Promise((resolve) => backend.server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${backend.server.address().port}`;
 });
@@ -34,8 +35,8 @@ async function request(path, token, body, method = body ? 'POST' : 'GET') {
   });
   return { status: response.status, body: await response.json() };
 }
-async function account(role = 'passenger') {
-  const phone = `0917${sequence++}`;
+async function account(role = 'passenger', phoneOverride) {
+  const phone = phoneOverride || `0917${sequence++}`;
   const result = await request('/register', null, {
     phone, password: 'strong-password', firstName: 'Test', lastName: role, email: `${sequence}@example.com`, role,
     ...(role === 'driver' ? { plate: `TEST-${sequence}`, toda: 'Test TODA', capacity: 4 } : {}),
@@ -62,6 +63,145 @@ async function book(passenger, key = randomUUID()) {
 }
 async function state(accountValue) { return (await request('/state', accountValue.token)).body; }
 async function action(accountValue, rideId, name, body = {}) { return request(`/rides/${rideId}/${name}`, accountValue.token, body); }
+
+test('health reports the database and the service area bookings are accepted in', async () => {
+  assert.deepEqual(await request('/health'), { status: 200, body: { ok: true, serviceArea: 'Indang and General Trias' } });
+});
+
+test('the separate God view website may call the API, but every overview needs admin authorization', async () => {
+  // The dashboard is its own website (web/god-view); the API no longer serves it.
+  assert.equal((await fetch(`${base}/god-view/`)).status, 404);
+  const preflight = await fetch(`${base}/api/admin/overview`, { method: 'OPTIONS', headers: {
+    Origin: 'https://god-view.example', 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'authorization' } });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-origin'), '*');
+  assert.match(preflight.headers.get('access-control-allow-headers'), /authorization/i);
+  assert.equal((await request('/admin/overview')).status, 401);
+  const ordinary = await account();
+  assert.equal((await request('/admin/overview', ordinary.token)).status, 403);
+  const admin = await account('passenger', adminPhone);
+  const initial = await request('/admin/overview', admin.token);
+  assert.equal(initial.status, 200);
+  assert.equal(initial.body.users.some(item => item.id === admin.user.id), false, 'dashboard login is not mobile presence');
+  const first = await connect(ordinary.token), second = await connect(ordinary.token);
+  assert.equal((await request('/passenger/location', ordinary.token, fix())).status, 200);
+  const snapshot = (await request('/admin/overview', admin.token)).body;
+  const person = snapshot.users.find(item => item.id === ordinary.user.id);
+  assert.equal(person.locationStatus, 'live');
+  assert.equal(person.location.latitude, fix().latitude);
+  assert.equal(Object.hasOwn(person, 'phone'), false);
+  assert.equal(Object.hasOwn(person, 'password'), false);
+  first.disconnect();
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.ok((await request('/admin/overview', admin.token)).body.users.some(item => item.id === ordinary.user.id));
+  await request('/passenger/location/unavailable', ordinary.token, {});
+  assert.equal((await request('/admin/overview', admin.token)).body.users.find(item => item.id === ordinary.user.id).locationStatus, 'unavailable');
+  second.disconnect();
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal((await request('/admin/overview', admin.token)).body.users.some(item => item.id === ordinary.user.id), false);
+  await request('/logout', admin.token, {});
+  assert.equal((await request('/admin/overview', admin.token)).status, 401);
+});
+
+test('a booking outside both towns, or between them, is rejected before any ride is created', async () => {
+  const passenger = await account();
+  const book = (dropoff) => request('/rides', passenger.token, {
+    trip: { pickup: DEFAULT_TRIP.pickup, dropoff: { name: 'Elsewhere', coordinate: dropoff } }, passengers: 1, note: '', idempotencyKey: randomUUID(),
+  });
+  // Tanza, just west of General Trias.
+  const outside = await book({ latitude: 14.385026, longitude: 120.86 });
+  assert.equal(outside.status, 400);
+  assert.equal(outside.body.error, 'Pickup and destination must be inside Indang or General Trias.');
+  // CvSU Main Campus in Indang: inside the service area, but another town.
+  const crossTown = await book({ latitude: 14.197805, longitude: 120.881639 });
+  assert.equal(crossTown.status, 400);
+  assert.equal(crossTown.body.error, 'Pickup and destination must be in the same town.');
+  assert.equal(await backend.models.Ride.countDocuments({ passengerId: String(passenger.user.id) }), 0);
+});
+
+test('an Indang pickup is offered only to Indang drivers within Indang\'s 5 km radius', async () => {
+  // A pickup 330 m inside Indang, near where the towns are closest.
+  const trip = {
+    pickup: { name: 'Near the General Trias boundary', coordinate: { latitude: 14.222498, longitude: 120.893654 } },
+    dropoff: { name: 'CvSU Main Campus', coordinate: { latitude: 14.197805, longitude: 120.881639 } },
+  };
+  const spots = {
+    generalTrias: { latitude: 14.227011, longitude: 120.899407 }, // 0.8 km, but in General Trias
+    cvsuMain: { latitude: 14.197805, longitude: 120.881639 }, // 3.0 km, in Indang
+    harasan: { latitude: 14.15988, longitude: 120.86997 }, // 7.4 km: beyond 5 km, though within General Trias' 8 km
+  };
+  const passenger = await account(), drivers = {};
+  for (const [name, coordinate] of Object.entries(spots)) {
+    drivers[name] = await account('driver');
+    await connect(drivers[name].token);
+    assert.equal((await request('/driver/location', drivers[name].token, { ...fix(), ...coordinate })).status, 200);
+    assert.equal((await request('/driver/availability', drivers[name].token, { available: true })).status, 200);
+  }
+  const booked = await request('/rides', passenger.token, { trip, passengers: 1, note: '', idempotencyKey: randomUUID() });
+  assert.equal(booked.status, 201, JSON.stringify(booked.body));
+  const rideId = booked.body.ride.id;
+  assert.equal((await state(drivers.cvsuMain)).offer?.id, rideId, 'the nearest Indang driver is offered');
+  assert.equal((await state(drivers.generalTrias)).offer, null, 'a closer driver in the other town is not');
+  const offer = (await state(drivers.cvsuMain)).offer;
+  assert.equal((await action(drivers.cvsuMain, rideId, 'decline', { offerId: offer.offerId })).status, 200);
+  assert.equal((await state(drivers.harasan)).offer, null, 'nobody beyond Indang\'s radius is asked');
+  assert.equal((await state(drivers.generalTrias)).offer, null);
+  await action(passenger, rideId, 'cancel');
+  for (const driver of Object.values(drivers)) await request('/driver/availability', driver.token, { available: false });
+});
+
+test('General Trias matching offers the nearest driver inside the city and radius, then the next one', async () => {
+  // Real places around the CvSU General Trias pickup.
+  const spots = {
+    cityHall: { latitude: 14.386264, longitude: 120.880802 }, // 142 m
+    tanza: { latitude: 14.385026, longitude: 120.86 }, // 2.2 km, outside General Trias
+    annunciation: { latitude: 14.362451, longitude: 120.89572 }, // 3.0 km
+    manggahan: { latitude: 14.291231, longitude: 120.910972 }, // 10.9 km, beyond the 8 km radius
+  };
+  const passenger = await account(), drivers = {};
+  for (const [name, coordinate] of Object.entries(spots)) {
+    drivers[name] = await account('driver');
+    await connect(drivers[name].token);
+    assert.equal((await request('/driver/location', drivers[name].token, { ...fix(), ...coordinate })).status, 200);
+    assert.equal((await request('/driver/availability', drivers[name].token, { available: true })).status, 200);
+  }
+  const booked = await book(passenger);
+  assert.equal(booked.status, 201);
+  const rideId = booked.body.ride.id;
+
+  const first = (await state(drivers.cityHall)).offer;
+  assert.equal(first?.id, rideId, 'the closest driver is offered first');
+  for (const name of ['tanza', 'annunciation', 'manggahan']) assert.equal((await state(drivers[name])).offer, null, `${name} waits`);
+  assert.equal((await action(drivers.cityHall, rideId, 'decline', { offerId: first.offerId })).status, 200);
+
+  const second = (await state(drivers.annunciation)).offer;
+  assert.equal(second?.id, rideId, 'the next driver inside General Trias is offered, skipping Tanza');
+  assert.equal((await state(drivers.tanza)).offer, null);
+  assert.equal((await state(drivers.manggahan)).offer, null);
+  assert.equal((await state(drivers.cityHall)).offer, null, 'a driver who declined is not asked again');
+
+  assert.equal((await action(drivers.annunciation, rideId, 'accept', { offerId: second.offerId })).body.ride.status, 'accepted');
+  for (const step of ['arrive', 'start', 'complete']) assert.equal((await action(drivers.annunciation, rideId, step)).status, 200);
+  const done = await backend.models.Ride.findById(rideId);
+  assert.equal(done.status, 'completed');
+  assert.equal(done.driverId, String(drivers.annunciation.user.id));
+  assert.deepEqual(done.attemptedDrivers, [String(drivers.cityHall.user.id), String(drivers.annunciation.user.id)]);
+  for (const driver of Object.values(drivers)) await request('/driver/availability', driver.token, { available: false });
+});
+
+test('a southern General Trias pickup reaches a driver waiting in the town centre', async () => {
+  const passenger = await account(), driver = await account('driver');
+  await connect(driver.token);
+  // General Trias City Hall, 7.7 km from the Vista Mall terminal pickup.
+  assert.equal((await request('/driver/location', driver.token, { ...fix(), latitude: 14.386264, longitude: 120.880802 })).status, 200);
+  assert.equal((await request('/driver/availability', driver.token, { available: true })).status, 200);
+  const southbound = { pickup: DEFAULT_TRIP.dropoff, dropoff: DEFAULT_TRIP.pickup };
+  const booked = await request('/rides', passenger.token, { trip: southbound, passengers: 1, note: '', idempotencyKey: randomUUID() });
+  assert.equal(booked.status, 201, JSON.stringify(booked.body));
+  assert.equal((await state(driver)).offer?.id, booked.body.ride.id);
+  await action(passenger, booked.body.ride.id, 'cancel');
+  await request('/driver/availability', driver.token, { available: false });
+});
 
 test('auth validates credentials, returns stored identity, rejects foreign roles and revokes sessions', async () => {
   const passenger = await account();
@@ -127,7 +267,7 @@ test('one driver receives only one concurrent reservation and cancellation canno
 
 test('offer expiry moves to the next nearest driver and search timeout is real', async () => {
   const p = await account(), d1 = await account('driver'), d2 = await account('driver');
-  await online(d1, 14.1979); await online(d2, 14.20);
+  await online(d1, 14.3851); await online(d2, 14.3872);
   const { body: { ride } } = await book(p);
   const original = (await state(d1)).offer;
   assert.equal(original.id, ride.id);
@@ -151,10 +291,10 @@ test('bad or stale GPS never makes a driver available', async () => {
   }
 });
 
-test('a driver outside Indang stays online with live GPS but is offered rides only inside Indang', async () => {
+test('a driver outside the service area stays online with live GPS but is offered rides only inside it', async () => {
   const passenger = await account(), driver = await account('driver');
-  // 2.5 km east of the pickup: inside the matching radius, outside the municipality.
-  const outside = { ...fix(), latitude: 14.197805, longitude: 120.904804 };
+  // 2.2 km west of the pickup: inside the matching radius, outside the municipality.
+  const outside = { ...fix(), longitude: 120.86 };
   await connect(driver.token);
   assert.equal((await request('/driver/location', driver.token, outside)).status, 200);
   assert.equal((await request('/driver/availability', driver.token, { available: true })).status, 200);
@@ -205,10 +345,10 @@ test('private GPS is delivered to the assigned passenger but never a stranger', 
   const booked = await book(p), offer = (await state(d)).offer;
   await action(d, offer.id, 'accept', { offerId: offer.offerId });
   now += 2000;
-  await request('/driver/location', d.token, fix(14.198));
+  await request('/driver/location', d.token, fix(14.3852));
   await new Promise((resolve) => setTimeout(resolve, 30));
   assert.equal(received.at(-1).rideId, booked.body.ride.id);
-  assert.equal(received.at(-1).location.latitude, 14.198);
+  assert.equal(received.at(-1).location.latitude, 14.3852);
   assert.equal(leaked.length, 0);
   await action(p, offer.id, 'cancel');
   await request('/driver/availability', d.token, { available: false });
@@ -226,11 +366,11 @@ test('passenger GPS reaches only the driver holding the ride', async () => {
   assert.equal(offer.passengerLocation, null, 'an offered driver does not see the passenger yet');
   await action(d, offer.id, 'accept', { offerId: offer.offerId });
   now += 1000;
-  assert.equal((await request('/passenger/location', p.token, fix(14.1985))).status, 200);
+  assert.equal((await request('/passenger/location', p.token, fix(14.3857))).status, 200);
   await new Promise((resolve) => setTimeout(resolve, 30));
   assert.equal(received.at(-1).rideId, booked.body.ride.id);
-  assert.equal(received.at(-1).location.latitude, 14.1985);
-  assert.equal((await state(d)).ride.passengerLocation.latitude, 14.1985);
+  assert.equal(received.at(-1).location.latitude, 14.3857);
+  assert.equal((await state(d)).ride.passengerLocation.latitude, 14.3857);
   assert.equal(leaked.length, 0);
   await action(p, offer.id, 'cancel');
   assert.equal((await state(d)).lastRide.passengerLocation, null, 'sharing ends with the ride');

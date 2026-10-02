@@ -1,11 +1,14 @@
 const { calculateRoute } = require('./roadGraph');
 const { buildRouteDirections } = require('./routeDirections');
+const { SERVICE_AREA_EITHER, SERVICE_AREA_NAME } = require('../data/indangMap');
 
 const NO_METRIC = '—';
 const MIN_PASSENGERS = 1;
 const MAX_PASSENGERS = 4;
 const ENDPOINT_LABELS = { pickup: 'Pickup', destination: 'Destination' };
 const CALCULATING_MESSAGE = 'Finding the fastest road route…';
+// The towns' road networks do not connect, and each town's trikes serve it.
+const DIFFERENT_TOWNS_MESSAGE = `Pickup and destination must be in the same town. Trikes do not travel between ${SERVICE_AREA_NAME}.`;
 
 function blocked(message) {
   return { canConfirm: false, message, distanceLabel: NO_METRIC, durationLabel: NO_METRIC };
@@ -22,8 +25,10 @@ function getBookingState(routeResult, routeDetails) {
       return blocked(CALCULATING_MESSAGE);
     case 'outside-service-area':
       return blocked(endpoint
-        ? `${endpoint} is outside the Indang service area. Choose a point inside Indang.`
-        : 'Choose points inside the Indang service area.');
+        ? `${endpoint} is outside ${SERVICE_AREA_NAME}. Choose a point inside ${SERVICE_AREA_EITHER}.`
+        : `Choose points inside ${SERVICE_AREA_EITHER}.`);
+    case 'different-towns':
+      return blocked(DIFFERENT_TOWNS_MESSAGE);
     case 'unsnappable':
       return blocked(`${endpoint ?? 'A stop'} is too far from a road. Choose a point nearer a road.`);
     case 'no-route':
@@ -46,11 +51,15 @@ function getBookingState(routeResult, routeDetails) {
 
 // Everything BookingScreen needs to route two chosen places: graph health,
 // the service area, snapping, A*, and the display directions for an `ok` route.
-function resolveBookingRoute({ roadGraph, pickup, destination, isInServiceArea }) {
+// getMunicipalityAt, when given, also requires both stops to be in one town.
+function resolveBookingRoute({ roadGraph, pickup, destination, isInServiceArea, getMunicipalityAt }) {
   if (!pickup?.coordinate || !destination?.coordinate) return { status: 'missing-endpoints' };
   if (roadGraph?.status !== 'ready') return { status: 'error', message: roadGraph?.message ?? 'Road graph not loaded' };
   if (!isInServiceArea(pickup.coordinate)) return { status: 'outside-service-area', endpoint: 'pickup' };
   if (!isInServiceArea(destination.coordinate)) return { status: 'outside-service-area', endpoint: 'destination' };
+  if (getMunicipalityAt && getMunicipalityAt(pickup.coordinate)?.name !== getMunicipalityAt(destination.coordinate)?.name) {
+    return { status: 'different-towns' };
+  }
   const result = calculateRoute(roadGraph.graph, pickup.coordinate, destination.coordinate);
   if (result.status !== 'ok') return result;
   return { ...result, details: buildRouteDirections(result.route) };

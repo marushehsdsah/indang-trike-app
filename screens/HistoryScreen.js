@@ -12,13 +12,14 @@ import { formatFare, STATUS_LABELS } from '../utils/rideState';
 import { COLORS, SPACE, TYPE } from '../theme';
 
 export default function HistoryScreen({ navigation }) {
-  const { user } = useApp(), { rides, loading, error, reload } = useAccountHistory();
+  const { user } = useApp(), { rides, loading, error, fromCache, reload } = useAccountHistory();
   const [filter, setFilter] = useState('all');
   const visible = rides.filter((ride) => filter === 'all' || ride.status === filter);
   return <Screen>
     <AppHeader title={user.role === 'driver' ? 'Your trips' : 'Your rides'} />
     <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={reload} />}>
       <ConnectionBanner />
+      {fromCache && <Text style={[TYPE.caption, { marginBottom: SPACE.sm }]}>Showing your rides saved on this phone.</Text>}
       <SegmentedControl value={filter} onChange={setFilter} options={[{ value: 'all', label: 'All' }, { value: 'completed', label: 'Completed' }, { value: 'cancelled', label: 'Cancelled' }]} />
       {error ? <><Text style={[TYPE.body, { color: COLORS.danger, marginVertical: SPACE.lg }]}>{error}</Text><Button label="Retry" onPress={reload} /></>
         : !loading && visible.length === 0 ? <EmptyState icon="history" title="No trips here yet" message="Your actual bookings will appear here." />

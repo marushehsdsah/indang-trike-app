@@ -1,8 +1,8 @@
-# Indang offline road graph
+# Offline road graph: Indang and General Trias
 
-`indang-road-graph.json` is the road network the app routes on. Booking, search,
-snapping, and A* routing read only this file; the app never calls a routing or
-geocoding API at runtime.
+`service-area-road-graph.json` is the road network the app routes on. Booking,
+search, snapping, and A* routing read only this file; the app never calls a
+routing or geocoding API at runtime.
 
 Map data © OpenStreetMap contributors. The graph is a derived database of
 OpenStreetMap data and is available under the Open Database License (ODbL)
@@ -15,29 +15,34 @@ to that page, on every map that draws this data.
 | Field | Value |
 | --- | --- |
 | Source | OpenStreetMap via the Overpass API (`https://overpass-api.de/api/interpreter`) |
-| Snapshot timestamp (`osm3s.timestamp_osm_base`) | `2026-09-22T08:45:51Z` |
-| Bounding box (south, west, north, east) | `14.120982, 120.810720, 14.246597, 120.929805` |
-| Clip polygon | `assets/geo/indang-municipality.json` (PSGC `0402110000`) |
-| Raw snapshot SHA-256 | `494dc38f07e11cd1ed1027ddf39a3912f1ece34bf261381f7bdac548755c7029` |
+| Snapshot timestamp (`osm3s.timestamp_osm_base`) | `2026-10-01T16:34:13Z` |
+| General Trias bounding box (south, west, north, east) | `14.220186, 120.859841, 14.417857, 120.932959` |
+| Indang bounding box | `14.120982, 120.810720, 14.246597, 120.929805` |
+| Clip polygons | `assets/geo/general-trias-municipality.json` (PSGC `0402108000`), `assets/geo/indang-municipality.json` (PSGC `0402110000`) |
+| Raw snapshot SHA-256 | `d91452b6ec910cf820efde827508816ed91f346080feac1c4b6686c3e62d91c8` |
 
-The bounding box is the extent of the municipal polygon. The raw Overpass
+Each bounding box is the extent of that town's polygon. The raw Overpass
 response is a build input and is not committed; the generated graph is.
 
 ## Graph statistics
 
 | Nodes | Directed edges | Places | Bytes |
 | ---: | ---: | ---: | ---: |
-| 11,380 | 23,222 | 458 | 2,411,057 |
+| 39,360 | 81,338 | 2,806 | 8,526,795 |
 
-Of the 11,380 nodes, 11,230 form one connected road network (ignoring one-way
-direction). The remaining 150 nodes are 12 small isolated fragments, mostly
-service roads whose connections lie outside the municipality or are unmapped.
-A point that snaps to one of those fragments gets the "No drivable route
-found" state.
+Every place carries its `town`: 2,352 in General Trias and 454 in Indang.
+
+The two towns do not touch (their boundaries are about 425 m apart at the
+closest), so the graph is two road networks: General Trias (27,896 nodes) and
+Indang (11,230 nodes). No route joins them, and the app and backend require a
+trip's pickup and destination to be in the same town. The other 234 nodes are
+25 small fragments, mostly service roads whose connections lie outside the
+towns or are unmapped. A point that snaps to one of those fragments gets the
+"No drivable route found" state.
 
 ## Performance verification
 
-Measurements below are from a representative run on 2026-09-22 under Node
+Measurements below are from the Indang-only graph on 2026-09-22 under Node
 22.22.1 in WSL2 (11th Gen Intel Core i5-11400F, 12 logical CPUs). Android UI
 verification uses the `sdk_gphone16k_x86_64` Android emulator. Route timings
 are the median of five runs after one warm-up; the search timing covers 20
@@ -64,11 +69,20 @@ on 500 random pairs, including Dijkstra mode). `data/roadNetwork.js` loads,
 validates, and compiles the graph once, and the home screen warms it while
 idle so the first booking route does not pay for it.
 
+On 2026-10-02 the two-town graph validated in about 190 ms in Node (run
+alone), and the default and longest routes stayed under 20 ms.
+
 ## Overpass query
 
 ```overpass
-[out:json][timeout:180];
+[out:json][timeout:240];
 (
+  way["highway"](14.220186,120.859841,14.417857,120.932959);
+  nwr["name"]["amenity"](14.220186,120.859841,14.417857,120.932959);
+  nwr["name"]["place"](14.220186,120.859841,14.417857,120.932959);
+  nwr["name"]["shop"](14.220186,120.859841,14.417857,120.932959);
+  nwr["name"]["tourism"](14.220186,120.859841,14.417857,120.932959);
+  nwr["name"]["public_transport"](14.220186,120.859841,14.417857,120.932959);
   way["highway"](14.120982,120.810720,14.246597,120.929805);
   nwr["name"]["amenity"](14.120982,120.810720,14.246597,120.929805);
   nwr["name"]["place"](14.120982,120.810720,14.246597,120.929805);
@@ -80,24 +94,28 @@ idle so the first booking route does not pay for it.
 out body;
 ```
 
+One box per town keeps the land between them out of the download.
+
 ## Rebuild
 
-Save the query above as `/tmp/indang-overpass.query`, then run from the
+Save the query above as `/tmp/service-area-overpass.query`, then run from the
 repository root:
 
 ```bash
 curl --fail --retry 3 -A "IndangGO-road-graph-builder/1.0" \
-  --data-urlencode data@/tmp/indang-overpass.query \
-  https://overpass-api.de/api/interpreter --output /tmp/indang-overpass.json
-node scripts/build-road-graph.js --input /tmp/indang-overpass.json \
-  --output assets/routing/indang-road-graph.json
+  --data-urlencode data@/tmp/service-area-overpass.query \
+  https://overpass-api.de/api/interpreter --output /tmp/service-area-overpass.json
+node scripts/build-road-graph.js --input /tmp/service-area-overpass.json \
+  --output assets/routing/service-area-road-graph.json
 npm test
 ```
 
-Overpass rejects requests without a `User-Agent` header (HTTP 406), so keep the
-`-A` option. The builder prints the node, edge, place, byte, and snapshot
-timestamp counts; copy them into the tables above. A new snapshot changes the
-graph, so update this README and re-run the tests whenever you rebuild.
+Without `--municipality` the builder clips to both towns' boundaries; pass
+`--municipality <file>` once per town to use others. Overpass rejects requests
+without a `User-Agent` header (HTTP 406), so keep the `-A` option. The builder
+prints the node, edge, place, byte, and snapshot timestamp counts; copy them
+into the tables above. A new snapshot changes the graph, so update this README
+and re-run the tests whenever you rebuild.
 
 ## Transformation
 
@@ -114,7 +132,7 @@ graph, so update this README and re-run the tests whenever you rebuild.
 3. Creates directed edges between adjacent way nodes. `oneway=yes|1|true`,
    `junction=roundabout`, and `junction=circular` allow travel only in way
    order; `oneway=-1` allows travel only against it.
-4. Keeps only segments whose two nodes lie inside the municipal polygon.
+4. Keeps only segments whose two nodes lie inside a town's polygon.
 5. Merges distinct nodes that share an exact coordinate into the lowest node ID
    and skips zero-length segments, so duplicated OSM nodes never break a road.
 6. Measures each edge with the Haversine formula (metres, 0.1 m precision) and
@@ -137,7 +155,8 @@ graph, so update this README and re-run the tests whenever you rebuild.
    for nearest-road snapping.
 9. Extracts named places tagged `amenity`, `shop`, `tourism`,
    `public_transport`, or `place` (area and relation centroids), plus one
-   on-road point per named routable road, all inside the polygon.
+   on-road point per named routable road, all inside the towns. Each place
+   records its `town` (the boundary feature's `city_name`).
 
 Node coordinates are rounded to six decimal places (about 0.1 m). Output is
 deterministic: the same snapshot always produces byte-identical JSON.

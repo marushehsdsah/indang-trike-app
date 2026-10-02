@@ -4,6 +4,12 @@ The app supports passenger and driver accounts in the same installation. GPS
 updates only while the app is open. No simulated driver, automatic acceptance,
 or simulated navigation is included.
 
+Pilot admins can monitor connected accounts on the God view website; see
+[God view setup](god-view.md). Both roles now publish foreground GPS, including
+idle passengers and drivers who are not accepting requests. Driver availability
+still controls matching, and private ride updates still reach only the assigned
+counterpart. Missing or stale GPS is labelled separately in the dashboard.
+
 ## Local setup
 
 1. Install app and backend dependencies with `npm ci` in the repository root and
@@ -58,6 +64,10 @@ Also check:
 - No available drivers: search ends with a real no-driver result.
 - Cancellation before pickup: both accounts update and the driver is released.
 - GPS denied/inaccurate: the driver cannot receive new requests.
+- Phone with Google Location Accuracy off and location not yet granted: the
+  permission prompt appears once, no "turn on Location Accuracy" dialog follows,
+  and GPS stays on (plain GPS works without it). Approximate-only permission
+  shows its own message asking for precise location.
 - Outside Indang: both apps keep tracking live GPS. The passenger cannot book
   (the booking sheet says rides are Indang-only), and an online driver shows
   "Outside Indang" and receives no requests until back inside.

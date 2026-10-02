@@ -44,3 +44,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# God view website build output
+web/god-view/dist/

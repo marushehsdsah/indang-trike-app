@@ -113,8 +113,8 @@ test('measures one degree of latitude with Haversine', () => {
   assert.equal(haversineDistance({ latitude: 14.2, longitude: 120.88 }, { latitude: 14.2, longitude: 120.88 }), 0);
 });
 
-test('matches Dijkstra on the production Indang graph', () => {
-  const production = require('../assets/routing/indang-road-graph.json');
+test('matches Dijkstra on the production graph', () => {
+  const production = require('../assets/routing/service-area-road-graph.json');
   const dijkstraGraph = { ...production, metadata: { ...production.metadata, maxSpeedKph: Infinity } };
   const nodeIds = Object.keys(production.nodes);
   let seed = 20260922;

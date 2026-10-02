@@ -1,5 +1,5 @@
 const { normalizePhilippinePhone } = require('../utils/registration');
-const { isInIndangServiceArea } = require('../data/indangMap');
+const { SERVICE_AREA_EITHER, getMunicipalityAt, isInIndangServiceArea } = require('../data/indangMap');
 const { getRoadGraph } = require('../data/roadNetwork');
 const { resolveBookingRoute, createBookingPayload } = require('../utils/bookingRoute');
 
@@ -36,11 +36,13 @@ function bookingFields(body) {
   for (const endpoint of endpoints) {
     requireValue(typeof endpoint.name === 'string' && endpoint.name.trim() && endpoint.name.length <= 150 &&
       Number.isFinite(endpoint.coordinate.latitude) && Number.isFinite(endpoint.coordinate.longitude), 400, 'Invalid pickup or destination.');
-    requireValue(isInIndangServiceArea(endpoint.coordinate), 400, 'Pickup and destination must be inside Indang.');
+    requireValue(isInIndangServiceArea(endpoint.coordinate), 400, `Pickup and destination must be inside ${SERVICE_AREA_EITHER}.`);
   }
+  // Each town is its own network of roads and drivers.
+  requireValue(getMunicipalityAt(trip.pickup.coordinate) === getMunicipalityAt(trip.dropoff.coordinate), 400, 'Pickup and destination must be in the same town.');
   requireValue(Number.isInteger(body.passengers) && body.passengers >= 1 && body.passengers <= 4, 400, 'Choose 1–4 passengers.');
   requireValue(body.note === undefined || (typeof body.note === 'string' && body.note.length <= 200), 400, 'Pickup notes can have at most 200 characters.');
-  const result = resolveBookingRoute({ roadGraph: getRoadGraph(), pickup: trip.pickup, destination: trip.dropoff, isInServiceArea: isInIndangServiceArea });
+  const result = resolveBookingRoute({ roadGraph: getRoadGraph(), pickup: trip.pickup, destination: trip.dropoff, isInServiceArea: isInIndangServiceArea, getMunicipalityAt });
   requireValue(result.status === 'ok' && result.details.distanceMeters > 0, 400, 'No drivable route connects those stops.');
   return { ...createBookingPayload({ trip, route: result.details, passengers: body.passengers, note: body.note }), idempotencyKey: body.idempotencyKey };
 }

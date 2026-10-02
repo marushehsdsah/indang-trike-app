@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#123c32">
+  <meta name="robots" content="noindex, nofollow">
+  <!-- build.mjs fills in the API origin. Hosts should also send X-Frame-Options: DENY. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' __API_ORIGIN__ https://tiles.openfreemap.org https://*.openfreemap.org; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <title>God view · IndangGO</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./vendor/maplibre-gl.css">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.mjs"></script>
+</head>
+<body>
+  <main id="login" class="login-screen">
+    <section class="login-story">
+      <a class="brand" href="./"><span class="brand-mark">iG</span>IndangGO <span class="brand-tag">PILOT OPERATIONS</span></a>
+      <div class="story-copy"><span class="eyebrow">A clearer view of every journey</span><h1>Your city.<br>Your people.<br>One live view.</h1><p>See who's connected, where they are, and how your pilot is moving.</p><div class="story-area"><span class="pulse-dot"></span> Cavite pilot operations</div></div>
+      <p class="story-foot">Built for the people keeping the pilot moving.</p>
+    </section>
+    <section class="login-panel">
+      <form id="login-form" class="login-card">
+        <span class="eyebrow">ADMIN ACCESS</span><h2>Welcome to God view</h2><p class="muted">Sign in with your approved IndangGO account.</p>
+        <label for="phone">Mobile number</label><input id="phone" name="phone" type="tel" autocomplete="username" placeholder="09XX XXX XXXX" required>
+        <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" placeholder="Your app password" required>
+        <p id="login-error" class="error-text" role="alert" hidden></p>
+        <button id="sign-in" class="primary" type="submit">Open dashboard <span aria-hidden="true">↗</span></button>
+        <p id="login-progress" class="muted small" role="status" hidden>Connecting… A sleeping server can take up to a minute to wake.</p>
+        <p class="login-note">Access is limited to accounts approved by the pilot administrator.</p>
+      </form>
+    </section>
+  </main>
+
+  <main id="dashboard" class="dashboard" hidden>
+    <header class="topbar"><a class="brand" href="./"><span class="brand-mark">iG</span>IndangGO</a><span class="topbar-divider"></span><span class="workspace-name">God view</span><span class="pilot-tag">PILOT</span><div class="topbar-right"><span id="admin-name"></span><button id="sign-out" class="quiet light">Sign out</button></div></header>
+    <section class="page-heading"><div><span class="eyebrow">PILOT OPERATIONS</span><h1>Live overview <span id="area-name" class="area-chip">Service area</span></h1><p class="muted">The people moving through your city, right now.</p></div><div class="sync-panel"><span id="connection-status" class="connection" role="status">Connecting</span><span id="last-updated" class="small muted">Waiting for the first update</span><button id="refresh" class="quiet">Refresh now</button></div></section>
+    <section class="metrics" aria-label="Online user summary">
+      <div class="metric"><span class="metric-label">People online</span><strong id="count-online">—</strong><span class="metric-note">Connected to the app</span></div>
+      <div class="metric"><span class="metric-label"><i class="legend-dot driver"></i> Drivers</span><strong id="count-drivers">—</strong><span id="available-note" class="metric-note">Waiting for an update</span></div>
+      <div class="metric"><span class="metric-label"><i class="legend-dot passenger"></i> Passengers</span><strong id="count-passengers">—</strong><span class="metric-note">Browsing or taking a trip</span></div>
+      <div class="metric"><span class="metric-label">Active requests & trips</span><strong id="count-rides">—</strong><span class="metric-note">With a connected participant</span></div>
+    </section>
+    <p id="connection-error" class="notice" role="alert" hidden></p>
+    <section class="operations">
+      <aside class="people-panel" aria-label="Connected users">
+        <div class="people-heading"><h2>Who's online</h2><span id="result-count" class="count-pill">0</span></div>
+        <label class="search-label" for="search">Search people or vehicles</label><input id="search" type="search" placeholder="Search a name, plate or TODA…" autocomplete="off">
+        <div id="role-filters" class="filters" role="group" aria-label="Filter by account type"><button data-role="all" aria-pressed="true">Everyone</button><button data-role="driver" aria-pressed="false">Drivers</button><button data-role="passenger" aria-pressed="false">Passengers</button></div>
+        <div id="user-list" class="user-list"></div>
+        <div id="empty" class="empty-state"><span aria-hidden="true">◎</span><h3>No one online yet</h3><p>Connected drivers and passengers will appear here when they open the app.</p></div>
+        <div class="people-footer"><span class="pulse-dot"></span><span id="list-footnote">Refreshes every 3 seconds</span></div>
+      </aside>
+      <section class="map-panel" aria-label="Live user map">
+        <div id="map" class="map"></div>
+        <div class="map-toolbar"><span class="map-title"><span class="pulse-dot"></span>Live map</span><div><button id="fit-area" class="map-button">Service area</button><button id="fit-users" class="map-button">Fit people</button></div></div>
+        <p id="map-error" class="map-error" role="status" hidden></p>
+        <div class="map-legend"><span><i class="legend-dot driver"></i>Driver</span><span><i class="legend-dot passenger"></i>Passenger</span><span><i class="legend-dot stale"></i>Last known</span><span><i class="legend-dot trip"></i>On a trip</span><span><i class="legend-line requested"></i>Requested trip</span><span><i class="legend-line approach"></i>Driver to passenger</span><span><i class="legend-line trip"></i>Trip to destination</span></div>
+        <section id="person-details" class="person-details" aria-label="Selected user" hidden></section>
+      </section>
+    </section>
+    <footer class="page-footer"><span>Online means the app is open and connected. Ride availability is shown separately.</span><span>GPS older than 30 seconds is marked last known.</span></footer>
+  </main>
+</body>
+</html>

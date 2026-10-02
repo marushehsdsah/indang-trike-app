@@ -6,9 +6,11 @@ const { Server } = require('socket.io');
 const { createModels } = require('./models');
 const { createAuth } = require('./auth');
 const { createDispatch } = require('./dispatch');
+const { createAdmin } = require('./admin');
 const { requireValue, profileFields, publicUser } = require('./policy');
+const { SERVICE_AREA_NAME, INDANG_BOUNDARY_SHAPE } = require('../data/indangMap');
 
-async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://127.0.0.1:27017/indang_trike_db', clock = Date.now, dispatchOptions } = {}) {
+async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://127.0.0.1:27017/indang_trike_db', clock = Date.now, dispatchOptions, adminPhones = process.env.GOD_VIEW_ADMIN_PHONES || '' } = {}) {
   const connection = await mongoose.createConnection(mongoUri, { serverSelectionTimeoutMS: 5000 }).asPromise();
   const models = createModels(connection);
   await Promise.all(Object.values(models).map((model) => model.init()));
@@ -17,7 +19,10 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   const io = new Server(server, { cors: { origin: process.env.CORS_ORIGIN || '*' }, maxHttpBufferSize: 20000 });
   const presence = new Map(), auth = createAuth(models, clock);
   const dispatch = createDispatch({ models, io, clock, presence, options: dispatchOptions });
+  const admin = createAdmin({ models, presence, clock, adminPhones });
   app.disable('x-powered-by');
+  // The God view website (web/god-view) is hosted separately and calls this
+  // API cross-origin with a bearer token; CORS_ORIGIN can restrict callers.
   app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
   app.use(express.json({ limit: '32kb' }));
   const attempts = new Map();
@@ -29,10 +34,14 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
     if (entry.count > 15) return res.status(429).json({ error: 'Too many attempts. Try again in five minutes.' });
     next();
   });
-  app.get('/api/health', (req, res) => res.status(connection.readyState === 1 ? 200 : 503).json({ ok: connection.readyState === 1 }));
+  // serviceArea shows which municipality a deployed server accepts bookings in.
+  app.get('/api/health', (req, res) => res.status(connection.readyState === 1 ? 200 : 503).json({ ok: connection.readyState === 1, serviceArea: SERVICE_AREA_NAME }));
   app.post('/api/register', async (req, res) => res.status(201).json({ user: await auth.register(req.body), message: 'Account created successfully.' }));
   app.post('/api/login', async (req, res) => res.json(await auth.login(req.body)));
   app.use('/api', auth.middleware);
+  app.use('/api/admin', admin.middleware);
+  app.get('/api/admin/overview', async (req, res) => res.json(await admin.overview()));
+  app.get('/api/admin/map', (req, res) => res.json({ boundary: INDANG_BOUNDARY_SHAPE }));
   app.get('/api/config', (req, res) => res.json({ fare: 45, currency: 'PHP', maxPassengers: 4, gpsMaxAgeMs: 30000 }));
   app.get('/api/me', (req, res) => res.json({ user: publicUser(req.user) }));
   app.patch('/api/me', async (req, res) => {
@@ -51,6 +60,7 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   });
   app.post('/api/driver/location', async (req, res) => res.json(await dispatch.run(() => dispatch.location(req.user, req.body))));
   app.post('/api/passenger/location', async (req, res) => res.json(await dispatch.run(() => dispatch.passengerLocation(req.user, req.body))));
+  app.post('/api/passenger/location/unavailable', async (req, res) => res.json(await dispatch.run(() => dispatch.passengerLocationUnavailable(req.user))));
   app.post('/api/driver/location/unavailable', async (req, res) => res.json(await dispatch.run(() => dispatch.locationUnavailable(req.user))));
   app.post('/api/driver/availability', async (req, res) => res.json(await dispatch.run(() => dispatch.availability(req.user, req.body.available))));
   app.post('/api/rides', async (req, res) => {

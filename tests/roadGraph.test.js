@@ -182,7 +182,7 @@ test('loads a graph with app-format places or reports why it cannot', () => {
 });
 
 test('matches a brute-force nearest-node search on the production graph', () => {
-  const production = require('../assets/routing/indang-road-graph.json');
+  const production = require('../assets/routing/service-area-road-graph.json');
   const nodeEntries = Object.entries(production.nodes);
   const [south, west, north, east] = production.metadata.bounds;
   let seed = 97;
@@ -206,8 +206,8 @@ test('matches a brute-force nearest-node search on the production graph', () => 
   }
 });
 
-test('routes the default CvSU to Harasan trip on the production graph', () => {
-  const production = require('../assets/routing/indang-road-graph.json');
+test('routes the default trip on the production graph', () => {
+  const production = require('../assets/routing/service-area-road-graph.json');
   const { DEFAULT_TRIP } = require('../data/indangMap');
   const loaded = loadRoadGraph(production);
   assert.equal(loaded.status, 'ready', loaded.message);

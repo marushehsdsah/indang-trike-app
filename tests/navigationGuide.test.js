@@ -134,7 +134,7 @@ test('formats arrival clock times', () => {
 
 test('follows the production default route from pickup to arrival', () => {
   const result = resolveBookingRoute({
-    roadGraph: loadRoadGraph(require('../assets/routing/indang-road-graph.json')),
+    roadGraph: loadRoadGraph(require('../assets/routing/service-area-road-graph.json')),
     pickup: DEFAULT_TRIP.pickup,
     destination: DEFAULT_TRIP.dropoff,
     isInServiceArea: isInIndangServiceArea,

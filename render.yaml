@@ -16,3 +16,28 @@ services:
       # MongoDB Atlas connection string, entered in the Render dashboard.
       - key: MONGO_URL
         sync: false
+
+  # The God view admin dashboard: a separate static website (web/god-view)
+  # that reads the API above. Free static sites do not sleep.
+  - type: web
+    name: indanggo-god-view
+    runtime: static
+    rootDir: web/god-view
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # The API's public address. build.mjs writes it into the site.
+      - key: GOD_VIEW_API_URL
+        value: https://indang-trike-app.onrender.com
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer

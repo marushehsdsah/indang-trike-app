@@ -11,7 +11,7 @@ import { BleedScreen } from '../components/ui/Screen';
 import IconButton from '../components/ui/IconButton';
 import { Divider } from '../components/ui/Surfaces';
 import useCurrentPickup from '../hooks/useCurrentPickup';
-import { isInIndangServiceArea } from '../data/indangMap';
+import { SERVICE_AREA_EITHER, SERVICE_AREA_NAME, getMunicipalityAt, isInIndangServiceArea } from '../data/indangMap';
 import { useApp } from '../context/AppContext';
 import { ACTIVE_STATUSES, formatFare } from '../utils/rideState';
 import { getRoadGraph, getSearchablePlaces } from '../data/roadNetwork';
@@ -22,8 +22,11 @@ import { COLORS, ELEVATION, HIT_SLOP, RADIUS, SPACE, TYPE } from '../theme';
 
 // Lets the "calculating" state paint before A* occupies the JS thread.
 const ROUTE_CALCULATION_DELAY_MS = 30;
-const OUTSIDE_SERVICE_AREA_NOTICE = 'That point is outside the Indang service area. Choose a point inside Indang.';
-const RIDER_OUTSIDE_MESSAGE = 'You are outside Indang. Tricycle rides can only be booked inside Indang.';
+const OUTSIDE_SERVICE_AREA_NOTICE = `That point is outside ${SERVICE_AREA_NAME}. Choose a point inside ${SERVICE_AREA_EITHER}.`;
+// The free backend sleeps when idle and needs up to a minute to wake.
+const WAITING_FOR_SERVER = 'Connecting to IndangGO… If the server was asleep this takes up to a minute.';
+const OFFLINE_BOOKING_MESSAGE = 'No internet connection. You can still search, preview the route and use the GPS guide; booking needs internet.';
+const RIDER_OUTSIDE_MESSAGE = `You are outside ${SERVICE_AREA_NAME}. Tricycle rides can only be booked inside ${SERVICE_AREA_EITHER}.`;
 
 function createPinnedPlace(coordinate) {
   const graph = getRoadGraph();
@@ -71,7 +74,7 @@ function LocationRow({ label, place, active, isPickup, onPress, onPinPress }) {
 
 export default function BookingScreen({ navigation, route: screenRoute }) {
   const params = screenRoute?.params;
-  const { bookRide, ride: activeRide, config, connected, error: connectionError } = useApp();
+  const { bookRide, ride: activeRide, config, connected, online, error: connectionError } = useApp();
   const [pickup, setPickup] = useState(null);
   const [destination, setDestination] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -133,6 +136,7 @@ export default function BookingScreen({ navigation, route: screenRoute }) {
         pickup: { coordinate: { latitude: pickupLatitude, longitude: pickupLongitude } },
         destination: { coordinate: { latitude: destinationLatitude, longitude: destinationLongitude } },
         isInServiceArea: isInIndangServiceArea,
+        getMunicipalityAt,
       });
       // A newer endpoint change supersedes this result.
       if (requestIdRef.current === requestId) setRouteResult(result);
@@ -143,12 +147,18 @@ export default function BookingScreen({ navigation, route: screenRoute }) {
   const routeState = getBookingState(routeResult, routeResult.details);
   // Live GPS keeps working outside Indang, but booking does not, even for a
   // pickup chosen inside Indang: no driver should wait for an absent rider.
-  const bookingState = !connected || !config ? { ...routeState, canConfirm: false, message: connectionError || 'Connect to the backend before booking.' }
+  const bookingState = !online ? { ...routeState, canConfirm: false, message: OFFLINE_BOOKING_MESSAGE }
+    : !connected || !config ? { ...routeState, canConfirm: false, message: connectionError || WAITING_FOR_SERVER }
     : location.outsideServiceArea ? { ...routeState, canConfirm: false, message: RIDER_OUTSIDE_MESSAGE } : routeState;
   const route = routeResult.status === 'ok' ? routeResult.details : null;
+  // Search lists the rider's own town first: the pickup's, or where GPS puts them.
+  const townLatitude = pickupLatitude ?? location.pickup?.coordinate.latitude;
+  const townLongitude = pickupLongitude ?? location.pickup?.coordinate.longitude;
+  const searchTown = useMemo(() => (Number.isFinite(townLatitude)
+    ? getMunicipalityAt({ latitude: townLatitude, longitude: townLongitude })?.name : undefined), [townLatitude, townLongitude]);
   const results = useMemo(
-    () => (activeEndpoint ? searchPlaces(getSearchablePlaces(), query) : []),
-    [activeEndpoint, query],
+    () => (activeEndpoint ? searchPlaces(getSearchablePlaces(), query, undefined, { preferTown: searchTown }) : []),
+    [activeEndpoint, query, searchTown],
   );
 
   const closeSearch = useCallback(() => {
@@ -240,7 +250,7 @@ export default function BookingScreen({ navigation, route: screenRoute }) {
   };
 
   const handlePreviewRoute = () => {
-    if (!bookingState.canConfirm) return;
+    if (!routeState.canConfirm) return;
     const { trip, route: previewRoute } = createPayload();
     navigation.navigate('Navigation', { trip, route: previewRoute });
   };
@@ -362,6 +372,7 @@ export default function BookingScreen({ navigation, route: screenRoute }) {
           onNoteChange={setNote}
           onConfirm={handleConfirm}
           onPreviewRoute={handlePreviewRoute}
+          routeReady={routeState.canConfirm}
           bottomPadding={insets.bottom}
           onLayout={({ nativeEvent }) => setSheetHeight(nativeEvent.layout.height)}
         />

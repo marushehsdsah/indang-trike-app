@@ -1,6 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { ASSIGNED_STATUSES, GPS_MAX_AGE_MS, isFreshFix, rankDrivers, validateFix, nextRideStatus } = require('../utils/rideState');
-const { isInIndangServiceArea } = require('../data/indangMap');
+const { getMunicipalityAt } = require('../data/indangMap');
 const { HttpError, requireValue, publicUser, bookingFields, cleanText } = require('./policy');
 
 function createDispatch({ models, io, clock, presence, options = {} }) {
@@ -73,11 +73,13 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
       }
       const [users, occupied] = await Promise.all([User.find({ role: 'driver', available: true }), Ride.find({ active: true, driverSlot: { $exists: true } }).select('driverSlot')]);
       const slots = new Set(occupied.map((entry) => entry.driverSlot));
-      // Drivers share GPS from anywhere, but only those inside Indang get offers.
+      // Drivers share GPS from anywhere, but only those in the pickup's town get
+      // its offers, within that town's radius: the towns' roads do not connect.
+      const town = getMunicipalityAt(ride.trip.pickup.coordinate);
       const candidates = rankDrivers(users.filter((user) => publicUser(user).profileComplete && user.locationAvailable &&
-        user.location && isInIndangServiceArea(user.location) && !ride.attemptedDrivers.includes(String(user._id)))
+        user.location && town && getMunicipalityAt(user.location) === town && !ride.attemptedDrivers.includes(String(user._id)))
         .map((user) => ({ id: String(user._id), available: user.available, capacity: user.capacity, location: user.location, connected: connected(user._id), busy: slots.has(String(user._id)) })),
-      ride.trip.pickup.coordinate, ride.passengers, clock(), options.radius ?? 5000);
+      ride.trip.pickup.coordinate, ride.passengers, clock(), options.radius ?? town?.matchRadiusMeters ?? 0);
       for (const candidate of candidates) {
         try {
           const offered = await Ride.findOneAndUpdate({ _id: ride._id, status: 'searching', version: ride.version, driverSlot: { $exists: false } }, {
@@ -146,17 +148,22 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     if (ride) io.to(`user:${ride.passengerId}`).emit('driver:location', { rideId: String(ride._id), location: fix, connected: connected(user._id) });
     await tickUnsafe(); return { ok: true };
   }
-  // Passenger GPS is stored only on the passenger's account and forwarded only
-  // to the driver who holds their ride; it never affects matching.
+  // Passenger GPS supports the authorized admin overview. Private socket
+  // updates still go only to the driver who holds their ride.
   async function passengerLocation(user, body) {
     requireValue(user.role !== 'driver', 403, 'Passenger account required.');
     let fix;
     try { fix = validateFix(body, clock()); } catch (error) { throw new HttpError(400, error.message); }
     const current = await User.findById(user._id);
     requireValue(!current.location || fix.timestamp >= current.location.timestamp, 409, 'This GPS fix is older than your last update.');
-    await User.updateOne({ _id: user._id }, { $set: { location: { ...fix, receivedAt: clock() } } });
+    await User.updateOne({ _id: user._id }, { $set: { location: { ...fix, receivedAt: clock() }, locationAvailable: true } });
     const ride = await Ride.findOne({ active: true, passengerId: String(user._id), status: { $in: ASSIGNED_STATUSES } });
     if (ride?.driverId) io.to(`user:${ride.driverId}`).emit('passenger:location', { rideId: String(ride._id), location: fix });
+    return { ok: true };
+  }
+  async function passengerLocationUnavailable(user) {
+    requireValue(user.role !== 'driver', 403, 'Passenger account required.');
+    await User.updateOne({ _id: user._id }, { $set: { locationAvailable: false } });
     return { ok: true };
   }
   async function availability(user, available) {
@@ -186,7 +193,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     if (ride) notifyRide(ride);
     await tickUnsafe(); notify(user._id); return { ok: true };
   }
-  return { run, view, snapshot, book, action, location, passengerLocation, locationUnavailable, availability, disconnect, notify, tick: () => run(tickUnsafe), connected };
+  return { run, view, snapshot, book, action, location, passengerLocation, passengerLocationUnavailable, locationUnavailable, availability, disconnect, notify, tick: () => run(tickUnsafe), connected };
 }
 
 module.exports = { createDispatch };
