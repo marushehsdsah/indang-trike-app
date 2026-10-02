@@ -1,6 +1,7 @@
 const { normalizePhilippinePhone } = require('../utils/registration');
 const { SERVICE_AREA_EITHER, getMunicipalityAt, isInIndangServiceArea } = require('../data/indangMap');
 const { getRoadGraph } = require('../data/roadNetwork');
+const { findToda } = require('../data/todaZones');
 const { resolveBookingRoute, createBookingPayload } = require('../utils/bookingRoute');
 
 class HttpError extends Error {
@@ -14,7 +15,9 @@ function profileFields(body, role) {
   requireValue(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 400, 'Enter a valid email address.');
   const fields = { firstName, lastName, email };
   if (role === 'driver') {
+    // An Indang TODA is stored under its official name, which ties the driver to its barangays.
     fields.plate = cleanText(body.plate, 24).toUpperCase(); fields.toda = cleanText(body.toda, 80); fields.capacity = body.capacity;
+    fields.toda = findToda(fields.toda)?.name ?? fields.toda;
     requireValue(fields.plate && fields.toda && Number.isInteger(fields.capacity) && fields.capacity >= 1 && fields.capacity <= 4, 400, 'Enter your plate, TODA, and capacity (1–4).');
   }
   return fields;

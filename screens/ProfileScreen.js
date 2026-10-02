@@ -8,6 +8,7 @@ import { Avatar, Card } from '../components/ui/Surfaces';
 import BottomNav from '../components/BottomNav';
 import ConnectionBanner from '../components/ConnectionBanner';
 import OfflineMapCard from '../components/OfflineMapCard';
+import TodaPicker from '../components/TodaPicker';
 import { useApp } from '../context/AppContext';
 import useAccountHistory from '../hooks/useAccountHistory';
 import { formatFare, userName } from '../utils/rideState';
@@ -50,7 +51,7 @@ export default function ProfileScreen({ navigation }) {
             <Field label="Email" {...field('email')} autoCapitalize="none" keyboardType="email-address" />
             {user.role === 'driver' && <>
               <Field label="Vehicle plate" {...field('plate')} autoCapitalize="characters" maxLength={24} />
-              <Field label="TODA" {...field('toda')} maxLength={80} />
+              <TodaPicker value={form.toda || ''} onChange={(value) => setForm((previous) => ({ ...previous, toda: value }))} />
               <Field label="Passenger capacity (1–4)" {...field('capacity')} keyboardType="number-pad" maxLength={1} />
             </>}
             <Button label="Save profile" loading={busy} onPress={save} />

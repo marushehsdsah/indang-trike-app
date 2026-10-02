@@ -29,3 +29,38 @@ OpenStreetMap administrative boundary instead, relation
 
 Map data © OpenStreetMap contributors, available under the Open Database
 License (ODbL) 1.0.
+
+## Indang barangays
+
+`indang-barangays.json` holds Indang's 36 barangays (name and 10-digit PSGC),
+cut from the PSA barangay shapefile (PSGC as of 31 December 2023) published by
+[altcoder/philippines-psgc-shapefiles](https://github.com/altcoder/philippines-psgc-shapefiles)
+(MIT), file `dist/PH_Adm4_BgySubMuns.shp.zip`, SHA-256
+`904ff4ad2a8cfcfc06d23a6f4109bb1b142689d4cb4a8863d8bf650e99476186`, retrieved
+2026-10-02. The source is UTM zone 51N; points were converted to WGS 84 and
+rounded to six decimals. The 11 barangays OpenStreetMap also maps each fall in
+the same-named barangay here. Along the town edge these polygons and
+`indang-municipality.json` differ slightly, so `data/todaZones.js` puts a point
+in such a gap in the nearest barangay within 300 m.
+
+## Indang TODA zones
+
+`indang-todas.json` lists Indang's 12 TODAs and the barangays each may serve,
+from `TODAs_coordinates.xlsx` at the repository root (COORDINATES and Notes
+sheets). A TODA serves:
+
+- the barangays the sheet names (e.g. PCHTI-TODA: Pulo, Carasuchi, Harasan,
+  Tambo Ilaya; "POBLACION 1, 2, 3, 4" is Barangay 1–4), and
+- the barangays holding one of its places marked "Matched" in the Notes sheet
+  (e.g. BITODA's CvSU pin lies in Kaytapos).
+
+Places marked only "Verify" (approximate pins) do not add a barangay; those
+barangays are listed under each TODA's `review` for confirmation. Move one into
+`barangays` to add it. Mahabangkahoy Lejos is the only barangay no TODA serves
+(`uncovered`). Edit this file directly when a TODA's area changes; the app and
+backend read it as is.
+
+A driver whose TODA field names one of these TODAs (any spelling of its name or
+an alias) is offered only trips whose pickup and destination are both inside its
+barangays, and their map shows that area. Drivers of other TODAs (e.g. in General
+Trias) keep the town-wide rules. Passengers see no TODA areas.

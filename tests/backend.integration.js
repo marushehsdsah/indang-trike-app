@@ -207,6 +207,41 @@ test('a southern General Trias pickup reaches a driver waiting in the town centr
   await request('/driver/availability', driver.token, { available: false });
 });
 
+test('an Indang TODA driver is offered only trips inside its TODA\'s barangays', async () => {
+  // PCHTI-TODA serves Pulo, Carasuchi, Harasan and Tambo Ilaya (TODAs_coordinates.xlsx).
+  const place = (name, latitude, longitude) => ({ name, coordinate: { latitude, longitude } });
+  const pulo = place('Pulo Barangay Hall', 14.16990, 120.87269), harasan = place('Barangay Harasan', 14.16053, 120.87006);
+  const poblacion = place('Poblacion', 14.19558, 120.87956);
+  const phone = `0917${sequence++}`;
+  const registered = await request('/register', null, { phone, password: 'strong-password', firstName: 'Pulo', lastName: 'Driver',
+    email: `${sequence}@example.com`, role: 'driver', plate: 'PCH-1', toda: 'pchti toda', capacity: 4 });
+  assert.equal(registered.status, 201, JSON.stringify(registered.body));
+  assert.equal(registered.body.user.toda, 'PCHTI-TODA', 'stored under the official name');
+  const pchti = (await request('/login', null, { phone, password: 'strong-password' })).body;
+  const unzoned = await account('driver'); // "Test TODA": not an Indang TODA, so no barangay limit
+  for (const [driver, spot] of [[pchti, pulo], [unzoned, harasan]]) {
+    await connect(driver.token);
+    assert.equal((await request('/driver/location', driver.token, { ...fix(), ...spot.coordinate })).status, 200);
+    assert.equal((await request('/driver/availability', driver.token, { available: true })).status, 200);
+  }
+  const book = async (dropoff) => {
+    const passenger = await account();
+    const booked = await request('/rides', passenger.token, { trip: { pickup: pulo, dropoff }, passengers: 1, note: '', idempotencyKey: randomUUID() });
+    assert.equal(booked.status, 201, JSON.stringify(booked.body));
+    return { passenger, rideId: booked.body.ride.id };
+  };
+
+  const inside = await book(harasan);
+  assert.equal((await state(pchti)).offer?.id, inside.rideId, 'Pulo to Harasan: the nearest driver, from PCHTI-TODA');
+  await action(inside.passenger, inside.rideId, 'cancel');
+
+  const leaving = await book(poblacion);
+  assert.equal((await state(pchti)).offer, null, 'Pulo to Poblacion leaves PCHTI-TODA\'s barangays');
+  assert.equal((await state(unzoned)).offer?.id, leaving.rideId, 'a driver without an Indang TODA still gets it');
+  await action(leaving.passenger, leaving.rideId, 'cancel');
+  for (const driver of [pchti, unzoned]) await request('/driver/availability', driver.token, { available: false });
+});
+
 test('auth validates credentials, returns stored identity, rejects foreign roles and revokes sessions', async () => {
   const passenger = await account();
   assert.equal(passenger.user.firstName, 'Test');

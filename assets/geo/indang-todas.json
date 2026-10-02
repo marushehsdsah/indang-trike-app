@@ -1,0 +1,385 @@
+{
+  "source": "TODAs_coordinates.xlsx (COORDINATES and Notes sheets); barangay boundaries: assets/geo/indang-barangays.json",
+  "rule": "A TODA serves the barangays the sheet names and those containing one of its \"Matched\" pins. \"review\" lists barangays only an approximate (\"Verify\") pin points to; they are not part of the zone until moved into \"barangays\".",
+  "uncovered": [
+    "Mahabangkahoy Lejos"
+  ],
+  "todas": [
+    {
+      "id": "bitoda",
+      "name": "BITODA",
+      "aliases": [
+        "Bancod Indang TODA",
+        "Bancod Indang Tricycle Operators and Drivers Association"
+      ],
+      "barangays": [
+        "Bancod",
+        "Kaytapos",
+        "Alulod"
+      ],
+      "review": [],
+      "places": [
+        "BANCOD",
+        "PUROK 1",
+        "SUBDIVISION",
+        "DALI",
+        "ALFAMART",
+        "CVSU",
+        "PUROK 2",
+        "VILLAGE",
+        "GATE 1",
+        "GATE 2",
+        "PUROK 3",
+        "KOKOK'S",
+        "PUROK 4",
+        "PASONG BANCOD",
+        "SITIO QUARRY",
+        "CHOCOLATE FARM",
+        "SITIO RAGATAN",
+        "COMBIE RESORT",
+        "PASONG BADIANG",
+        "SOLAR",
+        "PASONG RAGATAN"
+      ]
+    },
+    {
+      "id": "pchti-toda",
+      "name": "PCHTI-TODA",
+      "aliases": [
+        "PCHTI"
+      ],
+      "barangays": [
+        "Pulo",
+        "Carasuchi",
+        "Harasan",
+        "Tambo Ilaya"
+      ],
+      "review": [],
+      "places": [
+        "BRGY. PULO",
+        "BRGY. CARASUCHI",
+        "BRGY. HARASAN",
+        "BRGY. TAMBO ILAYA"
+      ]
+    },
+    {
+      "id": "sitodai",
+      "name": "SITODAI",
+      "aliases": [
+        "SITODAI TODA"
+      ],
+      "barangays": [
+        "Banaba Cerca"
+      ],
+      "review": [],
+      "places": [
+        "BANABA CEBCA",
+        "CALIFORNIA BREEZE",
+        "CMJ",
+        "CASITA DE SENEREZ",
+        "LOVELY VILLA",
+        "CEBCA GARDEN",
+        "LITTLE HQ",
+        "KALLIKHASAN",
+        "VILLA BELLA",
+        "REHAB",
+        "BRITISH"
+      ]
+    },
+    {
+      "id": "ciktoda",
+      "name": "CIKTODA",
+      "aliases": [],
+      "barangays": [
+        "Kaytambog",
+        "Banaba Cerca"
+      ],
+      "review": [],
+      "places": [
+        "BRGY. KAYTAMBOG",
+        "SAGANA SPRING RESORT",
+        "HIDDEN CAMP",
+        "HIDDEN ALBANIA",
+        "VILLA FELOMINA",
+        "THE RAVINE",
+        "WILLA APOLONIA",
+        "CLASS VILLAS",
+        "IKLOY",
+        "EJ GARAGE"
+      ]
+    },
+    {
+      "id": "dittoda",
+      "name": "DITTODA",
+      "aliases": [
+        "DITTODA Association",
+        "Daine 1, 2 & Lum. Balagbag"
+      ],
+      "barangays": [
+        "Daine I",
+        "Daine II",
+        "Lumampong Balagbag",
+        "Tambo Kulit"
+      ],
+      "review": [
+        {
+          "barangay": "Banaba Cerca",
+          "because": "TAMAK (Verify pin)"
+        }
+      ],
+      "places": [
+        "LUMAMPONG BALAGBAG",
+        "DOMINGUEZ FARM",
+        "COLORADO FARM",
+        "CAMP MOLINO",
+        "RIVER SIDE",
+        "LENJAWI RESORT",
+        "SEAMORA",
+        "EMMANUELS DARM",
+        "ADVINCULA FARM",
+        "AIDEN COMMUNITY FARM",
+        "CAMP ELIZABETH",
+        "EAST WEST ROAD",
+        "KANLURAN RESORT",
+        "VHERMOSA",
+        "SADATI FOREST",
+        "VIA PULO NI SARAH",
+        "DULONG BATO",
+        "BUHO",
+        "TAMAK"
+      ]
+    },
+    {
+      "id": "itoda-pitoda",
+      "name": "ITODA PITODA",
+      "aliases": [
+        "ITODA",
+        "PITODA"
+      ],
+      "barangays": [
+        "Tambo Ilaya",
+        "Tambo Malaki",
+        "Mataas na Lupa",
+        "Mahabangkahoy Cerca",
+        "Barangay 1",
+        "Barangay 2",
+        "Barangay 3",
+        "Barangay 4",
+        "Buna Cerca"
+      ],
+      "review": [
+        {
+          "barangay": "Mahabangkahoy Lejos",
+          "because": "BALAGBAG MAHABANG KAHOY (Verify pin)"
+        }
+      ],
+      "places": [
+        "TAMBO ILAYA",
+        "TAMBO MALAKI",
+        "MATAAS NA LUPA",
+        "MAHABANG KAHOY CERCA",
+        "BALAGBAG MAHABANG KAHOY",
+        "POBLACION 1, 2, 3, 4",
+        "BUNA CERCA"
+      ]
+    },
+    {
+      "id": "biptoda",
+      "name": "BIPTODA",
+      "aliases": [],
+      "barangays": [
+        "Banaba Lejos"
+      ],
+      "review": [],
+      "places": [
+        "BANABA LEJOS",
+        "JARO",
+        "MRF",
+        "HARAYA FARM",
+        "BIYAYA FARM",
+        "POULTRY",
+        "GLORY MOORE",
+        "MALAINEN"
+      ]
+    },
+    {
+      "id": "glitoda-tbktoda",
+      "name": "GLITODA TBKTODA",
+      "aliases": [
+        "GLITODA",
+        "TBKTODA"
+      ],
+      "barangays": [
+        "Guyam Malaki",
+        "Guyam Munti",
+        "Lumampong Halayhay",
+        "Tambo Kulit",
+        "Tambo Balagbag"
+      ],
+      "review": [
+        {
+          "barangay": "Harasan",
+          "because": "BALWARTE GWAPO (Verify pin)"
+        },
+        {
+          "barangay": "Barangay 3",
+          "because": "ROMAN GARDEN (Verify pin)"
+        },
+        {
+          "barangay": "Barangay 4",
+          "because": "LUMAMPONG NATIONAL (Verify pin)"
+        }
+      ],
+      "places": [
+        "GUYAM MALAKI/MUNTI",
+        "DON KOKO",
+        "BALWARTE GWAPO",
+        "OUR HAVEN",
+        "LIHIM NG KUBLI",
+        "VINE GARDEN",
+        "ROMAN GARDEN",
+        "OLD CEMETERY",
+        "LUMAMPONG HALAHAY",
+        "ALTA RIOS RESORT",
+        "DAYUHAN RESORT",
+        "ST. VINCENT PARISH CHURCH",
+        "LUMAMPONG NATIONAL",
+        "HIGHSCHOOL/ELEMENTARY",
+        "TAMBO KULIT",
+        "VILLA COLEMENAR RESORT",
+        "RIOVILLA NUEVO RESORT",
+        "VILLA NERISSA RESORT",
+        "VILLA PULIDO RESORT",
+        "SILAN RESORT",
+        "STALK",
+        "URO'S FARM",
+        "TAMBO BALAGBAG",
+        "KURAL",
+        "BAMBOO CREST RESORT",
+        "PURPLE STAR CAMPSITE",
+        "VON RIVER"
+      ]
+    },
+    {
+      "id": "kitoda",
+      "name": "KITODA",
+      "aliases": [],
+      "barangays": [
+        "Kayquit I",
+        "Kayquit II",
+        "Kayquit III"
+      ],
+      "review": [
+        {
+          "barangay": "Kaytambog",
+          "because": "IKLOY RIVER (Verify pin)"
+        }
+      ],
+      "places": [
+        "BRGY. KAYQUIT 1",
+        "BERAS FARM",
+        "HACIENDA GRACITA",
+        "TOPACIO'S FARM",
+        "MUZON (ASIS)",
+        "BRGY. KAYQUIT 2",
+        "IKLOY RIVER",
+        "BICOL REGOIN",
+        "EAST/WEST ROAD",
+        "BRGY. KAYQUIT 3",
+        "SIGLO CAFE & RESORT",
+        "KAPE FIED",
+        "SOIREE",
+        "888 FARM"
+      ]
+    },
+    {
+      "id": "macitoda",
+      "name": "MACITODA",
+      "aliases": [],
+      "barangays": [
+        "Calumpang Cerca",
+        "Agus-us",
+        "Calumpang Lejos I"
+      ],
+      "review": [
+        {
+          "barangay": "Banaba Cerca",
+          "because": "MACALIMA (Verify pin)"
+        }
+      ],
+      "places": [
+        "CALUMPANG CERCA",
+        "FAMIGLIA FELICE",
+        "NATURE'S FARM",
+        "DONSYL",
+        "THE RANCH",
+        "KUBO DE CERCA",
+        "LOLO'S LALAS FARM",
+        "NATIONAL ANNEX",
+        "SILANGAN RESORT",
+        "CASA GLOOW",
+        "SOLAR FARM",
+        "MACALIMA",
+        "TRIO A'S FARM",
+        "CASA MUSA",
+        "AGUS-OS",
+        "UNLI WINGS",
+        "ILAYAS LOOP",
+        "LA ULRICH LAND RESORT",
+        "LA FELICIDAD",
+        "TERRE VERTE",
+        "EL HERENCIA",
+        "MUZON",
+        "GREEN'S FOR GROWTH",
+        "INDANG BRITISH VILLAGE",
+        "ROYAL PALMHILLS",
+        "ROYAL FARM ACADEMY",
+        "8A WAREHOUSE",
+        "MRP"
+      ]
+    },
+    {
+      "id": "bliptoda",
+      "name": "BLIPTODA",
+      "aliases": [
+        "Buna Lejos 1 & 2"
+      ],
+      "barangays": [
+        "Buna Lejos I",
+        "Buna Lejos II"
+      ],
+      "review": [],
+      "places": [
+        "ATASHA (GOWN RENTALS)",
+        "TREE TOP (RESTAURANT)"
+      ]
+    },
+    {
+      "id": "alitoda",
+      "name": "ALITODA",
+      "aliases": [],
+      "barangays": [
+        "Alulod",
+        "Limbon"
+      ],
+      "review": [
+        {
+          "barangay": "Banaba Cerca",
+          "because": "PHILMALAY (Verify pin)"
+        }
+      ],
+      "places": [
+        "ALULOD",
+        "PATILLO",
+        "LIMBON",
+        "PANGIL",
+        "BRASS BAG",
+        "PHILMALAY",
+        "R.A. RESORT",
+        "LA CASA DE SERENIDAD",
+        "BONIFACIO SHRINE",
+        "VILLA FELICIANA"
+      ]
+    }
+  ]
+}

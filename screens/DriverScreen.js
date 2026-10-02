@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ViewAnnotation } from '@maplibre/maplibre-react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -6,6 +6,7 @@ import Screen from '../components/ui/Screen';
 import Button from '../components/ui/Button';
 import { Sheet } from '../components/ui/Surfaces';
 import RouteMap from '../components/RouteMap';
+import TodaZoneLayer from '../components/TodaZoneLayer';
 import BottomNav from '../components/BottomNav';
 import ConnectionBanner from '../components/ConnectionBanner';
 import RideDetails from '../components/RideDetails';
@@ -13,6 +14,7 @@ import { useApp } from '../context/AppContext';
 import useAccountHistory from '../hooks/useAccountHistory';
 import { ACTIVE_STATUSES, formatFare, isFreshFix, userName } from '../utils/rideState';
 import { SERVICE_AREA_EITHER, SERVICE_AREA_NAME } from '../data/indangMap';
+import { findToda, getBarangayAt, getTodaZoneShape } from '../data/todaZones';
 import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
 
 export default function DriverScreen({ navigation }) {
@@ -25,6 +27,13 @@ export default function DriverScreen({ navigation }) {
   const fresh = gps.status === 'ready' && isFreshFix(gps.fix, now), available = user.available && connected && fresh;
   // Location is still shared outside the service area; requests stay inside it.
   const outside = fresh && gps.inServiceArea === false;
+  // An Indang TODA's drivers get requests only inside its barangays, which
+  // their map shows; drivers of other TODAs keep the town-wide area.
+  const toda = findToda(user.toda);
+  const todaZone = useMemo(() => (toda ? getTodaZoneShape(toda) : null), [toda?.name]);
+  const fixLatitude = fresh ? gps.fix.latitude : undefined, fixLongitude = fresh ? gps.fix.longitude : undefined;
+  const barangay = useMemo(() => (Number.isFinite(fixLatitude) ? getBarangayAt({ latitude: fixLatitude, longitude: fixLongitude }) : null), [fixLatitude, fixLongitude]);
+  const outsideToda = Boolean(toda && fresh && !outside && !toda.barangays.includes(barangay));
   const perform = async (fn) => {
     if (busy) return;
     setBusy(true);
@@ -42,6 +51,7 @@ export default function DriverScreen({ navigation }) {
     </View>
     <View style={{ flex: 1 }}>
       <RouteMap pickup={offer?.trip.pickup} destination={offer?.trip.dropoff} route={offer?.route} currentLocation={fresh ? gps.fix : null} bottomInset={sheetHeight}>
+        {todaZone && <TodaZoneLayer shape={todaZone} />}
         {/* MapLibre draws a marker into a bitmap on every layout and crashes on a
             zero-width one, which a bare icon (text) can briefly have; the
             fixed-size frame never does. */}
@@ -65,6 +75,11 @@ export default function DriverScreen({ navigation }) {
             <Text style={[TYPE.caption, styles.subtitle]}>{!user.available ? 'Go online to receive nearby passenger requests.'
               : outside ? `Your live location is still shared, but ride requests only reach drivers inside ${SERVICE_AREA_EITHER}.` : 'Keep this app open. Nearby bookings will appear here.'}</Text>
             <Text style={[TYPE.caption, { color: fresh ? COLORS.brand : COLORS.inkMuted, marginBottom: SPACE.md }]}>{gps.message}</Text>
+            {toda && <View style={styles.toda}>
+              <Text style={TYPE.overline}>{toda.name} AREA</Text>
+              <Text style={[TYPE.caption, { marginTop: SPACE.xs }]}>You get requests only for trips within {toda.barangays.join(', ')}.</Text>
+              {outsideToda && <Text style={[TYPE.caption, { color: COLORS.danger, marginTop: SPACE.xs }]}>{barangay ? `You are in ${barangay} now, outside your TODA's area.` : "You are outside your TODA's area."}</Text>}
+            </View>}
             <Text style={[TYPE.caption, { marginBottom: SPACE.md }]}>Your live location is shared with pilot admins while this app is open, even when you are unavailable for rides.</Text>
             <View style={styles.summary}>
               <View><Text style={TYPE.overline}>TRIPS TODAY</Text><Text style={TYPE.heading}>{stats?.todayTrips ?? '—'}</Text></View>
@@ -81,6 +96,7 @@ export default function DriverScreen({ navigation }) {
   </Screen>;
 }
 const styles = StyleSheet.create({
+  toda: { backgroundColor: COLORS.brandTint, borderRadius: RADIUS.md, padding: SPACE.md, marginBottom: SPACE.md },
   gpsMarker: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   header: { flexDirection: 'row', alignItems: 'center', padding: SPACE.lg, backgroundColor: COLORS.surface },
   status: { paddingHorizontal: SPACE.md, paddingVertical: SPACE.sm, backgroundColor: COLORS.surfaceAlt, borderRadius: RADIUS.pill },

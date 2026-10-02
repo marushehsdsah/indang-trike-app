@@ -8,6 +8,7 @@ import Screen from '../components/ui/Screen';
 import AppHeader from '../components/ui/AppHeader';
 import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
+import TodaPicker from '../components/TodaPicker';
 import { SegmentedControl } from '../components/ui/Surfaces';
 import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
 import { SERVICE_AREA_NAME } from '../data/indangMap';
@@ -138,7 +139,7 @@ export default function RegisterScreen({ navigation }) {
 
           {role === 'driver' && <>
             <Field label="Vehicle plate" placeholder="Your registered plate" value={plate} onChangeText={setPlate} autoCapitalize="characters" maxLength={24} />
-            <Field label="TODA" placeholder="Your association" value={toda} onChangeText={setToda} maxLength={80} />
+            <TodaPicker value={toda} onChange={setToda} />
             <Field label="Passenger capacity (1–4)" value={capacity} onChangeText={setCapacity} keyboardType="number-pad" maxLength={1} />
           </>}
 
