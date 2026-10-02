@@ -69,7 +69,7 @@ Also check:
   and GPS stays on (plain GPS works without it). Approximate-only permission
   shows its own message asking for precise location.
 - Outside Indang: both apps keep tracking live GPS. The passenger cannot book
-  (the booking sheet says rides are Indang-only), and an online driver shows
+  (the trip card says booking needs a pickup inside the service area), and an online driver shows
   "Outside Indang" and receives no requests until back inside.
 - Minimize/lock the driver app: new matching stops. An assigned ride stays saved,
   and the passenger's position becomes unavailable/last known, not simulated.

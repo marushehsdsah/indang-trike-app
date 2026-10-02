@@ -1,51 +1,28 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
-import { COLORS, HIT_SLOP, SPACE, TYPE } from '../../theme';
-import { tapFeedback } from '../../utils/feedback';
+import { StyleSheet, Text, View } from 'react-native';
+import IconButton from './IconButton';
+import { SPACE, TYPE } from '../../theme';
+import { useI18n } from '../../i18n';
 
-// One header for every screen: optional back arrow, a title, and one action.
-// Sits inside Screen's safe area, so it never collides with the status bar.
+// Top app bar for the screens without a map: an optional back button, then
+// the screen's title, large and left-aligned, with one optional action.
 export default function AppHeader({ title, subtitle, onBack, action, style }) {
+  const { t } = useI18n();
   return (
     <View style={[styles.header, style]}>
-      <View style={styles.side}>
-        {onBack && (
-          <Pressable
-            onPress={() => {
-              tapFeedback();
-              onBack();
-            }}
-            hitSlop={HIT_SLOP}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
-          >
-            <Feather name="arrow-left" size={22} color={COLORS.ink} />
-          </Pressable>
-        )}
-      </View>
-
+      {onBack && <IconButton icon="arrow-left" label={t('common.back')} tone="quiet" raised={false} onPress={onBack} style={styles.back} />}
       <View style={styles.titleBlock}>
-        <Text style={TYPE.subheading} numberOfLines={1}>{title}</Text>
-        {subtitle ? <Text style={[TYPE.caption, styles.subtitle]} numberOfLines={1}>{subtitle}</Text> : null}
+        <Text style={TYPE.title} numberOfLines={1} accessibilityRole="header">{title}</Text>
+        {subtitle ? <Text style={[TYPE.caption, styles.subtitle]} numberOfLines={2}>{subtitle}</Text> : null}
       </View>
-
-      <View style={[styles.side, styles.sideEnd]}>{action}</View>
+      {action}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: SPACE.xl, paddingVertical: SPACE.md, minHeight: 56,
-  },
-  // Equal side columns keep the title optically centred whatever they hold.
-  side: { width: 44, justifyContent: 'center' },
-  sideEnd: { alignItems: 'flex-end' },
-  backButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginLeft: -8 },
-  pressed: { opacity: 0.6 },
-  titleBlock: { flex: 1, alignItems: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACE.lg, paddingTop: SPACE.md, paddingBottom: SPACE.md, minHeight: 64 },
+  back: { marginRight: SPACE.md },
+  titleBlock: { flex: 1 },
   subtitle: { marginTop: 2 },
 });

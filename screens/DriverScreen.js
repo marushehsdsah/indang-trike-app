@@ -1,26 +1,60 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ViewAnnotation } from '@maplibre/maplibre-react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import Screen from '../components/ui/Screen';
+import { BleedScreen } from '../components/ui/Screen';
 import Button from '../components/ui/Button';
-import { Sheet } from '../components/ui/Surfaces';
+import IconButton from '../components/ui/IconButton';
+import { Money } from '../components/ui/Surfaces';
 import RouteMap from '../components/RouteMap';
 import TodaZoneLayer from '../components/TodaZoneLayer';
 import BottomNav from '../components/BottomNav';
-import ConnectionBanner from '../components/ConnectionBanner';
-import RideDetails from '../components/RideDetails';
+import StatusPill from '../components/StatusPill';
+import TripStops from '../components/TripStops';
+import { FloatingCard, MapBottom, MapTop } from '../components/map/MapChrome';
+import { useConnectionStatus, useGpsStatus } from '../hooks/useMapStatus';
+import useReducedMotion from '../hooks/useReducedMotion';
 import { useApp } from '../context/AppContext';
+import { useI18n } from '../i18n';
 import useAccountHistory from '../hooks/useAccountHistory';
-import { ACTIVE_STATUSES, formatFare, isFreshFix, userName } from '../utils/rideState';
-import { SERVICE_AREA_EITHER, SERVICE_AREA_NAME } from '../data/indangMap';
+import { ACTIVE_STATUSES, formatPeso, isFreshFix } from '../utils/rideState';
+import { getMunicipalityAt } from '../data/indangMap';
 import { findToda, getBarangayAt, getTodaZoneShape } from '../data/todaZones';
-import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
+import { tapFeedback } from '../utils/feedback';
+import { COLORS, ELEVATION, FONTS, RADIUS, SPACE, TYPE } from '../theme';
+
+// How long the server holds an offer for one driver (dispatch.js offerMs).
+const OFFER_SECONDS = 20;
+
+// The yellow bar that drains across the top of an offer while it lasts.
+function OfferCountdown({ offerId, seconds }) {
+  const reduced = useReducedMotion();
+  const progress = useRef(new Animated.Value(Math.min(1, seconds / OFFER_SECONDS))).current;
+  useEffect(() => {
+    if (reduced) return undefined;
+    progress.setValue(Math.min(1, seconds / OFFER_SECONDS));
+    const animation = Animated.timing(progress, { toValue: 0, duration: seconds * 1000, easing: Easing.linear, useNativeDriver: true });
+    animation.start();
+    return () => animation.stop();
+    // Restarts only for a new offer; the per-second tick must not restart it.
+  }, [offerId, reduced]);
+  useEffect(() => { if (reduced) progress.setValue(Math.min(1, seconds / OFFER_SECONDS)); }, [reduced, seconds, progress]);
+  return (
+    <View style={styles.countdownTrack}>
+      <Animated.View style={[styles.countdownBar, { transform: [{ scaleX: progress }] }]} />
+    </View>
+  );
+}
 
 export default function DriverScreen({ navigation }) {
   const { user, ride, offer, setAvailable, rideAction, gps, connected, serverOffset } = useApp();
-  const { stats, error: statsError } = useAccountHistory();
-  const [busy, setBusy] = useState(false), [sheetHeight, setSheetHeight] = useState(260), [now, setNow] = useState(Date.now());
+  const { t } = useI18n();
+  const { stats } = useAccountHistory();
+  const connection = useConnectionStatus();
+  const gpsStatus = useGpsStatus();
+  const mapRef = useRef(null);
+  const [busy, setBusy] = useState(false), [bottomHeight, setBottomHeight] = useState(0), [now, setNow] = useState(Date.now());
+  const [zoneOpen, setZoneOpen] = useState(false);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const active = ride && ACTIVE_STATUSES.includes(ride.status);
   const seconds = offer ? Math.max(0, Math.ceil((new Date(offer.offerExpiresAt).getTime() - now - serverOffset) / 1000)) : 0;
@@ -33,75 +67,158 @@ export default function DriverScreen({ navigation }) {
   const todaZone = useMemo(() => (toda ? getTodaZoneShape(toda) : null), [toda?.name]);
   const fixLatitude = fresh ? gps.fix.latitude : undefined, fixLongitude = fresh ? gps.fix.longitude : undefined;
   const barangay = useMemo(() => (Number.isFinite(fixLatitude) ? getBarangayAt({ latitude: fixLatitude, longitude: fixLongitude }) : null), [fixLatitude, fixLongitude]);
+  const town = useMemo(() => (Number.isFinite(fixLatitude) ? getMunicipalityAt({ latitude: fixLatitude, longitude: fixLongitude })?.name : null), [fixLatitude, fixLongitude]);
   const outsideToda = Boolean(toda && fresh && !outside && !toda.barangays.includes(barangay));
   const perform = async (fn) => {
     if (busy) return;
     setBusy(true);
-    try { await fn(); } catch (failure) { Alert.alert('Unable to update', failure.message); }
+    try { await fn(); } catch (failure) { Alert.alert(t('driver.unableToUpdate'), failure.message); }
     finally { setBusy(false); }
   };
   const respond = (action) => perform(async () => {
     await rideAction(offer.id, action, { offerId: offer.offerId });
     if (action === 'accept') navigation.navigate('ActiveRide');
   });
-  return <Screen>
-    <View style={styles.header}>
-      <View style={{ flex: 1 }}><Text style={TYPE.caption}>Driver home</Text><Text style={TYPE.subheading}>{userName(user)}</Text></View>
-      <View style={[styles.status, available && styles.online]}><Text style={[TYPE.captionStrong, { color: available ? COLORS.brand : COLORS.inkMuted }]}>{active ? 'On a trip' : available ? outside ? 'Outside service area' : 'Online' : user.available ? 'Waiting for GPS' : 'Offline'}</Text></View>
-    </View>
-    <View style={{ flex: 1 }}>
-      <RouteMap pickup={offer?.trip.pickup} destination={offer?.trip.dropoff} route={offer?.route} currentLocation={fresh ? gps.fix : null} bottomInset={sheetHeight}>
+
+  // The pill: connection first, then GPS, then where the driver is relative
+  // to the areas their requests come from.
+  const status = connection ?? (outside ? { tone: 'alert', icon: 'map-marker-alert-outline', label: t('driver.outsideArea') }
+    : gpsStatus.tone !== 'live' ? gpsStatus
+    : outsideToda ? { tone: 'alert', icon: 'map-marker-alert-outline', label: barangay ? t('driver.outsideTodaIn', { toda: toda.name, barangay }) : t('driver.outsideToda', { toda: toda.name }) }
+    : { tone: 'live', icon: 'crosshairs-gps', label: [barangay, town].filter(Boolean).join(', ') || t('status.live') });
+
+  // The card's coloured band: green when requests can reach the driver.
+  const band = active ? { tone: 'live', title: t('driver.onTrip') }
+    : !user.available ? { tone: 'off', title: t('driver.offline') }
+    : !connected || !fresh ? { tone: 'wait', title: t('driver.waitingGps') }
+    : outside ? { tone: 'alert', title: t('driver.outsideArea') }
+    : { tone: 'live', title: t('driver.online') };
+  const bandColors = { live: [COLORS.brand, COLORS.onBrand], off: [COLORS.ink, '#FFFFFF'], wait: [COLORS.accent, COLORS.onAccent], alert: [COLORS.danger, '#FFFFFF'] }[band.tone];
+  const subtitle = active ? t('driver.onTripHint') : !user.available ? t('driver.offlineHint')
+    : !connected || !fresh ? t(`gps.${gps.status}`) : outside ? t('driver.outsideAreaHint') : t('driver.onlineHint');
+
+  return <BleedScreen>
+    <View style={styles.mapArea}>
+      <RouteMap ref={mapRef} pickup={offer?.trip.pickup} destination={offer?.trip.dropoff} route={offer?.route}
+        currentLocation={fresh ? gps.fix : null} bottomInset={bottomHeight}>
         {todaZone && <TodaZoneLayer shape={todaZone} />}
         {/* MapLibre draws a marker into a bitmap on every layout and crashes on a
             zero-width one, which a bare icon (text) can briefly have; the
             fixed-size frame never does. */}
-        {fresh && <ViewAnnotation lngLat={[gps.fix.longitude, gps.fix.latitude]} title="Your GPS location" anchor="center">
-          <View style={styles.gpsMarker}><MaterialCommunityIcons name="rickshaw" size={32} color={COLORS.brand} /></View>
+        {fresh && <ViewAnnotation lngLat={[gps.fix.longitude, gps.fix.latitude]} title={t('map.yourLocation')} anchor="center">
+          <View style={styles.gpsFrame}>
+            <View style={styles.gpsMarker}><MaterialCommunityIcons name="rickshaw" size={24} color={COLORS.onBrand} /></View>
+          </View>
         </ViewAnnotation>}
       </RouteMap>
-      <View style={styles.connection}><ConnectionBanner /></View>
-      <Sheet style={styles.sheet} onLayout={({ nativeEvent }) => setSheetHeight(nativeEvent.layout.height)}>
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {active ? <>
-            <Text style={TYPE.heading}>Your trip is active</Text><Text style={[TYPE.caption, styles.subtitle]}>Open the trip to navigate and update your passenger.</Text>
-            <Button label="Return to trip" onPress={() => navigation.navigate('ActiveRide')} />
-          </> : offer ? <>
-            <View style={styles.row}><Text style={[TYPE.heading, { flex: 1 }]}>New ride request</Text><Text style={[TYPE.subheading, { color: COLORS.brand }]}>{seconds}s</Text></View>
-            <RideDetails ride={offer} driver />
-            <Button label="Accept ride" loading={busy} disabled={!connected || seconds === 0 || !fresh} onPress={() => respond('accept')} />
-            <Button label="Decline" variant="ghost" disabled={busy || !connected} onPress={() => respond('decline')} />
-          </> : <>
-            <Text style={TYPE.heading}>{available ? outside ? `You are outside ${SERVICE_AREA_NAME}` : 'Ready for requests' : user.available ? 'Waiting for a fresh location' : 'Ready to drive?'}</Text>
-            <Text style={[TYPE.caption, styles.subtitle]}>{!user.available ? 'Go online to receive nearby passenger requests.'
-              : outside ? `Your live location is still shared, but ride requests only reach drivers inside ${SERVICE_AREA_EITHER}.` : 'Keep this app open. Nearby bookings will appear here.'}</Text>
-            <Text style={[TYPE.caption, { color: fresh ? COLORS.brand : COLORS.inkMuted, marginBottom: SPACE.md }]}>{gps.message}</Text>
-            {toda && <View style={styles.toda}>
-              <Text style={TYPE.overline}>{toda.name} AREA</Text>
-              <Text style={[TYPE.caption, { marginTop: SPACE.xs }]}>You get requests only for trips within {toda.barangays.join(', ')}.</Text>
-              {outsideToda && <Text style={[TYPE.caption, { color: COLORS.danger, marginTop: SPACE.xs }]}>{barangay ? `You are in ${barangay} now, outside your TODA's area.` : "You are outside your TODA's area."}</Text>}
-            </View>}
-            <Text style={[TYPE.caption, { marginBottom: SPACE.md }]}>Your live location is shared with pilot admins while this app is open, even when you are unavailable for rides.</Text>
-            <View style={styles.summary}>
-              <View><Text style={TYPE.overline}>TRIPS TODAY</Text><Text style={TYPE.heading}>{stats?.todayTrips ?? '—'}</Text></View>
-              <View><Text style={TYPE.overline}>CASH FARES TODAY</Text><Text style={TYPE.heading}>{stats ? formatFare(stats.todayFare) : '—'}</Text></View>
+
+      <MapTop><StatusPill {...status} /></MapTop>
+
+      <MapBottom edge={false} onHeight={setBottomHeight}
+        rail={fresh && !offer ? <IconButton icon="crosshairs-gps" label={t('map.recenter')} onPress={() => mapRef.current?.fit()} /> : null}>
+        {offer && !active ? (
+          <FloatingCard style={styles.offerCard}>
+            <OfferCountdown offerId={offer.offerId} seconds={seconds} />
+            <View style={styles.offerBody}>
+              <View style={styles.offerHeader} accessibilityLiveRegion="polite">
+                <Text style={[TYPE.heading, styles.flex]}>{t('driver.newRequest')}</Text>
+                <Text style={[TYPE.metric, styles.seconds]} accessibilityLabel={t('driver.secondsLeft', { seconds })}>{seconds}s</Text>
+              </View>
+              <TripStops pickup={offer.trip.pickup.name} dropoff={offer.trip.dropoff.name} lines={2} style={styles.offerStops} />
+              {offer.note ? <View style={styles.offerNote}>
+                <MaterialCommunityIcons name="message-reply-text-outline" size={18} color={COLORS.inkSecondary} />
+                <Text style={[TYPE.body, styles.flex]}>{offer.note}</Text>
+              </View> : null}
+              <View style={styles.offerFacts}>
+                <Text style={[TYPE.caption, styles.flex]}>
+                  {[offer.route?.durationLabel, offer.route?.distanceLabel, t('trip.riders', { count: offer.passengers })].filter(Boolean).join(' · ')}
+                </Text>
+                <Money amount={offer.fare} size={26} color={COLORS.brand} />
+              </View>
+              <View style={styles.offerActions}>
+                <Button label={t('driver.decline')} variant="outline" disabled={busy || !connected} onPress={() => respond('decline')} style={styles.decline} />
+                <Button label={t('driver.accept')} variant="hire" loading={busy} disabled={!connected || seconds === 0 || !fresh}
+                  onPress={() => respond('accept')} style={styles.accept} />
+              </View>
             </View>
-            {statsError && <Text style={[TYPE.caption, { color: COLORS.danger }]}>Trip totals are unavailable.</Text>}
-            <Button label={user.available ? 'Go offline' : 'Go online'} variant={user.available ? 'secondary' : 'brand'} loading={busy} disabled={!connected} onPress={() => perform(() => setAvailable(!user.available))} />
-            {user.available && !fresh && <Button label="Retry GPS" variant="ghost" onPress={gps.retry} />}
-          </>}
-        </ScrollView>
-      </Sheet>
+          </FloatingCard>
+        ) : (
+          <FloatingCard style={styles.homeCard}>
+            <View style={[styles.band, { backgroundColor: bandColors[0] }]}>
+              <View style={[styles.bandDot, { backgroundColor: bandColors[1] }]} />
+              <Text style={[TYPE.heading, { color: bandColors[1] }]} accessibilityRole="header" accessibilityLiveRegion="polite">{band.title}</Text>
+            </View>
+            <View style={styles.homeBody}>
+              <Text style={TYPE.body}>{subtitle}</Text>
+              {!active && <View style={styles.today}>
+                <Text style={[TYPE.caption, styles.todayLabel]}>{t('driver.today')}</Text>
+                <Text style={styles.todayValue}>{stats?.todayTrips ?? '—'}</Text>
+                <Text style={[TYPE.caption, styles.todayUnit]}>{t('driver.tripsUnit')}</Text>
+                <Text style={styles.todayValue}>{stats ? formatPeso(stats.todayFare) : '—'}</Text>
+                <Text style={[TYPE.caption, styles.todayUnit]}>{t('driver.cashUnit')}</Text>
+              </View>}
+              {toda && !active && <>
+                <Pressable onPress={() => { tapFeedback(); setZoneOpen((value) => !value); }} accessibilityRole="button" accessibilityState={{ expanded: zoneOpen }}
+                  style={({ pressed }) => [styles.zone, pressed && styles.pressed]}>
+                  <View style={styles.zoneSwatch} />
+                  <Text style={[TYPE.label, styles.flex]} numberOfLines={1}>{t('driver.zone', { toda: toda.name, count: toda.barangays.length })}</Text>
+                  <MaterialCommunityIcons name={zoneOpen ? 'chevron-up' : 'chevron-down'} size={22} color={COLORS.inkSecondary} />
+                </Pressable>
+                {zoneOpen && <Text style={[TYPE.caption, styles.zoneList]}>{t('driver.zoneList', { barangays: toda.barangays.join(', ') })}</Text>}
+              </>}
+              {active ? <Button label={t('driver.returnToTrip')} variant="brand" onPress={() => navigation.navigate('ActiveRide')} style={styles.mainAction} />
+                : <View style={styles.homeActions}>
+                  {user.available && !fresh && <Button label={t('common.retryGps')} variant="tonal" size="md" onPress={gps.retry} style={styles.flex} />}
+                  <Button label={t(user.available ? 'driver.goOffline' : 'driver.goOnline')} variant={user.available ? 'outline' : 'brand'}
+                    size={user.available ? 'md' : 'lg'} loading={busy} disabled={!connected}
+                    onPress={() => perform(() => setAvailable(!user.available))} style={styles.flex} />
+                </View>}
+            </View>
+          </FloatingCard>
+        )}
+      </MapBottom>
     </View>
     <BottomNav active="home" navigation={navigation} />
-  </Screen>;
+  </BleedScreen>;
 }
+
 const styles = StyleSheet.create({
-  toda: { backgroundColor: COLORS.brandTint, borderRadius: RADIUS.md, padding: SPACE.md, marginBottom: SPACE.md },
-  gpsMarker: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', padding: SPACE.lg, backgroundColor: COLORS.surface },
-  status: { paddingHorizontal: SPACE.md, paddingVertical: SPACE.sm, backgroundColor: COLORS.surfaceAlt, borderRadius: RADIUS.pill },
-  online: { backgroundColor: COLORS.brandTint }, connection: { position: 'absolute', top: SPACE.md, left: SPACE.md, right: SPACE.md },
-  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '76%', paddingBottom: SPACE.lg },
-  subtitle: { marginTop: SPACE.xs, marginBottom: SPACE.lg }, row: { flexDirection: 'row', alignItems: 'center' },
-  summary: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: SPACE.lg, padding: SPACE.md, backgroundColor: COLORS.surfaceAlt, borderRadius: RADIUS.md },
+  mapArea: { flex: 1 },
+  flex: { flex: 1 },
+  pressed: { opacity: 0.7 },
+  gpsFrame: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+  gpsMarker: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.brand, borderWidth: 3, borderColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center', ...ELEVATION.floating,
+  },
+
+  homeCard: { padding: 0, overflow: 'hidden' },
+  band: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACE.lg, paddingVertical: SPACE.md },
+  bandDot: { width: 10, height: 10, borderRadius: 5, marginRight: SPACE.sm },
+  homeBody: { padding: SPACE.lg },
+  today: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', marginTop: SPACE.md },
+  todayLabel: { marginRight: SPACE.sm },
+  todayValue: { fontFamily: FONTS.bold, fontSize: 22, lineHeight: 26, color: COLORS.ink },
+  todayUnit: { marginLeft: SPACE.xs, marginRight: SPACE.lg },
+  zone: {
+    flexDirection: 'row', alignItems: 'center', minHeight: 48, marginTop: SPACE.md,
+    borderTopWidth: 1, borderTopColor: COLORS.line,
+  },
+  zoneSwatch: { width: 14, height: 14, borderRadius: 4, backgroundColor: 'rgba(9, 92, 55, 0.25)', borderWidth: 2, borderColor: COLORS.brand, marginRight: SPACE.sm },
+  zoneList: { marginBottom: SPACE.xs },
+  homeActions: { flexDirection: 'row', gap: SPACE.sm, marginTop: SPACE.lg },
+  mainAction: { marginTop: SPACE.lg },
+
+  offerCard: { padding: 0, overflow: 'hidden' },
+  countdownTrack: { height: 8, backgroundColor: COLORS.accentTint },
+  countdownBar: { height: 8, backgroundColor: COLORS.accent, transformOrigin: 'left' },
+  offerBody: { padding: SPACE.lg },
+  offerHeader: { flexDirection: 'row', alignItems: 'center' },
+  seconds: { color: COLORS.accentDark },
+  offerStops: { marginTop: SPACE.md },
+  offerNote: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACE.sm, marginTop: SPACE.md },
+  offerFacts: { flexDirection: 'row', alignItems: 'center', marginTop: SPACE.md },
+  offerActions: { flexDirection: 'row', gap: SPACE.sm, marginTop: SPACE.lg },
+  decline: { flex: 1 },
+  accept: { flex: 2 },
 });

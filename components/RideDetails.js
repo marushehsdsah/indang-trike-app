@@ -1,32 +1,67 @@
 import React from 'react';
 import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
-import { Avatar, Divider } from './ui/Surfaces';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Avatar, Money } from './ui/Surfaces';
 import IconButton from './ui/IconButton';
+import TripStops from './TripStops';
 import { COLORS, SPACE, TYPE } from '../theme';
-import { formatFare, userName } from '../utils/rideState';
+import { userName } from '../utils/rideState';
+import { useI18n } from '../i18n';
 
-export default function RideDetails({ ride, driver = false }) {
-  const person = driver ? ride.passenger : ride.driver;
-  const contact = (scheme) => Linking.openURL(`${scheme}:${person.phone}`).catch(() => Alert.alert('Unable to open', `No ${scheme === 'tel' ? 'phone' : 'SMS'} app is available.`));
-  return <>
-    {person && <View style={styles.row}>
+// The other person on the trip, with message and call buttons when the server
+// shared their number.
+export function PersonRow({ person, subtitle, style }) {
+  const { t } = useI18n();
+  if (!person) return null;
+  const contact = (scheme) => Linking.openURL(`${scheme}:${person.phone}`)
+    .catch(() => Alert.alert(t('contact.unableTitle'), scheme === 'tel' ? t('contact.noPhoneApp') : t('contact.noSmsApp')));
+  return (
+    <View style={[styles.person, style]}>
       <Avatar name={userName(person)} size={44} />
-      <View style={styles.person}><Text style={TYPE.subheading}>{userName(person)}</Text>
-        <Text style={TYPE.caption}>{driver ? 'Your passenger' : `${person.plate || ''} · ${person.toda || ''}`}</Text></View>
-      {person.phone && <><IconButton icon="message-text-outline" label="Send SMS" tone="tint" size={40} onPress={() => contact('sms')} />
-        <IconButton icon="phone-outline" label="Call" tone="brand" size={40} onPress={() => contact('tel')} /></>}
-    </View>}
-    <View style={styles.stops}>
-      <Text style={TYPE.overline}>PICKUP</Text><Text style={TYPE.body}>{ride.trip.pickup.name}</Text>
-      <Text style={[TYPE.overline, { marginTop: SPACE.md }]}>DROP-OFF</Text><Text style={TYPE.body}>{ride.trip.dropoff.name}</Text>
-      {ride.note ? <Text style={[TYPE.caption, { marginTop: SPACE.md }]}>Pickup note: {ride.note}</Text> : null}
+      <View style={styles.personText}>
+        <Text style={TYPE.subheading} numberOfLines={1}>{userName(person)}</Text>
+        {subtitle ? <Text style={TYPE.caption} numberOfLines={1}>{subtitle}</Text> : null}
+      </View>
+      {person.phone && <>
+        <IconButton icon="message-text-outline" label={t('contact.sms', { name: userName(person) })} tone="tint" raised={false} onPress={() => contact('sms')} />
+        <IconButton icon="phone" label={t('contact.call', { name: userName(person) })} tone="brand" raised={false} onPress={() => contact('tel')} />
+      </>}
     </View>
-    <Divider />
-    <View style={styles.row}>
-      <View style={{ flex: 1 }}><Text style={TYPE.overline}>ESTIMATED TRIP</Text><Text style={TYPE.caption}>{ride.route?.durationLabel} · {ride.route?.distanceLabel}</Text></View>
-      <View style={{ marginHorizontal: SPACE.md }}><Text style={TYPE.overline}>RIDERS</Text><Text style={TYPE.body}>{ride.passengers}</Text></View>
-      <View><Text style={TYPE.overline}>CASH FARE</Text><Text style={[TYPE.subheading, { color: COLORS.brand }]}>{formatFare(ride.fare)}</Text></View>
-    </View>
-  </>;
+  );
 }
-const styles = StyleSheet.create({ row: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, paddingVertical: SPACE.md }, person: { flex: 1 }, stops: { paddingVertical: SPACE.md } });
+
+// Everything about the booked trip: stops, the rider's note, riders, fare.
+export function TripFacts({ ride, style }) {
+  const { t } = useI18n();
+  return (
+    <View style={style}>
+      <TripStops pickup={ride.trip.pickup.name} dropoff={ride.trip.dropoff.name} lines={2} />
+      {ride.note ? (
+        <View style={styles.note}>
+          <MaterialCommunityIcons name="message-reply-text-outline" size={18} color={COLORS.inkSecondary} />
+          <Text style={[TYPE.body, styles.noteText]}>{ride.note}</Text>
+        </View>
+      ) : null}
+      <View style={styles.facts}>
+        <Text style={[TYPE.caption, styles.factText]}>
+          {[ride.route?.durationLabel, ride.route?.distanceLabel].filter(Boolean).join(' · ')}
+          {'  ·  '}{t('trip.riders', { count: ride.passengers })}
+        </Text>
+        <View style={styles.fare}>
+          <Money amount={ride.fare} size={22} color={COLORS.brand} />
+          <Text style={TYPE.caption}>{t('trip.cash')}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  person: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
+  personText: { flex: 1, marginLeft: SPACE.xs },
+  note: { flexDirection: 'row', alignItems: 'flex-start', marginTop: SPACE.md, gap: SPACE.sm },
+  noteText: { flex: 1 },
+  facts: { flexDirection: 'row', alignItems: 'center', marginTop: SPACE.md },
+  factText: { flex: 1 },
+  fare: { flexDirection: 'row', alignItems: 'baseline', gap: SPACE.xs },
+});

@@ -1,11 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Camera, Map, ViewAnnotation } from '@maplibre/maplibre-react-native';
-import IconButton from './ui/IconButton';
-import { COLORS, ELEVATION, SPACE } from '../theme';
+import { COLORS } from '../theme';
 import IndangMapLayers from './IndangMapLayers';
 import PlacesLayer from './PlacesLayer';
-import MapAttribution from './MapAttribution';
 import RouteLine from './RouteLine';
 import { MAP_STYLE_URL } from './mapStyles';
 import { INDANG_BOUNDS, INDANG_MIN_ZOOM } from '../data/indangMap';
@@ -28,32 +26,37 @@ function stopKey(place) {
   return place.id ?? `${place.coordinate.latitude},${place.coordinate.longitude}`;
 }
 
-// Full-bleed map centred on Indang, with the road route (white casing, blue
-// line), pickup/destination markers, and map attribution. `topInset` and
-// `bottomInset` are the heights of overlays drawn above the map by the screen.
-// With `autoFit` off, the camera stays where the rider put it; turning it back
-// on frames the route again. With no stops to frame, the camera centres once on
-// `currentLocation`, which may be outside Indang.
-export default function RouteMap({
+// Full-bleed map of the service area with the road route (white casing, blue
+// line) and pickup/destination markers. `topInset` and `bottomInset` are the
+// heights of the overlays the screen draws over the map; the camera keeps the
+// route clear of them. With `autoFit` off, the camera stays where the user put
+// it; turning it back on frames the route again. With no stops to frame, the
+// camera centres once on `currentLocation`, which may be outside the area.
+// The ref's fit() frames the route (or the current location) again on demand.
+// With `fitKey`, the camera frames the route only when the key changes, not on
+// every route update, so a live route that shrinks behind the vehicle never
+// moves the map under the user.
+// The screen draws the map buttons and credit (components/map/MapChrome.js).
+const RouteMap = forwardRef(function RouteMap({
   pickup,
   destination,
   route,
   currentLocation,
   onMapPress,
-  onUseCurrentLocation,
-  locating = false,
   autoFit = true,
+  fitKey,
   topInset = 0,
   bottomInset = 0,
   children,
   style,
-}) {
+}, ref) {
   const cameraRef = useRef(null);
   const [mapReady, setMapReady] = useState(false);
   const latestRef = useRef(null);
   latestRef.current = { pickup, destination, route, currentLocation, topInset, bottomInset };
   const routeCoordinates = route?.coordinates?.length > 1 ? route.coordinates : null;
   const pickupKey = stopKey(pickup), destinationKey = stopKey(destination), hasCurrentLocation = Boolean(currentLocation);
+  const fitTrigger = fitKey ?? routeCoordinates;
 
   const fitCamera = useCallback(() => {
     const camera = cameraRef.current;
@@ -93,7 +96,9 @@ export default function RouteMap({
     if (!mapReady || !autoFit) return undefined;
     const timer = setTimeout(fitCamera, CAMERA_SETTLE_MS);
     return () => clearTimeout(timer);
-  }, [mapReady, autoFit, routeCoordinates, pickupKey, destinationKey, hasCurrentLocation, topInset, bottomInset, fitCamera]);
+  }, [mapReady, autoFit, fitTrigger, pickupKey, destinationKey, hasCurrentLocation, topInset, bottomInset, fitCamera]);
+
+  useImperativeHandle(ref, () => ({ fit: fitCamera }), [fitCamera]);
 
   const handleMapReady = useCallback(() => setMapReady(true), []);
 
@@ -133,39 +138,24 @@ export default function RouteMap({
         )}
         {children}
       </Map>
-
-      {onUseCurrentLocation && (
-        <IconButton
-          icon="crosshairs-gps"
-          tone="surface"
-          size={48}
-          label="Use my current location as pickup"
-          onPress={onUseCurrentLocation}
-          loading={locating}
-          style={[styles.locateButton, { bottom: bottomInset + SPACE.xxxl }]}
-        />
-      )}
-
-      <MapAttribution bottom={bottomInset + 6} />
     </View>
   );
-}
+});
+
+export default RouteMap;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.canvas },
-  // A ring rather than a filled dot: it reads as "you are here" without
-  // hiding the road underneath it.
+  // Pickup is a green ring and drop-off a yellow square, the same marks the
+  // cards use beside the stop names.
   pickupMarker: {
-    width: 22, height: 22, borderRadius: 11,
-    backgroundColor: COLORS.brand, borderWidth: 4, borderColor: '#FFFFFF',
-    ...ELEVATION.floating,
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: '#FFFFFF', borderWidth: 6, borderColor: COLORS.brand,
   },
   destinationMarker: {
-    width: 26, height: 26, borderRadius: 13,
-    backgroundColor: COLORS.accent, borderWidth: 3, borderColor: '#FFFFFF',
+    width: 26, height: 26, borderRadius: 6,
+    backgroundColor: COLORS.accent, borderWidth: 3, borderColor: COLORS.ink,
     alignItems: 'center', justifyContent: 'center',
-    ...ELEVATION.floating,
   },
-  destinationMarkerCore: { width: 8, height: 8, borderRadius: 2, backgroundColor: COLORS.ink },
-  locateButton: { position: 'absolute', right: SPACE.lg },
+  destinationMarkerCore: { width: 6, height: 6, borderRadius: 1, backgroundColor: COLORS.ink },
 });

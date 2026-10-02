@@ -1,17 +1,11 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
-import { useApp } from '../context/AppContext';
-import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
+import StatusPill from './StatusPill';
+import { useConnectionStatus } from '../hooks/useMapStatus';
+import { SPACE } from '../theme';
 
-export const OFFLINE_MESSAGE = 'You are offline. Saved maps, search, routes and the GPS guide still work; booking and live trips need internet.';
-
-export default function ConnectionBanner() {
-  const { connected, error, online, refresh, syncing } = useApp();
-  if (!online) return <View accessibilityRole="alert" style={{ backgroundColor: COLORS.surface, borderRadius: RADIUS.md, padding: SPACE.md, marginBottom: SPACE.sm }}>
-    <Text style={[TYPE.caption, { color: COLORS.inkSecondary }]}>{OFFLINE_MESSAGE}</Text>
-  </View>;
-  if (connected && !error) return null;
-  return <Pressable accessibilityRole="button" onPress={refresh} style={{ backgroundColor: COLORS.surface, borderRadius: RADIUS.md, padding: SPACE.md, marginBottom: SPACE.sm }}>
-    <Text style={[TYPE.caption, { color: COLORS.danger }]}>{error || (syncing ? 'Connecting to IndangGO…' : 'Not connected to IndangGO. Tap to retry; a sleeping server takes up to a minute to wake.')}</Text>
-  </Pressable>;
+// Connection trouble on the screens without a map; nothing when all is well.
+export default function ConnectionBanner({ style }) {
+  const status = useConnectionStatus();
+  if (!status) return null;
+  return <StatusPill {...status} style={[{ alignSelf: 'stretch', marginBottom: SPACE.md, elevation: 0, shadowOpacity: 0 }, style]} />;
 }

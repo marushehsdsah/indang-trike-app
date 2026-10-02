@@ -1,28 +1,31 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, HIT_SLOP, RADIUS, SPACE, TYPE } from '../../theme';
+import { useI18n } from '../../i18n';
 
-// Labelled text input. The border carries the state — idle, focused, invalid —
-// so a field never needs a second explanatory element to read as wrong.
+// Labelled text input. The outline carries the state (idle, focused, invalid),
+// so a field never needs a second element to read as wrong.
 export default function Field({
   label,
   icon,
   error,
+  hint,
   prefix,
   secure = false,
   style,
   inputStyle,
   ...inputProps
 }) {
+  const { t } = useI18n();
   const [focused, setFocused] = useState(false);
   const [revealed, setRevealed] = useState(false);
 
   return (
     <View style={[styles.field, style]}>
-      {label ? <Text style={[TYPE.captionStrong, styles.label]}>{label}</Text> : null}
+      {label ? <Text style={[TYPE.label, styles.label]}>{label}</Text> : null}
       <View style={[styles.control, focused && styles.controlFocused, error && styles.controlError]}>
-        {icon && <Feather name={icon} size={18} color={focused ? COLORS.brand : COLORS.inkMuted} style={styles.icon} />}
+        {icon && <MaterialCommunityIcons name={icon} size={20} color={focused ? COLORS.brand : COLORS.inkMuted} style={styles.icon} />}
         {prefix ? (
           <>
             <Text style={[TYPE.body, styles.prefix]}>{prefix}</Text>
@@ -42,13 +45,13 @@ export default function Field({
             onPress={() => setRevealed((value) => !value)}
             hitSlop={HIT_SLOP}
             accessibilityRole="button"
-            accessibilityLabel={revealed ? 'Hide password' : 'Show password'}
+            accessibilityLabel={revealed ? t('field.hidePassword') : t('field.showPassword')}
           >
-            <Feather name={revealed ? 'eye-off' : 'eye'} size={18} color={COLORS.inkMuted} />
+            <MaterialCommunityIcons name={revealed ? 'eye-off-outline' : 'eye-outline'} size={20} color={COLORS.inkSecondary} />
           </Pressable>
         )}
       </View>
-      {error ? <Text style={[TYPE.caption, styles.error]}>{error}</Text> : null}
+      {error ? <Text style={[TYPE.caption, styles.error]}>{error}</Text> : hint ? <Text style={[TYPE.caption, styles.hint]}>{hint}</Text> : null}
     </View>
   );
 }
@@ -58,15 +61,16 @@ const styles = StyleSheet.create({
   label: { marginBottom: SPACE.sm },
   control: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.surfaceAlt,
-    borderWidth: 1.5, borderColor: 'transparent',
-    borderRadius: RADIUS.md, paddingHorizontal: SPACE.md, height: 54,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1.5, borderColor: COLORS.lineStrong,
+    borderRadius: RADIUS.lg, paddingHorizontal: SPACE.md, minHeight: 56,
   },
-  controlFocused: { borderColor: COLORS.brand, backgroundColor: COLORS.surface },
-  controlError: { borderColor: COLORS.danger, backgroundColor: COLORS.surface },
+  controlFocused: { borderColor: COLORS.brand, borderWidth: 2 },
+  controlError: { borderColor: COLORS.danger, borderWidth: 2 },
   icon: { marginRight: SPACE.sm + 2 },
   prefix: { color: COLORS.inkSecondary },
-  prefixDivider: { width: 1, height: 20, backgroundColor: COLORS.lineStrong, marginHorizontal: SPACE.sm + 2 },
-  input: { flex: 1, paddingVertical: 0 },
+  prefixDivider: { width: 1, height: 22, backgroundColor: COLORS.lineStrong, marginHorizontal: SPACE.sm + 2 },
+  input: { flex: 1, paddingVertical: SPACE.sm },
   error: { color: COLORS.danger, marginTop: SPACE.xs + 2 },
+  hint: { marginTop: SPACE.xs + 2 },
 });

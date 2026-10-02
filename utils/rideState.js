@@ -62,6 +62,8 @@ function getDriverAction(status) {
 }
 
 function formatFare(fare) { return `₱${Number(fare ?? 0).toFixed(2)}`; }
+// A fare as people say it: "₱45", or "₱45.50" when it has centavos.
+function formatPeso(fare) { const value = Number(fare ?? 0); return `₱${Number.isInteger(value) ? value : value.toFixed(2)}`; }
 function userName(user) { return [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.phone || 'Your account'; }
 
-module.exports = { ACTIVE_STATUSES, ASSIGNED_STATUSES, GPS_MAX_AGE_MS, STATUS_LABELS, isFreshFix, validateFix, rankDrivers, nextRideStatus, mergeRide, getDriverAction, formatFare, userName };
+module.exports = { ACTIVE_STATUSES, ASSIGNED_STATUSES, GPS_MAX_AGE_MS, STATUS_LABELS, isFreshFix, validateFix, rankDrivers, nextRideStatus, mergeRide, getDriverAction, formatFare, formatPeso, userName };

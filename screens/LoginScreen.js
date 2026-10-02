@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
+import Screen from '../components/ui/Screen';
+import AppHeader from '../components/ui/AppHeader';
 import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
-import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
+import { COLORS, SPACE, TYPE } from '../theme';
 import { useApp } from '../context/AppContext';
-import { SERVICE_AREA_NAME } from '../data/indangMap';
+import { useI18n } from '../i18n';
 
 export default function LoginScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { t } = useI18n();
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
   const { signIn, error: sessionError, online, restore } = useApp();
@@ -26,98 +26,59 @@ export default function LoginScreen({ navigation }) {
   };
 
   return (
-    <View style={styles.screen}>
-      <StatusBar style="light" />
+    <Screen background={COLORS.surface}>
+      <AppHeader title={t('login.title')} subtitle={t('login.subtitle')} onBack={() => navigation.replace('Splash')} />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        {/* Hero and card scroll together: the card's negative offset overlaps a
-            sibling, which Android will not clip the way it clips scroll content. */}
         <ScrollView
-          contentContainerStyle={{ paddingBottom: insets.bottom + SPACE.xxl }}
+          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + SPACE.xxl }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <LinearGradient
-            colors={[COLORS.brand, COLORS.brandDark]}
-            start={{ x: 0.1, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.hero, { paddingTop: insets.top + SPACE.xxl }]}
-          >
-            <View style={styles.mark}>
-              <MaterialCommunityIcons name="rickshaw" size={24} color={COLORS.brand} />
-            </View>
-            <Text style={styles.heroTitle}>Welcome back</Text>
-            <Text style={styles.heroSub}>Sign in to ride or drive around {SERVICE_AREA_NAME}.</Text>
-          </LinearGradient>
+          <Field
+            label={t('field.phone')}
+            icon="phone-outline"
+            placeholder="0912 345 6789"
+            keyboardType="phone-pad"
+            autoCapitalize="none"
+            autoCorrect={false}
+            textContentType="telephoneNumber"
+            value={account}
+            onChangeText={setAccount}
+          />
+          <Field
+            label={t('field.password')}
+            icon="lock-outline"
+            placeholder={t('field.passwordPlaceholder')}
+            secure
+            textContentType="password"
+            value={password}
+            onChangeText={setPassword}
+          />
 
-          <View style={styles.body}>
-            <View style={styles.card}>
-              <Field
-                label="Mobile number"
-                icon="phone"
-                placeholder="0912 345 6789"
-                keyboardType="phone-pad"
-                autoCapitalize="none"
-                autoCorrect={false}
-                value={account}
-                onChangeText={setAccount}
-              />
-              <Field
-                label="Password"
-                icon="lock"
-                placeholder="Your password"
-                secure
-                value={password}
-                onChangeText={setPassword}
-                style={styles.lastField}
-              />
+          {(error || sessionError) && <Text accessibilityRole="alert" style={[TYPE.body, styles.error]}>{error || sessionError}</Text>}
+          {!online && <Text style={[TYPE.caption, styles.note]}>{t('login.offline')}</Text>}
+          {sessionError && <Button label={t('login.retrySession')} variant="text" size="sm" onPress={restore} style={styles.note} />}
+          <Button label={t('login.submit')} variant="hire" trailingIcon="arrow-right" loading={submitting} onPress={login} />
 
-              {(error || sessionError) && <Text accessibilityRole="alert" style={[TYPE.caption, { color: COLORS.danger, marginBottom: SPACE.md }]}>{error || sessionError}</Text>}
-              {!online && <Text style={[TYPE.caption, { marginBottom: SPACE.md }]}>You are offline. Logging in needs internet; after that, IndangGO opens without internet for up to 7 days.</Text>}
-              {sessionError && <Button label="Retry saved session" variant="ghost" size="sm" onPress={restore} />}
-              <Button label="Log in" trailingIcon="arrow-right" loading={submitting} onPress={login} />
-            </View>
-
-            <View style={styles.footer}>
-              <Text style={TYPE.caption}>New to IndangGO? </Text>
-              <Pressable
-                onPress={() => navigation.navigate('Register')}
-                accessibilityRole="button"
-                style={({ pressed }) => pressed && styles.pressed}
-              >
-                <Text style={[TYPE.captionStrong, styles.footerLink]}>Create an account</Text>
-              </Pressable>
-            </View>
+          <View style={styles.footer}>
+            <Text style={TYPE.body}>{t('login.newHere')} </Text>
+            <Pressable onPress={() => navigation.replace('Register')} accessibilityRole="button" hitSlop={{ top: 12, bottom: 12 }}
+              style={({ pressed }) => pressed && styles.pressed}>
+              <Text style={[TYPE.bodyStrong, styles.link]}>{t('login.createAccount')}</Text>
+            </Pressable>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLORS.canvas },
   flex: { flex: 1 },
-  hero: {
-    paddingHorizontal: SPACE.xxl, paddingBottom: SPACE.xxxl + SPACE.xxl,
-    borderBottomLeftRadius: RADIUS.xxl, borderBottomRightRadius: RADIUS.xxl,
-  },
-  mark: {
-    width: 44, height: 44, borderRadius: RADIUS.md, backgroundColor: COLORS.surface,
-    alignItems: 'center', justifyContent: 'center', marginBottom: SPACE.lg,
-  },
-  heroTitle: { ...TYPE.title, color: COLORS.onBrand },
-  heroSub: { ...TYPE.body, color: 'rgba(255,255,255,0.78)', marginTop: SPACE.xs + 2 },
-
-  body: { paddingHorizontal: SPACE.xl, marginTop: -SPACE.xxxl },
-  card: {
-    backgroundColor: COLORS.surface, borderRadius: RADIUS.xl, padding: SPACE.xl,
-    shadowColor: '#0E1512', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.1, shadowRadius: 18, elevation: 6,
-  },
-  lastField: { marginBottom: SPACE.sm },
-  forgot: { alignSelf: 'flex-end', paddingVertical: SPACE.sm, marginBottom: SPACE.md },
-  forgotText: { color: COLORS.brand },
+  content: { paddingHorizontal: SPACE.xl, paddingTop: SPACE.lg },
+  error: { color: COLORS.danger, marginBottom: SPACE.md },
+  note: { marginBottom: SPACE.md },
+  footer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', marginTop: SPACE.xxl },
+  link: { color: COLORS.brand },
   pressed: { opacity: 0.6 },
-
-  footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: SPACE.xxl },
-  footerLink: { color: COLORS.brand },
 });

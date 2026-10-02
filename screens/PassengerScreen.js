@@ -1,235 +1,583 @@
-import React, { useEffect, useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, BackHandler, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import RouteMap from '../components/RouteMap';
+import LocationSearch from '../components/LocationSearch';
+import LiveLocationMarker from '../components/LiveLocationMarker';
+import StatusPill from '../components/StatusPill';
+import TripStops from '../components/TripStops';
 import BottomNav from '../components/BottomNav';
-import Screen from '../components/ui/Screen';
-import IconButton from '../components/ui/IconButton';
-import { Avatar, Card, Chip, Divider, ListRow } from '../components/ui/Surfaces';
-import { preloadRoadGraph } from '../data/roadNetwork';
-import { MUNICIPALITIES, SERVICE_AREA_EITHER, SERVICE_AREA_NAME, getMunicipalityAt } from '../data/indangMap';
-import { COLORS, ELEVATION, RADIUS, SPACE, TYPE } from '../theme';
-import { tapFeedback } from '../utils/feedback';
-import { useApp } from '../context/AppContext';
-import useAccountHistory from '../hooks/useAccountHistory';
-import ConnectionBanner from '../components/ConnectionBanner';
+import { FloatingCard, MapBottom, MapTop } from '../components/map/MapChrome';
+import { BleedScreen } from '../components/ui/Screen';
 import Button from '../components/ui/Button';
-import { ACTIVE_STATUSES, formatFare, userName } from '../utils/rideState';
+import IconButton from '../components/ui/IconButton';
+import Snackbar from '../components/ui/Snackbar';
+import { Chip, Divider, Money, SegmentedControl } from '../components/ui/Surfaces';
+import useCurrentPickup from '../hooks/useCurrentPickup';
+import useAccountHistory from '../hooks/useAccountHistory';
+import useMapStatus from '../hooks/useMapStatus';
+import { MUNICIPALITIES, getMunicipalityAt, isInIndangServiceArea } from '../data/indangMap';
+import { useApp } from '../context/AppContext';
+import { useI18n } from '../i18n';
+import { placeName, routeMessage } from '../i18n/messages';
+import { ACTIVE_STATUSES, formatPeso } from '../utils/rideState';
+import { getRoadGraph, getSearchablePlaces, preloadRoadGraph } from '../data/roadNetwork';
+import { MAX_PASSENGERS, MIN_PASSENGERS, createBookingPayload, getBookingState, resolveBookingRoute } from '../utils/bookingRoute';
+import { findNearestRoadNode, getRoadNameAtNode } from '../utils/roadGraph';
+import { searchPlaces } from '../utils/placeSearch';
+import { selectionFeedback, tapFeedback } from '../utils/feedback';
+import { COLORS, ELEVATION, HIT_SLOP, RADIUS, SPACE, TYPE } from '../theme';
 
-// Tapping any of these opens booking with the destination search already
-// filled in, so the rider never types a whole place name. Each town has its
-// own; search lists the rider's town first, so the shared queries find its places.
+// Lets the "calculating" state paint before A* occupies the JS thread.
+const ROUTE_CALCULATION_DELAY_MS = 30;
+const NOTICE_MS = 6000;
+
+// Tapping one opens search already filled in, so the rider never types a whole
+// place name. Each town has its own; search lists the rider's town first.
 const SHORTCUTS = {
   'General Trias': [
-    { label: 'CvSU Gentri', icon: 'school-outline', query: 'Cavite State University' },
-    { label: 'Public market', icon: 'storefront-outline', query: 'Market' },
-    { label: 'City hall', icon: 'office-building-outline', query: 'City Hall' },
+    { label: 'shortcut.cvsuGentri', icon: 'school-outline', query: 'Cavite State University' },
+    { label: 'shortcut.market', icon: 'storefront-outline', query: 'Market' },
+    { label: 'shortcut.cityHall', icon: 'office-building-outline', query: 'City Hall' },
   ],
   Indang: [
-    { label: 'CvSU Main', icon: 'school-outline', query: 'Cavite State University' },
-    { label: 'Public market', icon: 'storefront-outline', query: 'Indang Public Market' },
-    { label: 'Municipal hall', icon: 'office-building-outline', query: 'Municipal Hall' },
+    { label: 'shortcut.cvsuMain', icon: 'school-outline', query: 'Cavite State University' },
+    { label: 'shortcut.market', icon: 'storefront-outline', query: 'Indang Public Market' },
+    { label: 'shortcut.municipalHall', icon: 'office-building-outline', query: 'Municipal Hall' },
   ],
 };
 
-const GPS_RETRY_STATUSES = ['denied', 'approximate', 'disabled', 'unavailable', 'inaccurate', 'stale'];
+function createPinnedPlace(t, coordinate) {
+  const graph = getRoadGraph();
+  const snap = graph.status === 'ready' ? findNearestRoadNode(graph.graph, coordinate) : null;
+  const roadName = snap && getRoadNameAtNode(graph.graph, snap.nodeId);
+  return {
+    id: `pin/${coordinate.latitude.toFixed(6)},${coordinate.longitude.toFixed(6)}`,
+    name: roadName ? t('pin.near', { road: roadName }) : t('pin.pinned'),
+    kind: 'pin',
+    coordinate: { latitude: coordinate.latitude, longitude: coordinate.longitude },
+  };
+}
 
-// Passenger GPS runs whenever the app is open; this line shows whether it is
-// live and whether the rider is somewhere a tricycle can be booked.
-function GpsStatus({ gps, town }) {
-  const ready = gps.status === 'ready', outside = ready && gps.inServiceArea === false;
-  const retryable = GPS_RETRY_STATUSES.includes(gps.status);
-  const message = outside ? `Live GPS · You are outside ${SERVICE_AREA_NAME}. Tricycle rides can only be booked inside ${SERVICE_AREA_EITHER}.`
-    : ready ? `Live GPS · You are in ${town ?? SERVICE_AREA_NAME}.` : gps.message + (retryable ? ' Tap to retry.' : '');
-  const color = outside ? COLORS.danger : ready ? COLORS.brand : COLORS.inkMuted;
+// The last few places the rider actually went, newest first, one per name.
+function recentDestinations(rides) {
+  const seen = new Set();
+  return rides.filter((ride) => ride.status === 'completed' && ride.trip?.dropoff?.name)
+    .map((ride) => ride.trip.dropoff)
+    .filter((place) => !seen.has(place.name) && seen.add(place.name))
+    .slice(0, 3);
+}
+
+function PassengerStepper({ value, onChange }) {
+  const { t } = useI18n();
+  const step = (delta, enabled) => () => {
+    if (!enabled) return;
+    selectionFeedback();
+    onChange(value + delta);
+  };
+  const canDecrease = value > MIN_PASSENGERS, canIncrease = value < MAX_PASSENGERS;
   return (
-    <Pressable
-      onPress={gps.retry}
-      disabled={!retryable}
-      accessibilityRole={retryable ? 'button' : 'text'}
-      accessibilityLiveRegion="polite"
-      style={({ pressed }) => [styles.gpsRow, pressed && styles.pressed]}
-    >
-      <MaterialCommunityIcons name={outside ? 'map-marker-alert-outline' : ready ? 'crosshairs-gps' : 'crosshairs-question'} size={18} color={color} />
-      <Text style={[TYPE.caption, styles.gpsText, { color }]}>{message}</Text>
-    </Pressable>
+    <View style={styles.stepper} accessibilityLabel={t('trip.ridersLabel', { count: value })}>
+      <Pressable onPress={step(-1, canDecrease)} disabled={!canDecrease} hitSlop={HIT_SLOP} accessibilityRole="button"
+        accessibilityLabel={t('trip.fewerRiders')} style={({ pressed }) => [styles.stepperButton, pressed && styles.pressed]}>
+        <MaterialCommunityIcons name="minus" size={20} color={canDecrease ? COLORS.ink : COLORS.lineStrong} />
+      </Pressable>
+      <MaterialCommunityIcons name="account" size={18} color={COLORS.inkSecondary} />
+      <Text style={[TYPE.subheading, styles.stepperValue]}>{value}</Text>
+      <Pressable onPress={step(1, canIncrease)} disabled={!canIncrease} hitSlop={HIT_SLOP} accessibilityRole="button"
+        accessibilityLabel={t('trip.moreRiders')} style={({ pressed }) => [styles.stepperButton, pressed && styles.pressed]}>
+        <MaterialCommunityIcons name="plus" size={20} color={canIncrease ? COLORS.ink : COLORS.lineStrong} />
+      </Pressable>
+    </View>
   );
 }
 
-function greeting() {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
-export default function PassengerScreen({ navigation }) {
-  const { user, ride, config, gps } = useApp();
+// The passenger's home is the booking map: "Where to?" over the map, then the
+// route and fare on one card, then the yellow Book button. Search opens over
+// the whole screen; setting a stop on the map uses a tap.
+export default function PassengerScreen({ navigation, route: screenRoute }) {
+  const params = screenRoute?.params;
+  const { user, bookRide, ride, config, connected, online } = useApp();
+  const { t } = useI18n();
   const { rides } = useAccountHistory();
-  const recent = rides.filter((item) => item.status === 'completed').slice(0, 3).map((item) => ({ id: item.id, title: item.trip.dropoff.name, subtitle: item.route.distanceLabel, query: item.trip.dropoff.name }));
-  const active = ride && ACTIVE_STATUSES.includes(ride.status);
-  // The town the rider is in, from measured GPS; it picks the shortcuts.
-  const fixLatitude = gps.status === 'ready' ? gps.fix?.latitude : undefined, fixLongitude = gps.fix?.longitude;
-  const town = useMemo(() => (Number.isFinite(fixLatitude) ? getMunicipalityAt({ latitude: fixLatitude, longitude: fixLongitude }) : null),
-    [fixLatitude, fixLongitude]);
-  const resume = () => navigation.navigate(ride.status === 'searching' ? 'Searching' : 'ActiveRide');
-  // Loads the offline road graph while the rider is idle here, so booking
-  // shows its first route without waiting for the one-time load.
+  const [pickup, setPickup] = useState(null);
+  const [destination, setDestination] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const bookingKeyRef = useRef(null);
+  const [activeEndpoint, setActiveEndpoint] = useState(null);
+  // Map-pick mode: which stop the next map tap sets. Setting pickup moves
+  // straight on to destination, so both take one tap each.
+  const [pickTarget, setPickTarget] = useState(null);
+  const [query, setQuery] = useState('');
+  const [routeResult, setRouteResult] = useState({ status: 'missing-endpoints' });
+  const [passengers, setPassengers] = useState(1);
+  const [note, setNote] = useState('');
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [topHeight, setTopHeight] = useState(0);
+  const [bottomHeight, setBottomHeight] = useState(0);
+  const mapRef = useRef(null);
+  const location = useCurrentPickup();
+  // Device location drives pickup until the rider picks one themselves.
+  const followLocationRef = useRef(true);
+  const requestIdRef = useRef(0);
+  const activeRide = ride && ACTIVE_STATUSES.includes(ride.status) ? ride : null;
+
+  // Warms the offline road graph while the rider looks at the map, so the
+  // first route appears without waiting for the one-time load.
   useEffect(() => {
     const handle = requestIdleCallback(preloadRoadGraph);
     return () => cancelIdleCallback(handle);
   }, []);
 
-  const openBooking = (query) => !user.profileComplete ? navigation.navigate('Profile') : active ? resume() : navigation.navigate('Booking', { focus: 'destination', query });
+  // Rebook from history arrives with a destination; older links with a
+  // search to open.
+  useEffect(() => {
+    if (params?.destination && isInIndangServiceArea(params.destination.coordinate)) setDestination(params.destination);
+  }, [params?.destination]);
+  useEffect(() => {
+    if (!params?.focus) return;
+    setActiveEndpoint(params.focus);
+    setQuery(params.query ?? '');
+  }, [params?.focus, params?.query]);
+
+  useEffect(() => {
+    if (!followLocationRef.current || submitting) return;
+    // A lookup that is only starting keeps the current pickup.
+    if (location.status === 'loading') return;
+    setPickup(location.pickup);
+  }, [location.pickup, location.status, submitting]);
+
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(null), NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  const pickupLatitude = pickup?.coordinate.latitude, pickupLongitude = pickup?.coordinate.longitude;
+  const destinationLatitude = destination?.coordinate.latitude, destinationLongitude = destination?.coordinate.longitude;
+
+  useEffect(() => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    if (!pickup || !destination) { setRouteResult({ status: 'missing-endpoints' }); return undefined; }
+    setRouteResult({ status: 'calculating' });
+    const timer = setTimeout(() => {
+      const result = resolveBookingRoute({
+        roadGraph: getRoadGraph(),
+        pickup: { coordinate: { latitude: pickupLatitude, longitude: pickupLongitude } },
+        destination: { coordinate: { latitude: destinationLatitude, longitude: destinationLongitude } },
+        isInServiceArea: isInIndangServiceArea,
+        getMunicipalityAt,
+      });
+      // A newer stop change supersedes this result.
+      if (requestIdRef.current === requestId) setRouteResult(result);
+    }, ROUTE_CALCULATION_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude]);
+
+  const routeState = getBookingState(routeResult, routeResult.details);
+  const route = routeResult.status === 'ok' ? routeResult.details : null;
+  const calculating = routeResult.status === 'calculating';
+  // Live GPS keeps working outside the towns, but booking does not, even for a
+  // pickup chosen inside: no driver should wait for an absent rider.
+  const blockedReason = !online ? t('trip.blockedOffline') : !connected || !config ? t('trip.blockedConnecting')
+    : location.outsideServiceArea ? t('trip.blockedOutside') : null;
+  const canBook = routeState.canConfirm && !blockedReason;
+  const fare = config ? formatPeso(config.fare) : null;
+
+  // Search lists the rider's own town first: the pickup's, or where GPS puts them.
+  const townLatitude = pickupLatitude ?? location.pickup?.coordinate.latitude;
+  const townLongitude = pickupLongitude ?? location.pickup?.coordinate.longitude;
+  const town = useMemo(() => (Number.isFinite(townLatitude)
+    ? getMunicipalityAt({ latitude: townLatitude, longitude: townLongitude })?.name : undefined), [townLatitude, townLongitude]);
+  const results = useMemo(
+    () => (activeEndpoint ? searchPlaces(getSearchablePlaces(), query, undefined, { preferTown: town }) : []),
+    [activeEndpoint, query, town],
+  );
+  const recents = useMemo(() => recentDestinations(rides), [rides]);
+  const status = useMapStatus({ town });
+
+  const closeSearch = useCallback(() => {
+    Keyboard.dismiss();
+    setActiveEndpoint(null);
+    setQuery('');
+  }, []);
+  const closeMapPick = useCallback(() => setPickTarget(null), []);
+  const clearTrip = useCallback(() => {
+    setDestination(null);
+    setNoteOpen(false);
+    setNotice(null);
+  }, []);
+
+  const selecting = activeEndpoint !== null;
+  const picking = pickTarget !== null;
+  const stage = selecting ? 'search' : picking ? 'pick' : activeRide ? 'resume' : destination ? 'trip' : 'home';
+
+  // Hardware back steps out of search, map-pick, the note, then the trip,
+  // before it leaves the app.
+  useEffect(() => {
+    if (stage === 'home' || stage === 'resume') return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (stage === 'search') closeSearch();
+      else if (stage === 'pick') closeMapPick();
+      else if (noteOpen) setNoteOpen(false);
+      else clearTrip();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [stage, noteOpen, closeSearch, closeMapPick, clearTrip]);
+
+  const openSearch = (endpoint, initialQuery = '') => {
+    if (!user.profileComplete) { navigation.navigate('Profile'); return; }
+    setNotice(null);
+    setQuery(initialQuery);
+    closeMapPick();
+    setActiveEndpoint(endpoint);
+  };
+
+  const startMapPick = (endpoint) => {
+    closeSearch();
+    setNotice(null);
+    setPickTarget(endpoint);
+  };
+
+  // Returns false, with a notice, for a place outside the service area.
+  const setEndpoint = (endpoint, place) => {
+    if (!isInIndangServiceArea(place.coordinate)) {
+      setNotice(t('notice.outsidePoint'));
+      return false;
+    }
+    if (endpoint === 'pickup') {
+      followLocationRef.current = false;
+      setPickup(place);
+    } else {
+      setDestination(place);
+    }
+    setNotice(null);
+    return true;
+  };
+
+  // Choosing a pickup with no destination yet moves the search on to it.
+  const applyPlace = (place) => {
+    if (!setEndpoint(activeEndpoint, place)) return;
+    if (activeEndpoint === 'pickup' && !destination) {
+      setQuery('');
+      setActiveEndpoint('destination');
+    } else closeSearch();
+  };
+
+  const handleMapPress = (coordinate) => {
+    if (!pickTarget) return;
+    if (!isInIndangServiceArea(coordinate)) {
+      setNotice(t('notice.outsidePoint'));
+      return;
+    }
+    setEndpoint(pickTarget, createPinnedPlace(t, coordinate));
+    setPickTarget(pickTarget === 'pickup' ? 'destination' : null);
+  };
+
+  const handleUseCurrentLocation = () => {
+    followLocationRef.current = true;
+    setNotice(null);
+    if (activeEndpoint === 'pickup') {
+      if (destination) closeSearch();
+      else { setQuery(''); setActiveEndpoint('destination'); }
+    }
+    location.retry();
+    mapRef.current?.fit();
+  };
+
+  const createPayload = () => createBookingPayload({
+    trip: { pickup, dropoff: destination },
+    route: routeResult.details,
+    passengers,
+    note,
+  });
+
+  const handleConfirm = async () => {
+    if (!canBook || submitting) return;
+    setSubmitting(true);
+    if (!bookingKeyRef.current) bookingKeyRef.current = `booking-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      await bookRide({ ...createPayload(), idempotencyKey: bookingKeyRef.current });
+      // The booking is made: the next one is a new request with a new key.
+      bookingKeyRef.current = null;
+      followLocationRef.current = true;
+      setDestination(null); setNote(''); setPassengers(1); setNoteOpen(false);
+      navigation.navigate('Searching');
+    } catch (failure) { Alert.alert(t('trip.unableToBook'), failure.message); }
+    finally { setSubmitting(false); }
+  };
+
+  const handlePreviewRoute = () => {
+    if (!routeState.canConfirm) return;
+    const { trip, route: previewRoute } = createPayload();
+    navigation.navigate('Navigation', { trip, route: previewRoute });
+  };
+
+  const resume = () => navigation.navigate(activeRide.status === 'searching' ? 'Searching' : 'ActiveRide');
+  const message = routeMessage(t, routeResult);
+  const locateButton = (
+    <IconButton icon="crosshairs-gps" label={t(stage === 'home' ? 'map.recenter' : 'map.usePickupHere')}
+      onPress={handleUseCurrentLocation} loading={location.status === 'loading' && followLocationRef.current} />
+  );
 
   return (
-    <Screen>
-      <View style={styles.header}>
-        <Avatar name={userName(user)} size={44} />
-        <View style={styles.headerText}>
-          <Text style={TYPE.caption}>{greeting()}</Text>
-          <Text style={TYPE.subheading} numberOfLines={1}>{user.firstName || user.phone}</Text>
-        </View>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <ConnectionBanner />
-        {active && <Button label={ride.status === 'searching' ? 'Return to your request' : 'Return to your ride'} variant="brand" onPress={resume} style={{ marginBottom: SPACE.lg }} />}
-        <Text style={[TYPE.title, styles.hero]}>Where are you{'\n'}headed today?</Text>
-
-        <Pressable
-          onPress={() => {
-            tapFeedback();
-            openBooking();
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Search for a destination"
-          style={({ pressed }) => [styles.searchBar, pressed && styles.pressed]}
+    <BleedScreen>
+      <View style={styles.mapArea}>
+        <RouteMap
+          ref={mapRef}
+          pickup={pickup}
+          destination={stage === 'resume' ? null : destination}
+          route={stage === 'resume' ? null : route}
+          onMapPress={picking ? handleMapPress : undefined}
+          // Picking holds the camera still, so the next tap lands where the
+          // rider is looking; leaving map-pick mode frames the new route.
+          autoFit={!picking}
+          topInset={topHeight}
+          bottomInset={bottomHeight}
         >
-          <MaterialCommunityIcons name="magnify" size={22} color={COLORS.ink} />
-          <Text style={[TYPE.subheading, styles.searchText]}>Where to?</Text>
-          <View style={styles.searchAction}>
-            <MaterialCommunityIcons name="arrow-right" size={18} color={COLORS.onAccent} />
-          </View>
-        </Pressable>
+          {location.pickup && pickup?.kind !== 'current-location' && (
+            <LiveLocationMarker coordinate={location.pickup.coordinate} title={t('map.yourLocation')} />
+          )}
+        </RouteMap>
 
-        <GpsStatus gps={gps} town={town?.name} />
-        <Text style={[TYPE.caption, { marginTop: SPACE.xs }]}>Your live location is shared with pilot admins while this app is open.</Text>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.shortcuts}
-          style={styles.shortcutsScroll}
-        >
-          {SHORTCUTS[(town ?? MUNICIPALITIES[0]).name].map((shortcut) => (
-            <Chip
-              key={shortcut.label}
-              label={shortcut.label}
-              icon={shortcut.icon}
-              onPress={() => openBooking(shortcut.query)}
-              style={styles.shortcut}
-            />
-          ))}
-        </ScrollView>
-
-        <Card padded={false} style={styles.rideCard}>
-          <View style={styles.rideRow}>
-            <View style={styles.rideIcon}>
-              <MaterialCommunityIcons name="rickshaw" size={26} color={COLORS.brand} />
+        <MapTop>
+          {stage === 'trip' || stage === 'pick' ? (
+            <View style={styles.tripTop} onLayout={({ nativeEvent }) => setTopHeight(Math.round(nativeEvent.layout.y + nativeEvent.layout.height))}>
+              <IconButton icon="arrow-left" label={t(stage === 'pick' ? 'pick.stop' : 'trip.clear')} onPress={stage === 'pick' ? closeMapPick : clearTrip} />
+              <View style={styles.stopsCard}>
+                <Pressable onPress={() => openSearch('pickup')} accessibilityRole="button"
+                  accessibilityLabel={t('search.editPickup', { name: placeName(t, pickup) ?? t('search.notSet') })}
+                  style={({ pressed }) => [styles.stopRow, (pickTarget === 'pickup') && styles.stopRowActive, pressed && styles.pressed]}>
+                  <View style={styles.pickupMark} />
+                  <Text style={[TYPE.bodyStrong, styles.stopName, !pickup && styles.muted]} numberOfLines={1}>{placeName(t, pickup) ?? t('search.pickupPlaceholder')}</Text>
+                </Pressable>
+                <Divider inset={SPACE.xxl + SPACE.xs} />
+                <Pressable onPress={() => openSearch('destination')} accessibilityRole="button"
+                  accessibilityLabel={t('search.editDestination', { name: placeName(t, destination) ?? t('search.notSet') })}
+                  style={({ pressed }) => [styles.stopRow, (pickTarget === 'destination') && styles.stopRowActive, pressed && styles.pressed]}>
+                  <View style={styles.dropoffMark} />
+                  <Text style={[TYPE.bodyStrong, styles.stopName, !destination && styles.muted]} numberOfLines={1}>{placeName(t, destination) ?? t('search.destinationPlaceholder')}</Text>
+                </Pressable>
+              </View>
             </View>
-            <View style={styles.rideText}>
-              <Text style={TYPE.subheading}>Standard Trike</Text>
-              <Text style={[TYPE.caption, styles.rideSub]}>Up to 4 passengers{config ? ` · ${formatFare(config.fare)} flat fare` : ''}</Text>
+          ) : (
+            <View onLayout={({ nativeEvent }) => setTopHeight(Math.round(nativeEvent.layout.y + nativeEvent.layout.height))}>
+              <StatusPill {...status} />
             </View>
-          </View>
-          <Divider />
-          <Pressable
-            onPress={() => {
-              tapFeedback();
-              openBooking();
-            }}
-            accessibilityRole="button"
-            style={({ pressed }) => [styles.rideCta, pressed && styles.pressed]}
+          )}
+          {(stage === 'trip' || stage === 'pick') && status.tone !== 'live' && <StatusPill {...status} style={styles.tripStatus} />}
+        </MapTop>
+
+        {notice && <View style={[styles.snackbar, { bottom: bottomHeight }]} pointerEvents="box-none">
+          <Snackbar message={notice} onDismiss={() => setNotice(null)} />
+        </View>}
+
+        {stage !== 'search' && (
+          <MapBottom
+            edge={false}
+            onHeight={setBottomHeight}
+            rail={stage === 'trip' ? <>
+              <IconButton icon="navigation-variant" tone="route" label={t('trip.previewGuide')} onPress={handlePreviewRoute} disabled={!routeState.canConfirm} />
+              {locateButton}
+            </> : stage === 'resume' ? null : locateButton}
           >
-            <Text style={[TYPE.subheading, styles.rideCtaText]}>Book a tricycle</Text>
-            <MaterialCommunityIcons name="chevron-right" size={22} color={COLORS.brand} />
-          </Pressable>
-        </Card>
+            {stage === 'home' && (
+              <FloatingCard>
+                <Pressable
+                  onPress={() => {
+                    tapFeedback();
+                    openSearch('destination');
+                  }}
+                  accessibilityRole="search"
+                  accessibilityLabel={t('home.whereTo')}
+                  style={({ pressed }) => [styles.whereTo, pressed && styles.pressed]}
+                >
+                  <MaterialCommunityIcons name="magnify" size={26} color={COLORS.ink} />
+                  <Text style={[TYPE.heading, styles.whereToText]}>{t('home.whereTo')}</Text>
+                </Pressable>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled"
+                  style={styles.chipScroll} contentContainerStyle={styles.chips}>
+                  {recents.map((place) => (
+                    <Chip key={`recent-${place.name}`} tone="map" icon="history" label={place.name}
+                      onPress={() => (place.coordinate && isInIndangServiceArea(place.coordinate) ? setEndpoint('destination', place) : openSearch('destination', place.name))} />
+                  ))}
+                  {SHORTCUTS[town ?? MUNICIPALITIES[0].name].map((shortcut) => (
+                    <Chip key={shortcut.label} tone="map" icon={shortcut.icon} label={t(shortcut.label)} onPress={() => openSearch('destination', shortcut.query)} />
+                  ))}
+                </ScrollView>
+                <View style={styles.fareLine}>
+                  <MaterialCommunityIcons name="rickshaw" size={20} color={COLORS.brand} />
+                  <Text style={[TYPE.caption, styles.fareLineText]} numberOfLines={2}>
+                    {fare ? t('home.fareLine', { fare, max: MAX_PASSENGERS }) : t('home.fareLineNoFare', { max: MAX_PASSENGERS })}
+                  </Text>
+                </View>
+              </FloatingCard>
+            )}
 
-        <Text style={[TYPE.overline, styles.sectionTitle]}>RECENT</Text>
-        <Card padded={false} style={styles.recentCard}>
-          {recent.length === 0 && <Text style={[TYPE.caption, { padding: SPACE.lg }]}>Your completed rides will appear here.</Text>}
-          {recent.map((item, index) => (
-            <View key={item.id}>
-              {index > 0 && <Divider inset={SPACE.lg + 52} />}
-              <ListRow
-                icon="history"
-                iconTone="neutral"
-                title={item.title}
-                subtitle={item.subtitle}
-                onPress={() => openBooking(item.query)}
-                style={styles.recentRow}
-              />
-            </View>
-          ))}
-        </Card>
+            {stage === 'resume' && (
+              <FloatingCard>
+                <Text style={TYPE.heading}>{t(`ride.status.${activeRide.status}`)}</Text>
+                <TripStops pickup={activeRide.trip.pickup.name} dropoff={activeRide.trip.dropoff.name} style={styles.resumeStops} />
+                <Button label={t(activeRide.status === 'searching' ? 'home.returnToRequest' : 'home.returnToRide')} variant="brand" onPress={resume} />
+              </FloatingCard>
+            )}
 
-        <View style={styles.safety}>
-          <MaterialCommunityIcons name="shield-check-outline" size={18} color={COLORS.brand} />
-          <Text style={[TYPE.caption, styles.safetyText]}>
-            Check the plate and TODA number before you board.
-          </Text>
-        </View>
-      </ScrollView>
+            {stage === 'pick' && (
+              <FloatingCard>
+                <SegmentedControl
+                  value={pickTarget}
+                  onChange={setPickTarget}
+                  options={[
+                    { value: 'pickup', label: t('pick.pickup'), dot: COLORS.brand },
+                    { value: 'destination', label: t('pick.destination'), dot: COLORS.accent },
+                  ]}
+                />
+                <Text style={[TYPE.heading, styles.pickTitle]} accessibilityLiveRegion="polite">
+                  {t(pickTarget === 'pickup' ? 'pick.tapPickup' : 'pick.tapDestination')}
+                </Text>
+                <View style={styles.pickSummary}>
+                  {calculating && <ActivityIndicator size="small" color={COLORS.brand} style={styles.spinner} />}
+                  <Text style={[TYPE.caption, !routeState.canConfirm && !calculating && styles.danger]} numberOfLines={2}>
+                    {routeState.canConfirm ? t('trip.summary', { duration: routeState.durationLabel, distance: routeState.distanceLabel }) : message}
+                  </Text>
+                </View>
+                <Button label={t('common.done')} variant="brand" size="md" onPress={closeMapPick} />
+              </FloatingCard>
+            )}
 
-      <BottomNav active="home" navigation={navigation} />
-    </Screen>
+            {stage === 'trip' && (noteOpen ? (
+              <FloatingCard>
+                <Text style={TYPE.heading}>{t('trip.noteTitle')}</Text>
+                <TextInput
+                  style={[TYPE.body, styles.noteInput]}
+                  value={note}
+                  onChangeText={setNote}
+                  placeholder={t('trip.notePlaceholder')}
+                  placeholderTextColor={COLORS.inkMuted}
+                  maxLength={200}
+                  multiline
+                  autoFocus
+                  accessibilityLabel={t('trip.noteTitle')}
+                />
+                <Button label={t('common.done')} variant="brand" size="md" onPress={() => { Keyboard.dismiss(); setNoteOpen(false); }} />
+              </FloatingCard>
+            ) : (
+              <FloatingCard>
+                <View style={styles.tripSummary}>
+                  {routeState.canConfirm ? (
+                    <View style={styles.eta}>
+                      <Text style={TYPE.metric} numberOfLines={1}>{routeState.durationLabel}</Text>
+                      <Text style={[TYPE.caption, blockedReason && styles.danger]} numberOfLines={1}>
+                        {blockedReason ?? t('trip.distance', { distance: routeState.distanceLabel })}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.routeMessage} accessibilityLiveRegion="polite">
+                      {calculating
+                        ? <ActivityIndicator size="small" color={COLORS.brand} />
+                        : <MaterialCommunityIcons name="alert-circle-outline" size={22} color={COLORS.danger} />}
+                      <Text style={[TYPE.body, styles.routeMessageText, !calculating && styles.danger]} numberOfLines={2}>{message}</Text>
+                    </View>
+                  )}
+                  <View style={styles.fareBox}>
+                    {config ? <Money amount={config.fare} size={28} /> : <Text style={TYPE.metric}>—</Text>}
+                    <Text style={TYPE.caption}>{t('trip.flatFare')}</Text>
+                  </View>
+                </View>
+                <View style={styles.options}>
+                  <PassengerStepper value={passengers} onChange={setPassengers} />
+                  <Chip tone="map" icon="message-reply-text-outline" label={note || t('trip.addNote')} onPress={() => setNoteOpen(true)}
+                    accessibilityLabel={note ? t('trip.editNote', { note }) : t('trip.addNote')} style={styles.noteChip} />
+                </View>
+                <Button
+                  label={canBook && fare ? t('trip.book', { fare }) : t('trip.bookPlain')}
+                  onPress={handleConfirm}
+                  disabled={!canBook}
+                  loading={submitting}
+                  trailingIcon="arrow-right"
+                  accessibilityLabel={t('trip.bookA11y')}
+                />
+              </FloatingCard>
+            ))}
+          </MapBottom>
+        )}
+
+        {stage === 'search' && (
+          <LocationSearch
+            activeEndpoint={activeEndpoint}
+            pickup={pickup && { ...pickup, name: placeName(t, pickup) }}
+            destination={destination}
+            query={query}
+            results={results}
+            onQueryChange={setQuery}
+            onSelect={applyPlace}
+            onClose={closeSearch}
+            onSwitchEndpoint={(endpoint) => { setQuery(''); setActiveEndpoint(endpoint); }}
+            onUseCurrentLocation={handleUseCurrentLocation}
+            onChooseOnMap={() => startMapPick(activeEndpoint)}
+          />
+        )}
+      </View>
+      {stage !== 'search' && <BottomNav active="home" navigation={navigation} />}
+    </BleedScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACE.xl, paddingVertical: SPACE.md },
-  headerText: { flex: 1, marginLeft: SPACE.md },
-  bell: { borderWidth: 1, borderColor: COLORS.line },
+  mapArea: { flex: 1 },
+  pressed: { opacity: 0.7 },
+  muted: { color: COLORS.inkMuted },
+  danger: { color: COLORS.danger },
 
-  content: { paddingHorizontal: SPACE.xl, paddingBottom: SPACE.xxl },
-  hero: { marginTop: SPACE.sm, marginBottom: SPACE.xl },
-
-  searchBar: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: COLORS.surface, borderRadius: RADIUS.lg,
-    paddingLeft: SPACE.lg, paddingRight: SPACE.sm, height: 64,
-    ...ELEVATION.card,
+  tripTop: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACE.sm },
+  tripStatus: { marginTop: SPACE.sm },
+  stopsCard: {
+    flex: 1, backgroundColor: COLORS.surface, borderRadius: RADIUS.xl,
+    paddingHorizontal: SPACE.md, ...ELEVATION.floating,
   },
-  searchText: { flex: 1, marginLeft: SPACE.md },
-  searchAction: {
-    width: 44, height: 44, borderRadius: RADIUS.md, backgroundColor: COLORS.accent,
-    alignItems: 'center', justifyContent: 'center',
+  stopRow: { flexDirection: 'row', alignItems: 'center', minHeight: 48, borderRadius: RADIUS.md, paddingHorizontal: SPACE.xs },
+  stopRowActive: { backgroundColor: COLORS.brandTint },
+  stopName: { flex: 1, marginLeft: SPACE.md },
+  pickupMark: { width: 12, height: 12, borderRadius: 6, borderWidth: 3, borderColor: COLORS.brand },
+  dropoffMark: { width: 12, height: 12, borderRadius: 2, backgroundColor: COLORS.accent, borderWidth: 2, borderColor: COLORS.accentDark },
+
+  snackbar: { position: 'absolute', left: SPACE.md, right: SPACE.md },
+
+  whereTo: {
+    flexDirection: 'row', alignItems: 'center', minHeight: 56,
+    backgroundColor: COLORS.surfaceAlt, borderRadius: RADIUS.lg, paddingHorizontal: SPACE.lg,
   },
-  pressed: { opacity: 0.85 },
+  whereToText: { marginLeft: SPACE.md },
+  chipScroll: { marginTop: SPACE.md, marginHorizontal: -SPACE.lg },
+  chips: { paddingHorizontal: SPACE.lg, gap: SPACE.sm },
+  fareLine: { flexDirection: 'row', alignItems: 'center', marginTop: SPACE.md },
+  fareLineText: { flex: 1, marginLeft: SPACE.sm },
 
-  shortcutsScroll: { marginTop: SPACE.md, marginHorizontal: -SPACE.xl },
-  shortcuts: { paddingHorizontal: SPACE.xl },
-  shortcut: { marginRight: SPACE.sm },
+  resumeStops: { marginVertical: SPACE.md },
 
-  rideCard: { marginTop: SPACE.xl },
-  rideRow: { flexDirection: 'row', alignItems: 'center', padding: SPACE.lg },
-  rideIcon: {
-    width: 48, height: 48, borderRadius: RADIUS.md, backgroundColor: COLORS.brandTint,
-    alignItems: 'center', justifyContent: 'center',
+  pickTitle: { marginTop: SPACE.lg },
+  pickSummary: { flexDirection: 'row', alignItems: 'center', minHeight: 36, marginTop: SPACE.xs, marginBottom: SPACE.md },
+  spinner: { marginRight: SPACE.sm },
+
+  tripSummary: { flexDirection: 'row', alignItems: 'center', minHeight: 56 },
+  eta: { flex: 1 },
+  routeMessage: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  routeMessageText: { flex: 1, marginLeft: SPACE.sm },
+  fareBox: { alignItems: 'flex-end', marginLeft: SPACE.md },
+  options: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, marginTop: SPACE.md, marginBottom: SPACE.md },
+  stepper: {
+    flexDirection: 'row', alignItems: 'center', minHeight: 40,
+    borderRadius: RADIUS.pill, backgroundColor: COLORS.surfaceAlt, paddingHorizontal: SPACE.xs,
   },
-  rideText: { flex: 1, marginLeft: SPACE.md },
-  rideSub: { marginTop: 2 },
-  rideCta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: SPACE.lg },
-  rideCtaText: { color: COLORS.brand },
-
-  sectionTitle: { marginTop: SPACE.xxl, marginBottom: SPACE.sm, marginLeft: SPACE.xs },
-  recentCard: { paddingHorizontal: SPACE.lg },
-  recentRow: { paddingVertical: SPACE.md },
-
-  gpsRow: { flexDirection: 'row', alignItems: 'center', marginTop: SPACE.md, paddingHorizontal: SPACE.xs },
-  gpsText: { flex: 1, marginLeft: SPACE.sm },
-
-  safety: { flexDirection: 'row', alignItems: 'center', marginTop: SPACE.xl, paddingHorizontal: SPACE.xs },
-  safetyText: { flex: 1, marginLeft: SPACE.sm },
+  stepperButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  stepperValue: { minWidth: 20, textAlign: 'center', marginLeft: 2 },
+  noteChip: { flexShrink: 1 },
+  noteInput: {
+    borderWidth: 1.5, borderColor: COLORS.lineStrong, borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACE.md, paddingVertical: SPACE.sm,
+    minHeight: 64, maxHeight: 110, textAlignVertical: 'top', marginTop: SPACE.md, marginBottom: SPACE.md,
+  },
 });

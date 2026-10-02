@@ -28,13 +28,20 @@ Everything below runs on the device with no network call.
 
 ### 1.2 Booking experience
 
-- Map-first booking: pickup uses fresh device GPS or an explicitly selected
-  location. Missing/invalid GPS never substitutes a campus pickup.
-- **Map-pick mode** — tap the pin button, then tap the map: pickup is set and the
-  bar advances to destination automatically, so both stops take one tap each.
-  The camera holds still while picking and frames the route when you finish.
-- Offline place search, "Choose on map", and "Use my current location".
-- Live route summary (time, distance) and a flat-fare booking sheet.
+- Map-first booking: the passenger's home *is* the booking map
+  (`screens/PassengerScreen.js`). Pickup uses fresh device GPS or an explicitly
+  selected location. Missing/invalid GPS never substitutes a campus pickup.
+- No draggable sheets over maps: each stage (home "Where to?", trip, map-pick,
+  searching, active ride) is one floating card 12 dp off the screen edges, with
+  the map buttons and map credit in a rail directly above it
+  (`components/map/MapChrome.js`). Expanding a card's details never moves the map.
+- Full-screen offline place search with both stops at the top, "Choose on map",
+  and "Use my current location".
+- **Map-pick mode** — tap the map: pickup is set and the card advances to the
+  destination, so both stops take one tap each. The camera holds still while
+  picking and frames the route when you finish.
+- Trip card: minutes, distance and the flat fare up front, riders, a note to the
+  driver, and the yellow Book button.
 - The backend computes the authoritative road route from the selected stops.
   Persisted booking state drives searching and active-ride screens.
 
@@ -65,12 +72,14 @@ Everything below runs on the device with no network call.
 
 | Piece | File | Contents |
 | --- | --- | --- |
-| Tokens | `theme.js` | Colour ramp (brand/ink/line/status), type scale, 4 px spacing scale, radii, elevation presets. |
-| Primitives | `components/ui/` | `Button` (6 variants, loading, haptics), `IconButton`, `Field`, `AppHeader`, `Screen`/`BleedScreen`, and `Surfaces` (`Card`, `Sheet`, `Chip`, `ListRow`, `Badge`, `Avatar`, `SegmentedControl`, `Divider`, `EmptyState`). |
-| Screens | `screens/` | Splash, Login, Register, Passenger home, Driver home, Booking, Searching, Active ride, 3D guide, History, Profile. |
+| Tokens | `theme.js` | Colour ramp (brand green, for-hire yellow, ink/line/status), Fredoka + Roboto type scale, 4 px spacing scale, radii, elevation presets. |
+| Primitives | `components/ui/` | `Button` (pill; hire/brand/route/tonal/outline/text/danger), `IconButton`, `Field`, `AppHeader`, `Snackbar`, `Screen`/`BleedScreen`, and `Surfaces` (`Card`, `Chip`, `Money`, `Avatar`, `SegmentedControl`, `Divider`, `EmptyState`). |
+| Map shell | `components/map/MapChrome.js`, `StatusPill`, `Plate`, `TripStops` | Floating card, top/bottom overlays with the button rail, the colour-coded status pill, the yellow for-hire plate, and the pickup/drop-off marks. |
+| Language | `i18n/` | English and Filipino for every screen; the choice is saved on the phone (Profile, or the splash screen). `tests/i18n.test.js` keeps both in step. |
+| Screens | `screens/` | Splash, Login, Register, Passenger (home + booking), Driver home, Searching, Active ride, 3D guide, History, Profile. |
 
-Rebuilt in the Uber/Waze idiom: a "Where to?" home that hands a query straight
-into booking search, a driver card with plate chip and call/message actions,
+Rebuilt in the Waze/JoyRide idiom: a map home with a "Where to?" card, a driver
+row with the plate drawn as a yellow for-hire plate and call/message actions,
 filterable persisted ride history, and an editable account/vehicle profile.
 Drivers have availability controls, timed requests, accept/decline, pickup and
 destination guidance, and confirmed arrival/start/completion actions.
@@ -247,9 +256,10 @@ including a Dijkstra cross-check.
     instead of nearest-point projection.
 17. **Scale the graph beyond Indang** (multi-municipality). At that size, add ALT
     landmarks or contraction hierarchies so queries stay fast.
-18. **Accessibility and localisation:** a Filipino/Tagalog translation, dynamic
-    type, screen-reader passes, and a dark theme — the token layer makes the last
-    one mostly mechanical.
+18. **Accessibility and localisation:** a native-speaker pass over the Filipino
+    copy (`i18n/strings.js`), translated server error messages, screen-reader
+    passes, and a dark theme — the token layer makes the last one mostly
+    mechanical.
 19. **Payments and receipts** (e.g. GCash), plus push notifications when the
     driver arrives.
 20. **Crash and analytics reporting** to see real-world routing failures.

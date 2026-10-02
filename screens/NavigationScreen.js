@@ -8,11 +8,11 @@ import { StatusBar } from 'expo-status-bar';
 import { Camera, Map, ViewAnnotation } from '@maplibre/maplibre-react-native';
 import IndangMapLayers from '../components/IndangMapLayers';
 import PlacesLayer from '../components/PlacesLayer';
-import MapAttribution from '../components/MapAttribution';
+import { FloatingCard, MapBottom } from '../components/map/MapChrome';
 import RouteLine from '../components/RouteLine';
 import { NAVIGATION_STYLE_URL } from '../components/mapStyles';
 import { getManeuverIcon } from '../components/maneuverIcons';
-import { INDANG_MIN_ZOOM, SERVICE_AREA_NAME, isInIndangServiceArea } from '../data/indangMap';
+import { INDANG_MIN_ZOOM, isInIndangServiceArea } from '../data/indangMap';
 import { getRoadGraph } from '../data/roadNetwork';
 import { resolveBookingRoute } from '../utils/bookingRoute';
 import { haversineDistance } from '../utils/pathfinding';
@@ -31,9 +31,10 @@ import {
 import { formatDistance, formatDuration } from '../utils/routeDirections';
 import Button from '../components/ui/Button';
 import IconButton from '../components/ui/IconButton';
-import { Sheet } from '../components/ui/Surfaces';
-import { COLORS, ELEVATION, RADIUS, SPACE, TYPE } from '../theme';
+import { COLORS, ELEVATION, FONTS, RADIUS, SPACE, TYPE } from '../theme';
 import { selectionFeedback } from '../utils/feedback';
+import { useI18n } from '../i18n';
+import { stepInstruction } from '../i18n/messages';
 
 // MapLibre zoom levels (one lower than Google's for the same scale).
 const CAMERA_VIEWS = {
@@ -56,22 +57,15 @@ const PUCK_SIZE = 46;
 const TRIM_STEP_METERS = 10;
 const OVERVIEW_MARGIN = 48;
 const INITIAL_PADDING = { top: 120, right: 50, bottom: 220, left: 50 };
-const GPS_MESSAGES = {
-  locating: 'Finding your location…',
-  denied: 'Location access is off. Enable location permission in Settings.',
-  unavailable: 'Your location is unavailable right now.',
-  outside: `You are outside ${SERVICE_AREA_NAME}. Head back to the blue route to resume guidance.`,
-  'off-route': 'Off the route. Finding a new one…',
-  'follow-route': 'Head to the blue route to start the new directions.',
-  'no-route': 'No drivable route from here. Head back to the blue route.',
-};
 
 function ManeuverBanner({ guidance, destinationName, topPadding, onLayout }) {
+  const { t } = useI18n();
   const { nextStep, thenStep, arrived } = guidance;
   if (!nextStep) return null;
   const arriving = arrived || nextStep.type === 'arrive';
-  const title = arrived ? 'You have arrived' : formatManeuverDistance(guidance.distanceToNextMeters);
-  const instruction = arriving ? destinationName : nextStep.instruction;
+  const distance = formatManeuverDistance(guidance.distanceToNextMeters);
+  const title = arrived ? t('guide.arrived') : distance === 'Now' ? t('guide.now') : distance;
+  const instruction = arriving ? destinationName : stepInstruction(t, nextStep, destinationName);
 
   return (
     <View style={[styles.bannerArea, { paddingTop: topPadding + 8 }]} pointerEvents="none" onLayout={onLayout}>
@@ -86,7 +80,7 @@ function ManeuverBanner({ guidance, destinationName, topPadding, onLayout }) {
       </View>
       {thenStep && (
         <View style={styles.thenPill}>
-          <Text style={styles.thenText}>Then</Text>
+          <Text style={styles.thenText}>{t('guide.then')}</Text>
           <MaterialCommunityIcons name={getManeuverIcon(thenStep.type)} size={18} color="#FFF" />
         </View>
       )}
@@ -96,6 +90,7 @@ function ManeuverBanner({ guidance, destinationName, topPadding, onLayout }) {
 
 // The 2D/3D control shows text rather than an icon, so it is its own button.
 function ViewToggle({ label, onPress }) {
+  const { t } = useI18n();
   return (
     <Pressable
       style={({ pressed }) => [styles.roundButton, pressed && styles.pressed]}
@@ -104,7 +99,7 @@ function ViewToggle({ label, onPress }) {
         onPress();
       }}
       accessibilityRole="button"
-      accessibilityLabel={`Switch to ${label} view`}
+      accessibilityLabel={t('guide.switchView', { view: label })}
     >
       <Text style={[TYPE.subheading, styles.roundButtonText]}>{label}</Text>
     </Pressable>
@@ -127,6 +122,7 @@ function VehiclePuck({ floating = false }) {
 function NavigationGuide({ navigation, trip, initialRoute }) {
   const insets = useSafeAreaInsets();
   const { gps } = useApp();
+  const { t } = useI18n();
   const hasLiveFix = gps.status === 'ready' && isFreshFix(gps.fix);
   const [hasPosition, setHasPosition] = useState(false);
   const cameraRef = useRef(null);
@@ -199,8 +195,8 @@ function NavigationGuide({ navigation, trip, initialRoute }) {
     setRoute(result.details);
     setProgress({ distance: 0, offRoute: null });
     setGpsStatus('follow-route');
-    setNotice(`New route · ${result.details.durationLabel}`);
-  }, [trip.dropoff]);
+    setNotice(t('guide.newRoute', { duration: result.details.durationLabel }));
+  }, [trip.dropoff, t]);
 
   const handleFix = useCallback((coords) => {
     setHasPosition(true);
@@ -325,7 +321,7 @@ function NavigationGuide({ navigation, trip, initialRoute }) {
   const nextManeuverCoordinate = !guidance.arrived && guidance.nextStep?.type !== 'arrive'
     ? guidance.nextStep?.startCoordinate
     : null;
-  const statusMessage = !hasLiveFix ? gps.message : GPS_MESSAGES[gpsStatus] || notice;
+  const statusMessage = !hasLiveFix ? t(`gps.${gps.status}`) : gpsStatus ? t(`guide.status.${gpsStatus}`) : notice;
   const puckTop = FOLLOW_POSITION * layout.height - PUCK_SIZE / 2;
 
   return (
@@ -385,61 +381,59 @@ function NavigationGuide({ navigation, trip, initialRoute }) {
         </View>
       )}
 
-      <View style={[styles.sideButtons, { bottom: layout.panel + 16 }]} pointerEvents="box-none">
-        <ViewToggle label={view === '3d' ? '2D' : '3D'} onPress={toggleView} />
-        <IconButton
-          icon="map-marker-path"
-          label="Show the whole route"
-          tone={framing === 'overview' && !following ? 'route' : 'surface'}
-          onPress={showOverview}
-          style={styles.overviewButton}
-        />
-      </View>
-
-      {!following && (
-        <Pressable
-          style={({ pressed }) => [styles.recenterButton, { bottom: layout.panel + SPACE.lg }, pressed && styles.pressed]}
-          onPress={recenter}
-          accessibilityRole="button"
-          accessibilityLabel="Re-center on the vehicle"
-        >
-          <MaterialCommunityIcons name="navigation" size={18} color={COLORS.route} />
-          <Text style={[TYPE.captionStrong, styles.recenterText]}>Re-center</Text>
-        </Pressable>
-      )}
-
-      <MapAttribution bottom={layout.panel + 4} />
-
-      <Sheet style={[styles.panel, { paddingBottom: insets.bottom + SPACE.lg }]} grabber={false} onLayout={setLayoutValue('panel')}>
-        {hasLiveFix && hasPosition && guidance.arrived ? (
-          <View style={styles.arrivalRow}>
-            <View style={styles.arrivalText}>
-              <Text style={styles.arrivalTitle}>You have arrived</Text>
-              <Text style={styles.arrivalPlace} numberOfLines={1}>{trip.dropoff.name}</Text>
+      <MapBottom
+        onHeight={(value) => setLayout((current) => (current.panel === value ? current : { ...current, panel: value }))}
+        rail={<>
+          {!following && (
+            <Pressable
+              style={({ pressed }) => [styles.recenterButton, pressed && styles.pressed]}
+              onPress={recenter}
+              accessibilityRole="button"
+              accessibilityLabel={t('guide.recenterA11y')}
+            >
+              <MaterialCommunityIcons name="navigation" size={18} color={COLORS.route} />
+              <Text style={[TYPE.label, styles.recenterText]}>{t('guide.recenter')}</Text>
+            </Pressable>
+          )}
+          <ViewToggle label={view === '3d' ? '2D' : '3D'} onPress={toggleView} />
+          <IconButton
+            icon="map-marker-path"
+            label={t('guide.overview')}
+            tone={framing === 'overview' && !following ? 'route' : 'surface'}
+            onPress={showOverview}
+          />
+        </>}
+      >
+        <FloatingCard>
+          {hasLiveFix && hasPosition && guidance.arrived ? (
+            <View style={styles.etaRow}>
+              <View style={styles.etaText}>
+                <Text style={styles.arrivalTitle}>{t('guide.arrived')}</Text>
+                <Text style={[TYPE.caption, styles.etaDetail]} numberOfLines={1}>{trip.dropoff.name}</Text>
+              </View>
+              <Button label={t('common.done')} variant="brand" size="md" full={false} onPress={() => navigation.goBack()} />
             </View>
-            <Button label="Done" size="md" full={false} onPress={() => navigation.goBack()} style={styles.doneButton} />
-          </View>
-        ) : (
-          <View style={styles.etaRow}>
-            <View style={styles.etaText}>
-              <Text style={styles.etaDuration}>{hasLiveFix && hasPosition ? formatDuration(guidance.remainingSeconds) : 'Waiting for GPS'}</Text>
-              <Text style={styles.etaDetail}>
-                {hasLiveFix && hasPosition ? `${formatDistance(guidance.remainingMeters)} · Est. arrival ${arrivalTime}` : 'Your route is saved. Live guidance resumes with GPS.'}
-              </Text>
+          ) : (
+            <View style={styles.etaRow}>
+              <View style={styles.etaText}>
+                <Text style={styles.etaDuration}>{hasLiveFix && hasPosition ? formatDuration(guidance.remainingSeconds) : t('guide.waitingGps')}</Text>
+                <Text style={[TYPE.caption, styles.etaDetail]}>
+                  {hasLiveFix && hasPosition ? t('guide.etaDetail', { distance: formatDistance(guidance.remainingMeters), time: arrivalTime }) : t('guide.savedRoute')}
+                </Text>
+              </View>
+              <IconButton
+                icon="close"
+                tone="danger"
+                size={56}
+                raised={false}
+                label={t('guide.exit')}
+                onPress={() => navigation.goBack()}
+              />
             </View>
-            <IconButton
-              icon="close"
-              tone="danger"
-              size={52}
-              raised={false}
-              label="Exit route guide"
-              onPress={() => navigation.goBack()}
-            />
-          </View>
-        )}
-
-        {!hasLiveFix && <Button label="Retry GPS" variant="ghost" size="sm" onPress={gps.retry} />}
-      </Sheet>
+          )}
+          {!hasLiveFix && <Button label={t('common.retryGps')} variant="tonal" size="md" onPress={gps.retry} style={styles.retry} />}
+        </FloatingCard>
+      </MapBottom>
     </View>
   );
 }
@@ -447,14 +441,15 @@ function NavigationGuide({ navigation, trip, initialRoute }) {
 export default function NavigationScreen({ navigation, route: screenRoute }) {
   const { trip, route, rideId } = screenRoute.params ?? {};
   const { ride } = useApp();
+  const { t } = useI18n();
   useEffect(() => {
     if (rideId && ride?.id === rideId && !ACTIVE_STATUSES.includes(ride.status)) navigation.goBack();
   }, [rideId, ride?.status, navigation]);
   if (!trip || !(route?.coordinates?.length > 1)) {
     return (
       <View style={styles.missing}>
-        <Text style={[TYPE.body, styles.missingText]}>There is no route to guide yet. Book a trip first.</Text>
-        <Button label="Go back" size="md" full={false} onPress={() => navigation.goBack()} />
+        <Text style={[TYPE.body, styles.missingText]}>{t('guide.noRoute')}</Text>
+        <Button label={t('common.back')} variant="brand" size="md" full={false} onPress={() => navigation.goBack()} />
       </View>
     );
   }
@@ -464,32 +459,32 @@ export default function NavigationScreen({ navigation, route: screenRoute }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.canvas },
 
-  bannerArea: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: SPACE.lg },
+  bannerArea: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: SPACE.md },
   banner: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.brand,
-    borderRadius: RADIUS.xl, paddingHorizontal: SPACE.lg, paddingVertical: SPACE.lg,
+    borderRadius: RADIUS.card, paddingHorizontal: SPACE.lg, paddingVertical: SPACE.lg,
     ...ELEVATION.floating,
   },
   bannerIcon: {
-    width: 52, height: 52, borderRadius: RADIUS.md, backgroundColor: 'rgba(255,255,255,0.16)',
+    width: 56, height: 56, borderRadius: RADIUS.lg, backgroundColor: COLORS.brandDark,
     alignItems: 'center', justifyContent: 'center',
   },
   bannerText: { flex: 1, marginLeft: SPACE.lg },
-  bannerDistance: { ...TYPE.display, fontSize: 30, lineHeight: 34, color: COLORS.accent },
-  bannerInstruction: { ...TYPE.subheading, color: COLORS.onBrand, marginTop: 2 },
+  bannerDistance: { fontFamily: FONTS.bold, fontSize: 34, lineHeight: 38, color: COLORS.accent },
+  bannerInstruction: { fontFamily: FONTS.semibold, fontSize: 19, lineHeight: 24, color: COLORS.onBrand, marginTop: 2 },
   thenPill: {
-    alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', marginTop: SPACE.sm,
-    backgroundColor: COLORS.brandDark, borderRadius: RADIUS.md,
+    alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', marginTop: SPACE.sm, marginLeft: SPACE.md,
+    backgroundColor: COLORS.brandDark, borderRadius: RADIUS.pill,
     paddingHorizontal: SPACE.md, paddingVertical: SPACE.sm, ...ELEVATION.floating,
   },
-  thenText: { ...TYPE.captionStrong, color: COLORS.onBrand, marginRight: SPACE.sm },
+  thenText: { ...TYPE.label, color: COLORS.onBrand, marginRight: SPACE.sm },
 
   statusChip: {
-    position: 'absolute', left: SPACE.lg, right: SPACE.lg,
-    backgroundColor: 'rgba(14, 21, 18, 0.9)', borderRadius: RADIUS.md,
-    paddingHorizontal: SPACE.lg, paddingVertical: SPACE.md,
+    position: 'absolute', left: SPACE.md, right: SPACE.md,
+    backgroundColor: COLORS.ink, borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACE.lg, paddingVertical: SPACE.md, ...ELEVATION.floating,
   },
-  statusChipText: { ...TYPE.caption, color: COLORS.onBrand },
+  statusChipText: { ...TYPE.label, fontWeight: '400', color: '#FFFFFF' },
 
   fixedPuck: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   puck: {
@@ -500,37 +495,30 @@ const styles = StyleSheet.create({
   markerFrame: { width: PUCK_SIZE + 12, height: PUCK_SIZE + 12, alignItems: 'center', justifyContent: 'center' },
   maneuverDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#FFFFFF', borderWidth: 4, borderColor: COLORS.route },
   destinationPin: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.accent,
-    borderWidth: 3, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+    width: 36, height: 36, borderRadius: 8, backgroundColor: COLORS.accent,
+    borderWidth: 3, borderColor: COLORS.ink, alignItems: 'center', justifyContent: 'center',
   },
 
-  sideButtons: { position: 'absolute', right: SPACE.lg, alignItems: 'center' },
   roundButton: {
     width: 48, height: 48, borderRadius: RADIUS.pill, backgroundColor: COLORS.surface,
     alignItems: 'center', justifyContent: 'center', ...ELEVATION.floating,
   },
-  roundButtonText: { color: COLORS.ink },
-  overviewButton: { marginTop: SPACE.md },
+  roundButtonText: { fontFamily: FONTS.semibold, fontSize: 17, color: COLORS.ink },
   pressed: { opacity: 0.85 },
 
   recenterButton: {
-    position: 'absolute', left: SPACE.lg, flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center',
     backgroundColor: COLORS.surface, borderRadius: RADIUS.pill,
     paddingHorizontal: SPACE.lg, height: 48, ...ELEVATION.floating,
   },
   recenterText: { color: COLORS.route, marginLeft: SPACE.sm },
 
-  panel: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: SPACE.lg },
   etaRow: { flexDirection: 'row', alignItems: 'center' },
-  etaText: { flex: 1 },
-  etaDuration: { ...TYPE.metric, color: COLORS.brand },
-  etaDetail: { ...TYPE.caption, marginTop: 2 },
-
-  arrivalRow: { flexDirection: 'row', alignItems: 'center' },
-  arrivalText: { flex: 1, marginRight: SPACE.md },
+  etaText: { flex: 1, marginRight: SPACE.md },
+  etaDuration: { ...TYPE.metric, fontSize: 34, lineHeight: 40, color: COLORS.brand },
+  etaDetail: { marginTop: 2 },
+  retry: { marginTop: SPACE.md },
   arrivalTitle: { ...TYPE.heading, color: COLORS.brand },
-  arrivalPlace: { ...TYPE.caption, marginTop: 2 },
-  doneButton: { paddingHorizontal: SPACE.xxl },
 
   missing: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: SPACE.xxl, backgroundColor: COLORS.canvas },
   missingText: { textAlign: 'center', marginBottom: SPACE.lg },

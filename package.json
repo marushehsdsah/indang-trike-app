@@ -13,6 +13,7 @@
     "backend": "node server.js"
   },
   "dependencies": {
+    "@expo-google-fonts/fredoka": "^0.4.1",
     "@maplibre/maplibre-react-native": "^11.4.0",
     "@react-native-community/netinfo": "11.4.1",
     "@react-navigation/bottom-tabs": "^7.15.11",
@@ -21,6 +22,7 @@
     "expo": "~54.0.37",
     "expo-dev-client": "~6.0.21",
     "expo-file-system": "~19.0.24",
+    "expo-font": "~14.0.12",
     "expo-haptics": "~15.0.8",
     "expo-linear-gradient": "~15.0.8",
     "expo-location": "~19.0.8",
