@@ -28,18 +28,20 @@ function roadRoute(from, to) {
   return result.status === 'ok' ? result.route : null;
 }
 
-// For each matched ride, the path the driver's route guide shows: from the
-// driver's live GPS to the pickup until pickup ("approach", computed the same
-// way as in the app), then the booked trip from pickup to destination.
+// Each booked ride's path, by stage: "requested" (the passenger set a
+// destination and waits for a driver: the booked trip), "to-pickup" (a driver
+// accepted: from the driver's live GPS to the pickup, computed the same way as
+// the app's route guide, and the trip ahead), "to-destination" (on the trip).
 function buildRideRoutes(rides, people, findRoute) {
   const byId = new Map(people.map((person) => [person.id, person]));
-  return rides.filter((ride) => ASSIGNED_STATUSES.includes(ride.status) && ride.driverId).map((ride) => {
-    const toPickup = ride.status !== 'in_progress', driver = byId.get(String(ride.driverId));
+  return rides.filter((ride) => ride.status === 'searching' || (ASSIGNED_STATUSES.includes(ride.status) && ride.driverId)).map((ride) => {
+    const stage = ride.status === 'searching' ? 'requested' : ride.status === 'in_progress' ? 'to-destination' : 'to-pickup';
+    const toPickup = stage === 'to-pickup', driver = ride.driverId ? byId.get(String(ride.driverId)) : null;
     const pickup = ride.trip?.pickup, dropoff = ride.trip?.dropoff;
     const approach = toPickup && driver?.locationStatus === 'live' && pickup?.coordinate ? findRoute(driver.location, pickup.coordinate) : null;
     return {
-      rideId: String(ride._id), status: ride.status, stage: toPickup ? 'to-pickup' : 'to-destination',
-      driverId: String(ride.driverId), passengerId: String(ride.passengerId),
+      rideId: String(ride._id), status: ride.status, stage,
+      driverId: ride.driverId ? String(ride.driverId) : null, passengerId: String(ride.passengerId),
       pickup: pickup?.coordinate ? { name: pickup.name || 'Pickup', coordinate: toLngLat(pickup.coordinate) } : null,
       dropoff: dropoff?.coordinate ? { name: dropoff.name || 'Destination', coordinate: toLngLat(dropoff.coordinate) } : null,
       trip: ride.route?.coordinates?.length > 1 ? toLine(ride.route) : null,

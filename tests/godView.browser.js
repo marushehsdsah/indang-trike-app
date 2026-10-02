@@ -108,16 +108,33 @@ async function main() {
     await page.unroute('**/api/admin/overview');
     await page.locator('#refresh').click();
     await page.locator('#connection-status').filter({ hasText: 'Live updates' }).waitFor();
-    // A matched ride draws the driver's route guide path: to the pickup, then the trip.
-    await request('/driver/location', { ...fix, latitude: 14.395984, longitude: 120.864839, timestamp: Date.now() }, driver.token);
+    // Each ride stage is drawn: the passenger's requested trip, the driver on
+    // the way to the passenger, then both on the trip as one marker.
+    await request('/driver/availability', { available: false }, driver.token);
     await request('/rides', { trip: DEFAULT_TRIP, passengers: 1, note: '', idempotencyKey: `god-view-${randomUUID()}` }, passenger.token);
+    await page.locator('#refresh').click();
+    await page.locator('.user-row', { hasText: 'Bea' }).click();
+    await page.locator('#person-details').getByText('Requested trip: 8.0 km · 16 min', { exact: true }).waitFor();
+    await page.locator('#person-details').getByText('Waiting for a driver', { exact: true }).waitFor();
+    await request('/driver/location', { ...fix, latitude: 14.395984, longitude: 120.864839, timestamp: Date.now() }, driver.token);
+    await request('/driver/availability', { available: true }, driver.token);
     const { offer } = await request('/state', null, driver.token);
     await request(`/rides/${offer.id}/accept`, { offerId: offer.offerId }, driver.token);
     await page.locator('#refresh').click();
-    await page.locator('#count-rides').filter({ hasText: '1' }).waitFor();
     await page.locator('.user-row', { hasText: 'Alex' }).click();
-    await page.locator('#person-details').getByText(/^Driver to pickup: [\d.]+ k?m · \d+ min$/).waitFor();
+    await page.locator('#person-details').getByText(/^Driver to passenger: [\d.]+ k?m · \d+ min$/).waitFor();
     await page.locator('#person-details').getByText('Then trip: 8.0 km · 16 min', { exact: true }).waitFor();
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: '/tmp/indang-god-view-to-passenger.png', fullPage: true });
+    for (const step of ['arrive', 'start']) await request(`/rides/${offer.id}/${step}`, {}, driver.token);
+    await page.locator('#refresh').click();
+    await page.waitForFunction(() => document.querySelectorAll('.person-marker.trip').length === 1 && document.querySelectorAll('.person-marker').length === 1);
+    await page.locator('#person-details [aria-label="Close user details"]').click();
+    await page.locator('.person-marker.trip').click();
+    await page.locator('#person-details').getByText('ON A TRIP', { exact: true }).waitFor();
+    await page.locator('#person-details').getByText('Alex Pilot & Bea Pilot', { exact: true }).waitFor();
+    await page.locator('#person-details').getByText('To destination: 8.0 km · 16 min', { exact: true }).waitFor();
+    assert.equal(await page.locator('.user-row.selected').count(), 2, 'both people are highlighted');
     await page.waitForTimeout(1200);
     await page.screenshot({ path: '/tmp/indang-god-view-desktop.png', fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
@@ -131,7 +148,7 @@ async function main() {
     assert.equal(await page.locator('.user-row').count(), 0);
     assert.equal(await page.evaluate(() => sessionStorage.getItem('indanggo.god-view.session')), null);
     assert.deepEqual(errors, []);
-    console.log('Browser checks passed: separate-origin site, full-size map, matched-ride route guide path, access control, real GPS markers, missing/stale GPS, safe text, role/search filters, disconnect/reconnect, responsive layout and logout.');
+    console.log('Browser checks passed: separate-origin site, full-size map, requested/to-passenger/trip lines, merged trip marker, access control, real GPS markers, missing/stale GPS, safe text, role/search filters, disconnect/reconnect, responsive layout and logout.');
   } finally {
     await browser?.close(); sockets.forEach(socket => socket.disconnect());
     site?.close(); if (siteDir) fs.rmSync(siteDir, { recursive: true, force: true });

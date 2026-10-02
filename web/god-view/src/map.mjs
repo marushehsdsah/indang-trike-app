@@ -1,9 +1,12 @@
 import { Map, Marker, NavigationControl, AttributionControl } from './vendor/maplibre-gl.mjs';
 import { isLive, locationLabel, routeFeatures } from './model.mjs';
 
-// The app's route blue, as in the driver's route guide.
-const ROUTE_COLOR = '#2563eb';
+// Solid lines by stage: the passenger's requested trip (passenger purple),
+// the driver on the way to the passenger (driver green), and the trip to the
+// destination (the app's route blue).
+const ROUTE_COLOR = ['match', ['get', 'kind'], 'requested', '#8461d4', 'approach', '#1b9776', '#2563eb'];
 const LINE = ['==', ['geometry-type'], 'LineString'];
+const MARKER_TEXT = { driver: 'D', passenger: 'P', trip: 'DP' };
 
 export function createFleetMap(container, area, boundary, onSelect, onError) {
   const map = new Map({ container, style: 'https://tiles.openfreemap.org/styles/positron',
@@ -24,39 +27,39 @@ export function createFleetMap(container, area, boundary, onSelect, onError) {
     map.addLayer({ id: 'area-border', type: 'line', source: 'service-area', paint: { 'line-color': '#168366', 'line-width': 2, 'line-opacity': 0.65, 'line-dasharray': [4, 3] } });
     map.addSource('ride-routes', { type: 'geojson', data: routeData });
     const round = { 'line-cap': 'round', 'line-join': 'round' };
-    map.addLayer({ id: 'route-upcoming', type: 'line', source: 'ride-routes', filter: ['all', LINE, ['==', ['get', 'kind'], 'upcoming']],
-      layout: { 'line-join': 'round' }, paint: { 'line-color': ROUTE_COLOR, 'line-width': 3, 'line-opacity': 0.6, 'line-dasharray': [2, 1.5] } });
-    map.addLayer({ id: 'route-casing', type: 'line', source: 'ride-routes', filter: ['all', LINE, ['==', ['get', 'kind'], 'current']],
+    map.addLayer({ id: 'route-casing', type: 'line', source: 'ride-routes', filter: LINE,
       layout: round, paint: { 'line-color': '#ffffff', 'line-width': ['case', ['get', 'selected'], 10, 8] } });
-    map.addLayer({ id: 'route-current', type: 'line', source: 'ride-routes', filter: ['all', LINE, ['==', ['get', 'kind'], 'current']],
+    map.addLayer({ id: 'route-line', type: 'line', source: 'ride-routes', filter: LINE,
       layout: round, paint: { 'line-color': ROUTE_COLOR, 'line-width': ['case', ['get', 'selected'], 6, 4] } });
     map.addLayer({ id: 'route-stops', type: 'circle', source: 'ride-routes', filter: ['==', ['geometry-type'], 'Point'],
       paint: { 'circle-radius': 6, 'circle-color': ['match', ['get', 'kind'], 'pickup', '#16765b', '#f5b700'], 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
     loaded = true;
   });
   return {
-    update(users, selected, now, connected, routes = []) {
+    // people: users and merged trips (see mapPeople in model.mjs).
+    update(people, selected, now, connected, routes = []) {
       const selectedRide = routes.find((route) => route.driverId === selected || route.passengerId === selected)?.rideId ?? null;
       const key = JSON.stringify([routes, selectedRide]);
       if (key !== drawnRoutes) {
         routeData = routeFeatures(routes, selectedRide);
         if (loaded) { map.getSource('ride-routes').setData(routeData); drawnRoutes = key; }
       }
-      const visible = new Set(users.filter(user => user.location).map(user => user.id));
+      const visible = new Set(people.filter(user => user.location).map(user => user.id));
       for (const [id, entry] of markers) if (!visible.has(id)) { entry.marker.remove(); markers.delete(id); }
-      for (const user of users) {
+      for (const user of people) {
         if (!user.location) continue;
         let entry = markers.get(user.id);
         if (!entry) {
           const button = document.createElement('button');
           button.type = 'button';
-          button.textContent = user.role === 'driver' ? 'D' : 'P';
-          button.addEventListener('click', () => onSelect(user.id));
+          button.textContent = MARKER_TEXT[user.role];
+          button.addEventListener('click', () => onSelect(user.selectId ?? user.id));
           entry = { button, marker: new Marker({ element: button }).setLngLat([user.location.longitude, user.location.latitude]).addTo(map) };
           markers.set(user.id, entry);
         }
-        const label = `${user.name} · ${locationLabel(user, now, connected)}`;
-        entry.button.className = `person-marker ${user.role}${isLive(user, now, connected) ? '' : ' is-stale'}${selected === user.id ? ' is-selected' : ''}`;
+        const label = `${user.name}${user.role === 'trip' ? ' · on a trip' : ''} · ${locationLabel(user, now, connected)}`;
+        const isSelected = selected === user.id || user.members?.includes(selected);
+        entry.button.className = `person-marker ${user.role}${isLive(user, now, connected) ? '' : ' is-stale'}${isSelected ? ' is-selected' : ''}`;
         entry.button.setAttribute('aria-label', label);
         entry.button.title = label;
         entry.marker.setLngLat([user.location.longitude, user.location.latitude]);

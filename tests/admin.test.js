@@ -62,7 +62,7 @@ test('only a driver ready for matching is counted available', () => {
   assert.equal(result.users.find(item => item.id === 'offered').status, 'offered');
 });
 
-test('matched rides carry the route guide path: driver to pickup, then the trip', () => {
+test('booked rides carry their path: the request, the driver to the passenger, then the trip', () => {
   const tripRoute = { coordinates: [{ latitude: 14.385026, longitude: 120.880477 }, { latitude: 14.3240901, longitude: 120.9120501 }], distanceMeters: 7900, durationSeconds: 1020 };
   const approachRoute = { coordinates: [{ latitude: 14.386264, longitude: 120.880802 }, DEFAULT_TRIP.pickup.coordinate], distanceMeters: 150, durationSeconds: 40 };
   const asked = [];
@@ -78,7 +78,11 @@ test('matched rides carry the route guide path: driver to pickup, then the trip'
   ];
   const { routes } = buildOverview(people, rides, new Set(people.map(item => item._id)), now, findRoute);
   const byRide = Object.fromEntries(routes.map(route => [route.rideId, route]));
-  assert.deepEqual(Object.keys(byRide).sort(), ['accepted', 'no-gps', 'riding'], 'only matched rides are drawn');
+  assert.deepEqual(Object.keys(byRide).sort(), ['accepted', 'no-gps', 'riding', 'unmatched']);
+  assert.equal(byRide.unmatched.stage, 'requested', 'a passenger who set a destination is waiting for a driver');
+  assert.equal(byRide.unmatched.driverId, null);
+  assert.equal(byRide.unmatched.approach, null);
+  assert.equal(byRide.unmatched.trip.distanceMeters, 7900);
 
   const toPickup = byRide.accepted;
   assert.equal(toPickup.stage, 'to-pickup');

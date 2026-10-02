@@ -392,6 +392,9 @@ input::placeholder{
 .legend-dot.stale{
   background:#aeb6b1
 }
+.legend-dot.trip{
+  background:#2563eb
+}
 .legend-line{
   width:16px;
   height:0;
@@ -399,8 +402,11 @@ input::placeholder{
   vertical-align:middle;
   border-top:4px solid #2563eb
 }
-.legend-line.upcoming{
-  border-top:3px dashed rgba(37,99,235,.6)
+.legend-line.requested{
+  border-top-color:#8461d4
+}
+.legend-line.approach{
+  border-top-color:#1b9776
 }
 .route-summary{
   font-size:11px;
@@ -646,6 +652,10 @@ input::placeholder{
   position:absolute;
   bottom:32px;
   left:17px;
+  /* Seven entries: wrap onto a second line rather than run off narrow maps. */
+  max-width:calc(100% - 34px);
+  flex-wrap:wrap;
+  row-gap:6px;
   background:#fffffff0;
   display:flex;
   gap:15px;
@@ -688,6 +698,28 @@ input::placeholder{
 .person-marker.passenger{
   background:#8561cc
 }
+.person-marker.trip{
+  width:36px;
+  height:36px;
+  background:#2563eb;
+  font-size:10px;
+  letter-spacing:.02em
+}
+.detail-member{
+  border-top:1px solid var(--line);
+  padding-top:9px;
+  margin-top:9px
+}
+.detail-member strong{
+  display:block;
+  margin-top:2px
+}
+.detail-member .detail-gps{
+  margin:4px 0 0
+}
+.trip-text{
+  color:#2563eb
+}
 .person-marker.is-stale{
   background:#9aa8a0
 }
@@ -701,6 +733,10 @@ input::placeholder{
   left:17px;
   max-width:340px;
   width:calc(100% - 34px);
+  /* Stays below the map toolbar (top 16px + its buttons); a trip's card with
+     both people scrolls instead of covering the controls. */
+  max-height:calc(100% - 148px);
+  overflow-y:auto;
   background:#fffffffa;
   border:1px solid #e7ece3;
   box-shadow:0 6px 30px #23453116;

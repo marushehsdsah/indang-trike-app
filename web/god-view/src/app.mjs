@@ -1,5 +1,5 @@
 import { API_BASE_URL } from './config.mjs';
-import { filterUsers, isLive, locationLabel, routeSummary, statusLabel, snapshotTiming } from './model.mjs';
+import { filterUsers, isLive, locationLabel, mapPeople, routeSummary, statusLabel, snapshotTiming, tripOf } from './model.mjs';
 
 const $ = id => document.getElementById(id);
 const tokenKey = 'indanggo.god-view.session';
@@ -85,12 +85,34 @@ function selectUser(id) {
   fleetMap?.focus(user, routeFor(user));
 }
 
+// The driver and passenger on a trip together, when the selection is one of them.
+function selectedTrip() {
+  const route = selected && tripOf(selected, snapshot?.routes || []);
+  const people = route && [route.driverId, route.passengerId].map(id => snapshot.users.find(user => user.id === id));
+  return route && people.every(Boolean) ? { route, driver: people[0], passenger: people[1] } : null;
+}
+
+function renderTripDetails(panel, { route, driver, passenger }) {
+  panel.append(text('span', 'ON A TRIP', 'eyebrow trip-text'), text('h2', `${driver.name} & ${passenger.name}`));
+  panel.append(text('p', 'Driver and passenger are travelling together.', 'detail-status'));
+  for (const [label, person, className] of [['DRIVER', driver, 'driver-text'], ['PASSENGER', passenger, 'passenger-text']]) {
+    const member = document.createElement('div'); member.className = 'detail-member';
+    member.append(text('span', label, `eyebrow ${className}`), text('strong', person.name));
+    if (person.plate || person.toda) member.append(text('p', [person.plate, person.toda].filter(Boolean).join(' · '), 'muted small'));
+    member.append(text('p', locationLabel(person, now(), connected), 'detail-gps'));
+    panel.append(member);
+  }
+  if (driver.ride) panel.append(text('p', `${driver.ride.pickup} → ${driver.ride.destination}`, 'trip-summary'));
+  for (const line of routeSummary(route)) panel.append(text('p', line, 'route-summary'));
+}
+
 function renderDetails() {
-  const panel = $('person-details'), user = visibleUsers().find(item => item.id === selected);
-  panel.replaceChildren(); panel.hidden = !user;
-  if (!user) return;
+  const panel = $('person-details'), trip = selectedTrip(), user = trip ? null : visibleUsers().find(item => item.id === selected);
+  panel.replaceChildren(); panel.hidden = !user && !trip;
+  if (!user && !trip) return;
   const close = text('button', '×', 'detail-close'); close.type = 'button'; close.setAttribute('aria-label', 'Close user details');
   close.addEventListener('click', () => { selected = null; render(); });
+  if (trip) { panel.append(close); renderTripDetails(panel, trip); return; }
   panel.append(close, text('span', user.role === 'driver' ? 'DRIVER' : 'PASSENGER', `eyebrow ${user.role}-text`), text('h2', user.name));
   panel.append(text('p', statusLabel(user), 'detail-status'));
   if (user.plate || user.toda) panel.append(text('p', [user.plate, user.toda].filter(Boolean).join(' · '), 'muted small'));
@@ -115,9 +137,12 @@ function render() {
   $('list-footnote').textContent = connected ? `${users.filter(user => isLive(user, now(), connected)).length} live locations · updates every 3s` : 'Last snapshot · reconnecting';
   $('fit-users').disabled = !users.some(user => user.location);
   const focused = document.activeElement?.dataset.userId;
+  // Selecting either person on a trip highlights both.
+  const trip = selected && tripOf(selected, snapshot?.routes || []);
+  const highlighted = new Set(trip ? [trip.driverId, trip.passengerId] : [selected]);
   const list = $('user-list'), nodes = users.map(user => {
-    const button = document.createElement('button'); button.type = 'button'; button.className = `user-row${selected === user.id ? ' selected' : ''}`;
-    button.dataset.userId = user.id; button.setAttribute('aria-pressed', String(selected === user.id));
+    const button = document.createElement('button'); button.type = 'button'; button.className = `user-row${highlighted.has(user.id) ? ' selected' : ''}`;
+    button.dataset.userId = user.id; button.setAttribute('aria-pressed', String(highlighted.has(user.id)));
     const avatar = text('span', user.name.split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase(), `avatar ${user.role}`);
     const copy = document.createElement('span'); copy.className = 'user-copy';
     copy.append(text('strong', user.name), text('span', `${user.role === 'driver' ? 'Driver' : 'Passenger'} · ${statusLabel(user)}`, 'user-subtitle'), text('span', locationLabel(user, now(), connected), `user-gps${isLive(user, now(), connected) ? ' live-text' : ''}`));
@@ -129,7 +154,8 @@ function render() {
   $('empty').hidden = users.length > 0;
   $('empty').querySelector('h3').textContent = snapshot?.users.length ? 'No matching people' : 'No one online yet';
   $('empty').querySelector('p').textContent = snapshot?.users.length ? 'Try another name or account type.' : 'Connected drivers and passengers will appear here when they open the app.';
-  fleetMap?.update(users, selected, now(), connected, visibleRoutes(users)); renderDetails();
+  const routes = visibleRoutes(users);
+  fleetMap?.update(mapPeople(users, routes), selected, now(), connected, routes); renderDetails();
 }
 
 $('login-form').addEventListener('submit', async event => {
