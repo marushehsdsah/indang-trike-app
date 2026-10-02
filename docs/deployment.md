@@ -36,9 +36,10 @@ Each push to the branch redeploys automatically.
 
 For the admin web dashboard, set the server environment variable
 `GOD_VIEW_ADMIN_PHONES` to the approved existing account's mobile number (or a
-comma-separated list). Open `https://<service>.onrender.com/god-view/` after
-deploying. The local `.env.backend` file is not uploaded. See
-[God view](god-view.md) for access setup and the mobile app rollout.
+comma-separated list). The dashboard is a separate Render Static Site
+(`indanggo-god-view` in `render.yaml`); see [God view](god-view.md) for creating
+it, access setup, and the mobile app rollout. The local `.env.backend` file is
+not uploaded.
 
 ## 3. App: standalone APK
 

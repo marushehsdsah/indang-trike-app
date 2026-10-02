@@ -4,16 +4,29 @@ The web dashboard shows connected drivers and passengers on the app's shared
 service-area map, with role/search filters, active trip status, vehicle details and GPS age.
 It refreshes every 3 seconds. It is read-only and does not join mobile presence.
 
+God view is a **separate website** in `web/god-view/`: static pages (no
+server code) that sign in and read the IndangGO API cross-origin. The API does
+not serve it. `build.mjs` writes the site into `web/god-view/dist/`, including
+MapLibre GL JS and `config.mjs`, which names the API (`GOD_VIEW_API_URL`; it
+must be `https://`, or `http://localhost` during development).
+
 ## Run locally
 
-1. Install backend dependencies: `npm ci --prefix indang-trike-backend`.
-2. Put `GOD_VIEW_ADMIN_PHONES=09171234567` in the git-ignored `.env.backend` at
+1. Put `GOD_VIEW_ADMIN_PHONES=09171234567` in the git-ignored `.env.backend` at
    the repository root, substituting the approved account's phone number. Use
    commas for multiple accounts. Local `server.js` loads this file; exported
    environment variables take precedence. Node 22 is the supported runtime.
-3. Start the backend with `npm run backend` or the existing `./start.sh`.
-4. Open `http://localhost:3000/god-view/` and use that account's existing app
-   password. Register the account in the mobile app first if it does not exist.
+2. Start the backend with `npm run backend` or the existing `./start.sh`.
+3. Build and serve the website:
+
+   ```sh
+   cd web/god-view
+   npm ci
+   GOD_VIEW_API_URL=http://localhost:3000 npm start
+   ```
+
+4. Open `http://localhost:8080` and use that account's existing app password.
+   Register the account in the mobile app first if it does not exist.
 
 No account is created or promoted by signing into the dashboard. Unlisted
 accounts are denied by the API, even when they have valid app credentials.
@@ -21,11 +34,26 @@ The allowlist is read at startup; restart the backend after changing it.
 
 ## Hosted pilot
 
-Deploy the updated backend repository as usual. In Render, add the server-only
-environment variable `GOD_VIEW_ADMIN_PHONES` with the approved mobile number(s),
-then restart/redeploy. Open `https://<your-backend>/god-view/`. The backend and
-dashboard share an origin; no additional hosting, map key or frontend build is
-needed. The git-ignored local `.env.backend` is not sent to Render.
+The website is a free Render **Static Site**, separate from the API service.
+
+1. On the API service in Render, add the environment variable
+   `GOD_VIEW_ADMIN_PHONES` with the approved mobile number(s) and redeploy. The
+   git-ignored local `.env.backend` is not sent to Render.
+2. Create the website, either from the `indanggo-god-view` entry in
+   `render.yaml` (**New → Blueprint**), or by hand with **New → Static Site**:
+   - Repository and branch: this repository, `render-deploy`.
+   - Root directory: `web/god-view`.
+   - Build command: `npm ci && npm run build`.
+   - Publish directory: `dist`.
+   - Environment variables: `GOD_VIEW_API_URL` =
+     `https://indang-trike-app.onrender.com`, `NODE_VERSION` = `22`.
+   - Headers (Settings → Headers), path `/*`: `X-Frame-Options: DENY`,
+     `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`.
+3. Open the site's address, for example `https://indanggo-god-view.onrender.com`.
+
+Any static host (Netlify, Vercel, GitHub Pages) can serve `dist/` the same way.
+The API answers browsers from any origin (`CORS_ORIGIN` unset); set
+`CORS_ORIGIN` on the API service to the website's address to accept only it.
 
 Rebuild/reload the mobile app with this change on both test phones. Both must
 use the same backend as the dashboard. Old builds still appear connected, but
@@ -57,16 +85,22 @@ private ride events still go only to the assigned passenger/driver.
 ```sh
 npm test
 npm run test:backend
-npx playwright install chromium
+npx playwright install chromium-headless-shell
 npm run test:god-view
 ```
+
+The browser check builds the website and serves it from its own port, so it
+reads the API cross-origin as in production. In WSL, Chromium needs the system
+libraries `libnss3`, `libnspr4` and `libasound2t64` (`sudo apt-get install`, or
+`npx playwright install-deps`).
 
 Integration/browser tests need local MongoDB and permission to bind loopback
 ports. Each creates and deletes only its own uniquely named test database.
 Browser checks produce screenshots in `/tmp/indang-god-view-*.png`. They cover
-access control, markers, filtering, missing/stale positions, interrupted
+a full-size map, access control, markers, filtering, missing/stale positions, interrupted
 updates, responsive layout and logout using actual API and socket connections.
 
 Maps use [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/) and the
-same OpenFreeMap service as the app. Vendor assets are pinned and served locally;
-map tiles still require internet. The people list works if tiles cannot load.
+same OpenFreeMap service as the app. MapLibre is pinned in
+`web/god-view/package.json` and copied into the site; map tiles still require
+internet. The people list works if tiles cannot load.

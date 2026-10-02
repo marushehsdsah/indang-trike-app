@@ -1,5 +1,10 @@
 // Real browser + real API/database. Only a uniquely named test database is used.
+// The God view website is built and served from its own origin, as in
+// production, and reads the API cross-origin.
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { chromium } = require('playwright');
 const { io } = require('socket.io-client');
@@ -9,10 +14,16 @@ const { DEFAULT_TRIP } = require('../data/indangMap');
 async function main() {
   const dbName = `indang_test_browser_${randomUUID().replaceAll('-', '')}`;
   const backend = await createBackend({ mongoUri: `${process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017'}/${dbName}`, adminPhones: '09179999991' });
-  const sockets = []; let browser;
+  const sockets = []; let browser, site, siteDir;
   try {
     await new Promise(resolve => backend.server.listen(0, '127.0.0.1', resolve));
     const base = `http://127.0.0.1:${backend.server.address().port}`;
+    const { buildSite } = await import('../web/god-view/build.mjs');
+    const { startServer } = await import('../web/god-view/serve.mjs');
+    siteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'god-view-site-'));
+    buildSite(siteDir, base);
+    site = await startServer(siteDir, 0);
+    const siteUrl = `http://127.0.0.1:${site.address().port}`;
     async function request(path, body, token) {
       const response = await fetch(`${base}/api${path}`, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
       const result = await response.json(); assert.ok(response.ok, JSON.stringify(result)); return result;
@@ -38,7 +49,7 @@ async function main() {
     browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, ignoreHTTPSErrors: true });
     const errors = []; page.on('pageerror', error => errors.push(error.message));
-    await page.goto(`${base}/god-view/`);
+    await page.goto(`${siteUrl}/`);
     await page.screenshot({ path: '/tmp/indang-god-view-login.png', fullPage: true });
     // Ordinary app credentials cannot open the admin dashboard.
     await page.locator('#phone').fill('09179999992');
@@ -51,6 +62,11 @@ async function main() {
     await page.locator('#dashboard').waitFor({ state: 'visible' });
     await page.waitForFunction(() => document.querySelector('#count-online').textContent === '3');
     await page.waitForFunction(() => document.querySelectorAll('.person-marker').length === 2);
+    // The map canvas must fill its panel, not only the size it started at.
+    await page.waitForFunction(() => {
+      const canvas = document.querySelector('#map canvas')?.getBoundingClientRect(), panel = document.querySelector('#map').getBoundingClientRect();
+      return canvas && Math.abs(canvas.width - panel.width) <= 2 && Math.abs(canvas.height - panel.height) <= 2;
+    }, null, { timeout: 5000 });
     assert.equal(await page.locator('#user-list img').count(), 0, 'account markup stays text');
     assert.equal(await page.locator('#user-list').getByText('Waiting for GPS').count(), 1);
     await page.locator('[data-role=driver]').click();
@@ -104,9 +120,10 @@ async function main() {
     assert.equal(await page.locator('.user-row').count(), 0);
     assert.equal(await page.evaluate(() => sessionStorage.getItem('indanggo.god-view.session')), null);
     assert.deepEqual(errors, []);
-    console.log('Browser checks passed: access control, real GPS markers, missing/stale GPS, safe text, role/search filters, disconnect/reconnect, responsive layout and logout.');
+    console.log('Browser checks passed: separate-origin site, full-size map, access control, real GPS markers, missing/stale GPS, safe text, role/search filters, disconnect/reconnect, responsive layout and logout.');
   } finally {
     await browser?.close(); sockets.forEach(socket => socket.disconnect());
+    site?.close(); if (siteDir) fs.rmSync(siteDir, { recursive: true, force: true });
     await backend.dispatch.run(async () => {});
     assert.equal(backend.models.User.db.name, dbName);
     await backend.models.User.db.dropDatabase(); await backend.close();

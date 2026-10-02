@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const { createServer } = require('node:http');
-const path = require('node:path');
 const { Server } = require('socket.io');
 const { createModels } = require('./models');
 const { createAuth } = require('./auth');
@@ -22,14 +21,8 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   const dispatch = createDispatch({ models, io, clock, presence, options: dispatchOptions });
   const admin = createAdmin({ models, presence, clock, adminPhones });
   app.disable('x-powered-by');
-  app.use('/god-view', (req, res, next) => {
-    res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
-      'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data: blob: https:; connect-src 'self' https://tiles.openfreemap.org https://*.openfreemap.org; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" });
-    next();
-  });
-  const mapAssets = path.join(path.dirname(require.resolve('maplibre-gl/package.json')), 'dist');
-  for (const asset of ['maplibre-gl.mjs', 'maplibre-gl-shared.mjs', 'maplibre-gl-worker.mjs', 'maplibre-gl.css']) app.get(`/god-view/vendor/${asset}`, (req, res) => res.sendFile(path.join(mapAssets, asset)));
-  app.use('/god-view', express.static(path.join(__dirname, '../web/god-view'), { etag: false, maxAge: 0 }));
+  // The God view website (web/god-view) is hosted separately and calls this
+  // API cross-origin with a bearer token; CORS_ORIGIN can restrict callers.
   app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
   app.use(express.json({ limit: '32kb' }));
   const attempts = new Map();

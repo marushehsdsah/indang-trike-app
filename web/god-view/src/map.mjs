@@ -7,6 +7,10 @@ export function createFleetMap(container, area, boundary, onSelect, onError) {
   const markers = new globalThis.Map();
   map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
   map.addControl(new AttributionControl({ compact: true }), 'bottom-right');
+  // MapLibre sizes its canvas once and then follows only window resizes; the
+  // panel settles after the map starts, which left most of it blank.
+  const resizer = new ResizeObserver(() => map.resize());
+  resizer.observe(container);
   map.on('error', () => onError('Some map tiles could not load. The people list is still available.'));
   map.on('load', () => {
     onError('');
@@ -43,6 +47,6 @@ export function createFleetMap(container, area, boundary, onSelect, onError) {
       if (!locations.length) return;
       map.fitBounds([Math.min(...locations.map(p => p.longitude)), Math.min(...locations.map(p => p.latitude)), Math.max(...locations.map(p => p.longitude)), Math.max(...locations.map(p => p.latitude))], { padding: 90, maxZoom: 16, duration: 700 });
     },
-    remove() { map.remove(); },
+    remove() { resizer.disconnect(); map.remove(); },
   };
 }

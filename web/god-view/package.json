@@ -1,0 +1,17 @@
+{
+  "name": "indanggo-god-view",
+  "private": true,
+  "description": "IndangGO God view: the pilot operations dashboard, a static website that reads the IndangGO API.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "serve": "node serve.mjs",
+    "start": "node build.mjs && node serve.mjs"
+  },
+  "dependencies": {
+    "maplibre-gl": "6.11.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

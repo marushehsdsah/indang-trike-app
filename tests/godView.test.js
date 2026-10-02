@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const model = () => import('../web/god-view/model.mjs');
+const model = () => import('../web/god-view/src/model.mjs');
 
 test('dashboard filters combine role with case-insensitive name and vehicle search', async () => {
   const { filterUsers } = await model();

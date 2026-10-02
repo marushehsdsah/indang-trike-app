@@ -68,10 +68,14 @@ test('health reports the database and the service area bookings are accepted in'
   assert.deepEqual(await request('/health'), { status: 200, body: { ok: true, serviceArea: 'Indang and General Trias' } });
 });
 
-test('God view serves a shell but protects every overview with admin authorization', async () => {
-  const shell = await fetch(`${base}/god-view/`);
-  assert.equal(shell.status, 200);
-  assert.match(await shell.text(), /God view/);
+test('the separate God view website may call the API, but every overview needs admin authorization', async () => {
+  // The dashboard is its own website (web/god-view); the API no longer serves it.
+  assert.equal((await fetch(`${base}/god-view/`)).status, 404);
+  const preflight = await fetch(`${base}/api/admin/overview`, { method: 'OPTIONS', headers: {
+    Origin: 'https://god-view.example', 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'authorization' } });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-origin'), '*');
+  assert.match(preflight.headers.get('access-control-allow-headers'), /authorization/i);
   assert.equal((await request('/admin/overview')).status, 401);
   const ordinary = await account();
   assert.equal((await request('/admin/overview', ordinary.token)).status, 403);

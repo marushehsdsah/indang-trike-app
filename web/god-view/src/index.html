@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#123c32">
   <meta name="robots" content="noindex, nofollow">
+  <!-- build.mjs fills in the API origin. Hosts should also send X-Frame-Options: DENY. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' __API_ORIGIN__ https://tiles.openfreemap.org https://*.openfreemap.org; object-src 'none'; base-uri 'none'; form-action 'self'">
   <title>God view · IndangGO</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="./vendor/maplibre-gl.css">

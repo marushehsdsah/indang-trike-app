@@ -1,3 +1,4 @@
+import { API_BASE_URL } from './config.mjs';
 import { filterUsers, isLive, locationLabel, statusLabel, snapshotTiming } from './model.mjs';
 
 const $ = id => document.getElementById(id);
@@ -13,7 +14,7 @@ function showError(id, message) { $(id).textContent = message; $(id).hidden = !m
 async function request(path, { auth = token, body, signal } = {}) {
   let response;
   try {
-    response = await fetch(`/api${path}`, { method: body ? 'POST' : 'GET', cache: 'no-store',
+    response = await fetch(`${API_BASE_URL}/api${path}`, { method: body ? 'POST' : 'GET', cache: 'no-store',
       headers: { ...(auth ? { Authorization: `Bearer ${auth}` } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}), signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(70000)]) : AbortSignal.timeout(70000) });
   } catch (error) {
