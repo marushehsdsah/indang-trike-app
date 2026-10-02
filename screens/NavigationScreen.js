@@ -42,10 +42,13 @@ const CAMERA_VIEWS = {
   '2d': { pitch: 0, zoom: 16 },
 };
 const GPS_CAMERA_MS = 1000;
+// One element for the guide's whole life, so its per-fix re-renders never
+// send the status bar style to Android again.
+const DARK_STATUS_BAR = <StatusBar style="dark" />;
 const ENGAGE_CAMERA_MS = 700;
 const OVERVIEW_MS = 700;
 const OFF_ROUTE_FIXES_BEFORE_REROUTE = 2;
-const REROUTE_COOLDOWN_MS = 8000;
+const REROUTE_COOLDOWN_MS = 5000;
 // A rider who has not moved this far since the last reroute would only get the
 // same route again, so the guide waits instead of recalculating on every fix.
 const REROUTE_MOVE_METERS = 40;
@@ -326,7 +329,7 @@ function NavigationGuide({ navigation, trip, initialRoute }) {
 
   return (
     <View style={styles.screen} onLayout={setLayoutValue('height')}>
-      <StatusBar style="dark" />
+      {DARK_STATUS_BAR}
       <Map
         style={StyleSheet.absoluteFill}
         mapStyle={NAVIGATION_STYLE_URL}

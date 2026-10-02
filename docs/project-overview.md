@@ -40,8 +40,11 @@ Everything below runs on the device with no network call.
 - **Map-pick mode** — tap the map: pickup is set and the card advances to the
   destination, so both stops take one tap each. The camera holds still while
   picking and frames the route when you finish.
-- Trip card: minutes, distance and the flat fare up front, riders, a note to the
-  driver, and the yellow Book button.
+- Trip card: minutes, distance and the fare up front, riders, a note to the
+  driver, and the yellow Book button. Indang fares follow the municipal taripa
+  (`assets/fares/README.md`): the rider chooses a special trip (whole trike) or,
+  on the Bancod routes, a regular per-passenger fare with the student/senior/PWD
+  discount; the server recomputes every fare. General Trias stays ₱45 flat.
 - The backend computes the authoritative road route from the selected stops.
   Persisted booking state drives searching and active-ride screens.
 

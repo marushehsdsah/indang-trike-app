@@ -222,3 +222,12 @@ test('routes the default trip on the production graph', () => {
   assert.ok(result.route.coordinates.length > 2);
   assert.ok(result.route.distanceMeters > 4000, `route is ${result.route.distanceMeters} m`);
 });
+
+test('a trusted bundle loads with shape checks only, and still rejects a non-graph', () => {
+  const { loadRoadGraph } = require('../utils/roadGraph');
+  const bundled = require('../assets/routing/service-area-road-graph.json');
+  const full = loadRoadGraph(bundled), trusted = loadRoadGraph(bundled, { trusted: true });
+  require('node:assert/strict').equal(trusted.status, 'ready');
+  require('node:assert/strict').equal(trusted.graph.places.length, full.graph.places.length);
+  require('node:assert/strict').equal(loadRoadGraph({ metadata: {} }, { trusted: true }).status, 'error');
+});

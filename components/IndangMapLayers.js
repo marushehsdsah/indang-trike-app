@@ -10,7 +10,8 @@ const BOUNDARY_PAINT = { 'line-color': COLORS.brand, 'line-width': 2 };
 // and the boundary is outlined. The camera may still leave it, so live GPS
 // outside Indang stays visible. Routes are drawn by the screens from the
 // offline road graph, never as a straight line between stops.
-export default function IndangMapLayers() {
+// Static data: memoized so the map's per-second GPS re-renders skip it.
+export default React.memo(function IndangMapLayers() {
   return (
     <>
       <GeoJSONSource id="indang-mask" data={INDANG_MASK_SHAPE}>
@@ -21,4 +22,4 @@ export default function IndangMapLayers() {
       </GeoJSONSource>
     </>
   );
-}
+});

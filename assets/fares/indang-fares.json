@@ -1,0 +1,971 @@
+{
+  "source": "TODAs_coordinates (1).xlsx, sheets TARIPA and 2: Municipal Ordinance No. 267 s. 2023 (Section 1 terms, Section 2 fares) and the Bancod TODA (BITODA) taripa.",
+  "fareFormat": "Fares are [day, night] in pesos. Day is 4:01 AM to 8:59 PM, night 9:00 PM to 4:00 AM, Philippine time.",
+  "night": {
+    "fromMinutes": 1260,
+    "toMinutes": 240
+  },
+  "special": {
+    "basePassengers": 2,
+    "extraPassenger": 15,
+    "rule": "Special trip: up to two passengers for the listed fare; each additional passenger +₱15 (sheet 2, Section 1 d). No student/senior/PWD discount on special trips (TARIPA notes)."
+  },
+  "regularRules": [
+    "Regular fares are per passenger. Only the Bancod routes have them (TARIPA).",
+    "20% discount for students, senior citizens, and PWD; no ID, no discount; minimum ₱12 per discounted passenger.",
+    "Minimum fare ₱15 per passenger.",
+    "Children 5 years old and under are not paying passengers; 6 and over pay.",
+    "At most four passengers, only one at the back seat; minors under 18 may not ride at the back seat."
+  ],
+  "poblacion": {
+    "label": "Within the Poblacion proper",
+    "barangays": [
+      "Barangay 1",
+      "Barangay 2",
+      "Barangay 3",
+      "Barangay 4"
+    ],
+    "center": {
+      "name": "Indang Town Plaza",
+      "latitude": 14.19576,
+      "longitude": 120.87849
+    },
+    "special": [
+      30,
+      35
+    ],
+    "alsoWithinMeters": 200,
+    "alsoWithin": [
+      {
+        "name": "PCI-PTT Station",
+        "latitude": 14.18661,
+        "longitude": 120.88249,
+        "verify": true
+      },
+      {
+        "name": "Green Valley Subdivision",
+        "latitude": 14.19079,
+        "longitude": 120.88098,
+        "verify": true
+      },
+      {
+        "name": "Tulay Binambangan",
+        "latitude": 14.19843,
+        "longitude": 120.86843,
+        "verify": true
+      },
+      {
+        "name": "New Municipal Hall",
+        "latitude": 14.20281,
+        "longitude": 120.87531
+      }
+    ]
+  },
+  "terminals": {
+    "palengke": {
+      "name": "Palengke sub-terminal (Indang Public Market)",
+      "latitude": 14.20049,
+      "longitude": 120.87288,
+      "radiusMeters": 150
+    },
+    "bunaCerca": {
+      "name": "Buna Cerca junction (pilahan)",
+      "latitude": 14.18569,
+      "longitude": 120.88727,
+      "radiusMeters": 150,
+      "verify": true,
+      "special": {
+        "poblacion": [
+          25,
+          30
+        ],
+        "mahabangkahoy-cerca": [
+          35,
+          40
+        ]
+      }
+    }
+  },
+  "cvsuOrigin": {
+    "name": "CvSU gate",
+    "areas": [
+      "kaytapos-cvsu",
+      "kaytapos-upland"
+    ],
+    "verify": true
+  },
+  "areas": [
+    {
+      "id": "agus-os",
+      "label": "Agus-os",
+      "barangays": [
+        "Agus-us"
+      ],
+      "special": {
+        "poblacion": [
+          40,
+          50
+        ]
+      }
+    },
+    {
+      "id": "alulod-bukana",
+      "label": "Alulod · Bukana / Barangay Hall / Patilyo",
+      "barangays": [
+        "Alulod"
+      ],
+      "special": {
+        "poblacion": [
+          35,
+          40
+        ],
+        "palengke": [
+          40,
+          45
+        ]
+      }
+    },
+    {
+      "id": "alulod-school",
+      "label": "Alulod · School / Petron / Patilyo Brasbag",
+      "barangays": [
+        "Alulod"
+      ],
+      "special": {
+        "poblacion": [
+          40,
+          50
+        ],
+        "palengke": [
+          45,
+          50
+        ]
+      }
+    },
+    {
+      "id": "alulod-dulo",
+      "label": "Alulod · Iglesia ni Cristo / Patilyo Dulo",
+      "barangays": [
+        "Alulod"
+      ],
+      "special": {
+        "poblacion": [
+          50,
+          55
+        ],
+        "palengke": [
+          50,
+          55
+        ]
+      }
+    },
+    {
+      "id": "banaba-cerca",
+      "label": "Banaba Cerca",
+      "barangays": [
+        "Banaba Cerca"
+      ],
+      "special": {
+        "poblacion": [
+          50,
+          60
+        ]
+      }
+    },
+    {
+      "id": "banaba-lejos",
+      "label": "Banaba Lejos",
+      "barangays": [
+        "Banaba Lejos"
+      ],
+      "special": {
+        "poblacion": [
+          65,
+          75
+        ]
+      }
+    },
+    {
+      "id": "bancod-purok-1",
+      "label": "Bancod · Purok I",
+      "barangays": [
+        "Bancod"
+      ],
+      "special": {
+        "poblacion": [
+          30,
+          35
+        ],
+        "cvsu": [
+          30,
+          35
+        ]
+      },
+      "regular": {
+        "poblacion": {
+          "day": [
+            15,
+            12
+          ],
+          "night": [
+            17,
+            14
+          ]
+        },
+        "cvsu": {
+          "day": [
+            15,
+            12
+          ],
+          "night": [
+            17,
+            14
+          ]
+        }
+      }
+    },
+    {
+      "id": "bancod-purok-2",
+      "label": "Bancod · Purok II",
+      "barangays": [
+        "Bancod"
+      ],
+      "special": {
+        "poblacion": [
+          32,
+          37
+        ],
+        "cvsu": [
+          30,
+          37
+        ]
+      },
+      "regular": {
+        "poblacion": {
+          "day": [
+            16,
+            13
+          ],
+          "night": [
+            18,
+            15
+          ]
+        },
+        "cvsu": {
+          "day": [
+            15,
+            12
+          ],
+          "night": [
+            18,
+            15
+          ]
+        }
+      }
+    },
+    {
+      "id": "bancod-purok-3",
+      "label": "Bancod · Purok III",
+      "barangays": [
+        "Bancod"
+      ],
+      "special": {
+        "poblacion": [
+          34,
+          39
+        ],
+        "cvsu": [
+          32,
+          39
+        ]
+      },
+      "regular": {
+        "poblacion": {
+          "day": [
+            17,
+            14
+          ],
+          "night": [
+            19,
+            16
+          ]
+        },
+        "cvsu": {
+          "day": [
+            16,
+            13
+          ],
+          "night": [
+            19,
+            16
+          ]
+        }
+      }
+    },
+    {
+      "id": "bancod-purok-4",
+      "label": "Bancod · Purok IV",
+      "barangays": [
+        "Bancod"
+      ],
+      "special": {
+        "poblacion": [
+          36,
+          41
+        ],
+        "cvsu": [
+          32,
+          41
+        ]
+      },
+      "regular": {
+        "poblacion": {
+          "day": [
+            18,
+            15
+          ],
+          "night": [
+            20,
+            17
+          ]
+        },
+        "cvsu": {
+          "day": [
+            16,
+            13
+          ],
+          "night": [
+            20,
+            17
+          ]
+        }
+      }
+    },
+    {
+      "id": "bancod-purok-5",
+      "label": "Bancod · Purok V / Cambi",
+      "barangays": [
+        "Bancod"
+      ],
+      "special": {
+        "poblacion": [
+          45,
+          50
+        ],
+        "cvsu": [
+          45,
+          50
+        ]
+      },
+      "regular": {
+        "poblacion": {
+          "day": [
+            25,
+            22
+          ],
+          "night": [
+            27,
+            24
+          ]
+        },
+        "cvsu": {
+          "day": [
+            25,
+            22
+          ],
+          "night": [
+            27,
+            24
+          ]
+        }
+      }
+    },
+    {
+      "id": "buna-cerca-bukana",
+      "label": "Buna Cerca · Bukana / School / Sagbat",
+      "barangays": [
+        "Buna Cerca"
+      ],
+      "special": {
+        "poblacion": [
+          35,
+          40
+        ],
+        "palengke": [
+          40,
+          45
+        ]
+      }
+    },
+    {
+      "id": "buna-cerca-dulo",
+      "label": "Buna Cerca · Puerte / Ulong-ilog / Dulo",
+      "barangays": [
+        "Buna Cerca"
+      ],
+      "special": {
+        "poblacion": [
+          40,
+          45
+        ],
+        "palengke": [
+          45,
+          50
+        ]
+      }
+    },
+    {
+      "id": "buna-lejos",
+      "label": "Buna Lejos",
+      "barangays": [
+        "Buna Lejos I",
+        "Buna Lejos II"
+      ],
+      "special": {
+        "poblacion": [
+          50,
+          60
+        ],
+        "palengke": [
+          50,
+          55
+        ]
+      }
+    },
+    {
+      "id": "calumpang-cerca",
+      "label": "Calumpang Cerca",
+      "barangays": [
+        "Calumpang Cerca"
+      ],
+      "special": {
+        "poblacion": [
+          35,
+          40
+        ]
+      }
+    },
+    {
+      "id": "calumpang-annex",
+      "label": "Calumpang · High School Annex",
+      "barangays": [
+        "Calumpang Cerca"
+      ],
+      "special": {
+        "poblacion": [
+          40,
+          50
+        ]
+      }
+    },
+    {
+      "id": "calumpang-lejos-iglesia",
+      "label": "Calumpang Lejos · up to Iglesia / Court",
+      "barangays": [
+        "Calumpang Lejos I"
+      ],
+      "special": {
+        "poblacion": [
+          45,
+          55
+        ]
+      }
+    },
+    {
+      "id": "calumpang-lejos-dulo",
+      "label": "Calumpang Lejos · Dulo",
+      "barangays": [
+        "Calumpang Lejos I"
+      ],
+      "special": {
+        "poblacion": [
+          50,
+          60
+        ]
+      }
+    },
+    {
+      "id": "carasuchi",
+      "label": "Carasuchi",
+      "barangays": [
+        "Carasuchi"
+      ],
+      "special": {
+        "poblacion": [
+          90,
+          110
+        ]
+      }
+    },
+    {
+      "id": "daine",
+      "label": "Daine I and II",
+      "barangays": [
+        "Daine I",
+        "Daine II"
+      ],
+      "special": {
+        "poblacion": [
+          90,
+          110
+        ]
+      }
+    },
+    {
+      "id": "guyam-malaki",
+      "label": "Guyam Malaki",
+      "barangays": [
+        "Guyam Malaki"
+      ],
+      "special": {
+        "poblacion": [
+          100,
+          120
+        ]
+      }
+    },
+    {
+      "id": "guyam-pilipit",
+      "label": "Guyam Pilipit",
+      "barangays": [
+        "Guyam Munti"
+      ],
+      "special": {
+        "poblacion": [
+          110,
+          130
+        ]
+      }
+    },
+    {
+      "id": "harasan",
+      "label": "Harasan (Bukana / Dulo)",
+      "barangays": [
+        "Harasan"
+      ],
+      "special": {
+        "poblacion": [
+          80,
+          90
+        ]
+      }
+    },
+    {
+      "id": "kayquit-2",
+      "label": "Kayquit II",
+      "barangays": [
+        "Kayquit II"
+      ],
+      "special": {
+        "poblacion": [
+          35,
+          40
+        ],
+        "palengke": [
+          40,
+          45
+        ]
+      }
+    },
+    {
+      "id": "kayquit-1",
+      "label": "Kayquit I",
+      "barangays": [
+        "Kayquit I"
+      ],
+      "special": {
+        "poblacion": [
+          40,
+          45
+        ],
+        "palengke": [
+          45,
+          50
+        ]
+      }
+    },
+    {
+      "id": "kayquit-3",
+      "label": "Kayquit III",
+      "barangays": [
+        "Kayquit III"
+      ],
+      "special": {
+        "poblacion": [
+          45,
+          50
+        ],
+        "palengke": [
+          50,
+          60
+        ]
+      }
+    },
+    {
+      "id": "kaytapos-cvsu",
+      "label": "CvSU · Village / H.S. / College Loob",
+      "barangays": [
+        "Kaytapos"
+      ],
+      "special": {
+        "poblacion": [
+          30,
+          35
+        ],
+        "palengke": [
+          30,
+          35
+        ]
+      }
+    },
+    {
+      "id": "kaytapos-upland",
+      "label": "Kaytapos · Upland / Rough Road Subdivision",
+      "barangays": [
+        "Kaytapos"
+      ],
+      "special": {
+        "poblacion": [
+          30,
+          35
+        ],
+        "palengke": [
+          35,
+          40
+        ]
+      }
+    },
+    {
+      "id": "kaytambog-1",
+      "label": "Kaytambog I · Bukana to Barangay Hall",
+      "barangays": [
+        "Kaytambog"
+      ],
+      "special": {
+        "poblacion": [
+          35,
+          40
+        ]
+      }
+    },
+    {
+      "id": "kaytambog-2",
+      "label": "Kaytambog II · Simbahan",
+      "barangays": [
+        "Kaytambog"
+      ],
+      "special": {
+        "poblacion": [
+          40,
+          45
+        ]
+      }
+    },
+    {
+      "id": "kaytambog-3",
+      "label": "Kaytambog · Purok III",
+      "barangays": [
+        "Kaytambog"
+      ],
+      "special": {
+        "poblacion": [
+          45,
+          50
+        ]
+      }
+    },
+    {
+      "id": "kaytambog-dulo",
+      "label": "Kaytambog · Farms / Dulo",
+      "barangays": [
+        "Kaytambog"
+      ],
+      "special": {
+        "poblacion": [
+          55,
+          65
+        ]
+      }
+    },
+    {
+      "id": "limbon",
+      "label": "Limbon",
+      "barangays": [
+        "Limbon"
+      ],
+      "special": {
+        "poblacion": [
+          50,
+          60
+        ],
+        "palengke": [
+          55,
+          60
+        ]
+      }
+    },
+    {
+      "id": "lumampong-balagbag",
+      "label": "Lumampong Balagbag",
+      "barangays": [
+        "Lumampong Balagbag"
+      ],
+      "special": {
+        "poblacion": [
+          80,
+          100
+        ]
+      }
+    },
+    {
+      "id": "lumampong-halayhay",
+      "label": "Lumampong Halayhay",
+      "barangays": [
+        "Lumampong Halayhay"
+      ],
+      "special": {
+        "poblacion": [
+          90,
+          110
+        ]
+      }
+    },
+    {
+      "id": "mahabangkahoy-cerca",
+      "label": "Mahabang Kahoy Cerca · Dulong Kanto",
+      "barangays": [
+        "Mahabangkahoy Cerca",
+        "Mahabangkahoy Lejos"
+      ],
+      "special": {
+        "poblacion": [
+          40,
+          50
+        ],
+        "palengke": [
+          45,
+          55
+        ]
+      }
+    },
+    {
+      "id": "mahabangkahoy-hatchery",
+      "label": "Mahabang Kahoy · Hatchery",
+      "barangays": [
+        "Mahabangkahoy Cerca",
+        "Mahabangkahoy Lejos"
+      ],
+      "special": {
+        "poblacion": [
+          50,
+          60
+        ],
+        "palengke": [
+          55,
+          65
+        ]
+      }
+    },
+    {
+      "id": "mahabangkahoy-italaro",
+      "label": "Mahabang Kahoy · Italaro",
+      "barangays": [
+        "Mahabangkahoy Cerca",
+        "Mahabangkahoy Lejos"
+      ],
+      "special": {
+        "poblacion": [
+          60,
+          70
+        ],
+        "palengke": [
+          65,
+          75
+        ]
+      }
+    },
+    {
+      "id": "mahabangkahoy-balagbag",
+      "label": "Mahabang Kahoy Balagbag",
+      "barangays": [
+        "Mahabangkahoy Cerca",
+        "Mahabangkahoy Lejos"
+      ],
+      "special": {
+        "poblacion": [
+          110,
+          130
+        ],
+        "palengke": [
+          115,
+          135
+        ]
+      }
+    },
+    {
+      "id": "mataas-na-lupa-metrogate",
+      "label": "Mataas na Lupa · MetroGate / Villa Corazon",
+      "barangays": [
+        "Mataas na Lupa"
+      ],
+      "special": {
+        "poblacion": [
+          60,
+          70
+        ],
+        "palengke": [
+          65,
+          75
+        ]
+      }
+    },
+    {
+      "id": "mataas-na-lupa-asama",
+      "label": "Mataas na Lupa · Asama Homes",
+      "barangays": [
+        "Mataas na Lupa"
+      ],
+      "special": {
+        "poblacion": [
+          60,
+          70
+        ],
+        "palengke": [
+          65,
+          75
+        ]
+      }
+    },
+    {
+      "id": "mataas-na-lupa-school",
+      "label": "Mataas na Lupa · School / Dulo",
+      "barangays": [
+        "Mataas na Lupa"
+      ],
+      "special": {
+        "poblacion": [
+          70,
+          80
+        ],
+        "palengke": [
+          75,
+          85
+        ]
+      }
+    },
+    {
+      "id": "tambo-malaki",
+      "label": "Tambo Malaki",
+      "barangays": [
+        "Tambo Malaki"
+      ],
+      "special": {
+        "poblacion": [
+          40,
+          45
+        ]
+      }
+    },
+    {
+      "id": "tambo-malaki-gitna",
+      "label": "Tambo Malaki · Gitna / Portugal / Piggery",
+      "barangays": [
+        "Tambo Malaki"
+      ],
+      "special": {
+        "poblacion": [
+          45,
+          50
+        ]
+      }
+    },
+    {
+      "id": "tambo-malaki-flower",
+      "label": "Tambo Malaki · Flower Farm",
+      "barangays": [
+        "Tambo Malaki"
+      ],
+      "special": {
+        "poblacion": [
+          45,
+          50
+        ]
+      }
+    },
+    {
+      "id": "tambo-malaki-queentown",
+      "label": "Tambo Malaki · Queentown / Mushroom Farm",
+      "barangays": [
+        "Tambo Malaki"
+      ],
+      "special": {
+        "poblacion": [
+          50,
+          60
+        ]
+      }
+    },
+    {
+      "id": "tambo-ilaya",
+      "label": "Tambo Ilaya",
+      "barangays": [
+        "Tambo Ilaya"
+      ],
+      "special": {
+        "poblacion": [
+          45,
+          50
+        ]
+      }
+    },
+    {
+      "id": "tambo-kulit",
+      "label": "Tambo Kulit",
+      "barangays": [
+        "Tambo Kulit"
+      ],
+      "special": {
+        "poblacion": [
+          60,
+          70
+        ]
+      }
+    },
+    {
+      "id": "tambo-balagbag",
+      "label": "Tambo Balagbag",
+      "barangays": [
+        "Tambo Balagbag"
+      ],
+      "special": {
+        "poblacion": [
+          80,
+          90
+        ]
+      }
+    },
+    {
+      "id": "pulo",
+      "label": "Pulo",
+      "barangays": [
+        "Pulo"
+      ],
+      "special": {
+        "poblacion": [
+          75,
+          85
+        ]
+      }
+    }
+  ],
+  "review": [
+    "Bancod uses the TARIPA sheet per purok. Sheet 2 lists Bancod differently: Purok 1 to 2 ₱30/₱35, Purok 3 and 4 ₱35/₱40, Purok 5/Cambe/Dulo ₱45/₱55. TARIPA has Purok III ₱34, Purok IV ₱36, and Purok V night ₱50.",
+    "The CvSU Gate to Bancod route has no night fares in TARIPA; the Indang to Bancod night fares are used. Pickups anywhere in Kaytapos (where CvSU is) count as the CvSU gate.",
+    "Guyam Pilipit is not a PSA barangay; it is priced for Guyam Munti.",
+    "Calumpang High School Annex is placed in Calumpang Cerca, where Calumpang Integrated National High School is.",
+    "The sheet does not say which Mahabang Kahoy places are in Cerca or Lejos, so riders in either barangay choose among all four.",
+    "The Buna Cerca junction (pilahan) is placed at the Buna Cerca barangay hall; its table lists Buna Lejos without a fare, which is left out.",
+    "Within the Poblacion proper, PCI-PTT Station, Green Valley Subdivision, and Tulay Binambangan count within 200 m of the points found on the map; Ilaya, Lintiw Road, Ramirez and Subdivision sa Palengke are inside Barangay 1 to 4 or could not be placed.",
+    "Other Indang trips (neither stop in the Poblacion) use the fare listed for whichever stop is farther from the town plaza (decision 2026-10-02)."
+  ]
+}

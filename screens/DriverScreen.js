@@ -16,6 +16,7 @@ import { useConnectionStatus, useGpsStatus } from '../hooks/useMapStatus';
 import useReducedMotion from '../hooks/useReducedMotion';
 import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n';
+import { fareSummary } from '../i18n/messages';
 import useAccountHistory from '../hooks/useAccountHistory';
 import { ACTIVE_STATUSES, formatPeso, isFreshFix } from '../utils/rideState';
 import { getMunicipalityAt } from '../data/indangMap';
@@ -135,6 +136,7 @@ export default function DriverScreen({ navigation }) {
                 </Text>
                 <Money amount={offer.fare} size={26} color={COLORS.brand} />
               </View>
+              {offer.fareDetails ? <Text style={[TYPE.caption, styles.offerFare]}>{fareSummary(t, offer.fareDetails)}</Text> : null}
               <View style={styles.offerActions}>
                 <Button label={t('driver.decline')} variant="outline" disabled={busy || !connected} onPress={() => respond('decline')} style={styles.decline} />
                 <Button label={t('driver.accept')} variant="hire" loading={busy} disabled={!connected || seconds === 0 || !fresh}
@@ -218,6 +220,7 @@ const styles = StyleSheet.create({
   offerStops: { marginTop: SPACE.md },
   offerNote: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACE.sm, marginTop: SPACE.md },
   offerFacts: { flexDirection: 'row', alignItems: 'center', marginTop: SPACE.md },
+  offerFare: { marginTop: SPACE.xs },
   offerActions: { flexDirection: 'row', gap: SPACE.sm, marginTop: SPACE.lg },
   decline: { flex: 1 },
   accept: { flex: 2 },

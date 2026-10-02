@@ -18,8 +18,8 @@ import { useI18n } from '../i18n';
 import { getRoadGraph } from '../data/roadNetwork';
 import { isInIndangServiceArea } from '../data/indangMap';
 import { resolveBookingRoute } from '../utils/bookingRoute';
-import { formatDistance, formatDuration } from '../utils/routeDirections';
-import { distanceToStop, hasReachedStop, remainingRoute } from '../utils/tripProgress';
+import { formatDistance } from '../utils/routeDirections';
+import { advanceLeg, distanceToStop, hasReachedStop } from '../utils/tripProgress';
 import { ACTIVE_STATUSES, getDriverAction, isFreshFix } from '../utils/rideState';
 import { tapFeedback } from '../utils/feedback';
 import { COLORS, ELEVATION, RADIUS, SPACE, TYPE } from '../theme';
@@ -48,30 +48,34 @@ export default function ActiveRideScreen({ navigation }) {
   // Where the trike is: the driver's live GPS or, for a passenger riding in
   // it, their own.
   const vehicle = fresh ? position : (!driver && riding && passengerFresh ? passengerPosition : null);
-  // The line on the map. To pickup: the road route from the driver. While
-  // riding: only the road still ahead of the trike, routed again from where it
-  // is if it leaves the planned route. `live` marks a line that follows the trike.
+  const stageKey = ride ? `${ride.id}:${ride.status}` : null;
+  // The line on the map follows the trike: to pickup, the road route from the
+  // driver; while riding, the rest of the trip. It is trimmed as the trike
+  // moves along it and searched again only when the trike leaves it, at most
+  // every few seconds (utils/tripProgress.js), so GPS updates stay cheap.
+  // `live` marks a line that follows the trike; `fullRoute` is the whole
+  // route being followed, for the guide and the arrival check.
+  const legRef = useRef({ key: null, state: {} });
   const leg = useMemo(() => {
     if (!ride) return null;
-    if (toPickup) {
-      if (!fresh) return { trip: { pickup: null, dropoff: ride.trip.pickup }, route: null };
-      const pickup = { name: 'Driver location', coordinate: position };
-      const result = resolveBookingRoute({ roadGraph: getRoadGraph(), pickup, destination: ride.trip.pickup, isInServiceArea: isInIndangServiceArea });
-      return { trip: { pickup, dropoff: ride.trip.pickup }, route: result.status === 'ok' ? result.details : null, live: true };
+    if (!toPickup && !riding) return { trip: ride.trip, route: ride.route, fullRoute: ride.route };
+    const target = toPickup ? ride.trip.pickup : ride.trip.dropoff;
+    if (legRef.current.key !== stageKey) legRef.current = { key: stageKey, state: riding ? { route: ride.route } : {} };
+    // Without a live position there is nothing to follow: the driver's way to
+    // the pickup is unknown, and a ride shows its whole route.
+    if (!vehicle) {
+      return toPickup ? { trip: { pickup: null, dropoff: target }, route: null, fullRoute: null }
+        : { trip: ride.trip, route: ride.route, fullRoute: ride.route };
     }
-    if (riding && vehicle) {
-      const remaining = remainingRoute(ride.route, vehicle);
-      if (remaining) {
-        return { trip: ride.trip, live: true, route: { ...ride.route, coordinates: remaining.coordinates,
-          distanceLabel: formatDistance(remaining.remainingMeters), durationLabel: formatDuration(remaining.remainingSeconds) } };
-      }
-      const result = resolveBookingRoute({ roadGraph: getRoadGraph(), pickup: { coordinate: vehicle }, destination: ride.trip.dropoff, isInServiceArea: isInIndangServiceArea });
-      if (result.status === 'ok') return { trip: { pickup: { name: 'Trike location', coordinate: vehicle }, dropoff: ride.trip.dropoff }, route: result.details, live: true };
-    }
-    return { trip: ride.trip, route: ride.route };
-  }, [ride?.id, ride?.status, position?.latitude, position?.longitude, fresh, vehicle?.latitude, vehicle?.longitude]);
-  // The guide gets whole routes: it follows the trike along them itself.
-  const guideLeg = toPickup ? leg : ride ? { trip: ride.trip, route: ride.route } : null;
+    const step = advanceLeg(legRef.current.state, { vehicle, now: Date.now(), reroute: (from) => {
+      const result = resolveBookingRoute({ roadGraph: getRoadGraph(), pickup: { coordinate: from }, destination: target, isInServiceArea: isInIndangServiceArea });
+      return result.status === 'ok' ? result.details : null;
+    } });
+    legRef.current.state = step.state;
+    return { trip: { pickup: { name: 'Trike location', coordinate: vehicle }, dropoff: target }, route: step.display, fullRoute: step.state.route, live: step.live };
+  }, [stageKey, vehicle?.latitude, vehicle?.longitude]);
+  // The guide gets the whole route: it follows the trike along it itself.
+  const guideLeg = leg?.fullRoute ? { trip: { ...leg.trip, dropoff: toPickup ? ride.trip.pickup : ride.trip.dropoff }, route: leg.fullRoute } : null;
   const perform = async (action) => {
     if (busy || !ride) return;
     setBusy(true);
@@ -87,9 +91,8 @@ export default function ActiveRideScreen({ navigation }) {
   // reached, the button stays for that stage, so GPS jitter at the edge of the
   // radius cannot make it flicker.
   const ownFix = driver && gps.status === 'ready' && isFreshFix(gps.fix, now) ? gps.fix : null;
-  const target = action?.action === 'arrive' ? { stop: ride.trip.pickup.coordinate, route: leg?.route, name: 'arrive' }
+  const target = action?.action === 'arrive' ? { stop: ride.trip.pickup.coordinate, route: leg?.fullRoute, name: 'arrive' }
     : action?.action === 'complete' ? { stop: ride.trip.dropoff.coordinate, route: ride.route, name: 'complete' } : null;
-  const stageKey = ride ? `${ride.id}:${ride.status}` : null;
   const nearStop = Boolean(target) && hasReachedStop(ownFix, target.stop, target.route);
   useEffect(() => { if (nearStop) setReachedStage(stageKey); }, [nearStop, stageKey]);
   const atStop = !target || nearStop || reachedStage === stageKey;
@@ -108,7 +111,8 @@ export default function ActiveRideScreen({ navigation }) {
     ? (toPickup ? (passengerFresh ? t('active.passengerLive')
       : passengerPosition ? t('active.passengerPaused', { seconds: secondsSince(passengerPosition, now) }) : t('active.passengerWaiting')) : null)
     : (!passengerFresh ? t('active.yourGps', { message: t(`gps.${gps.status}`) }) : null);
-  const eta = leg?.route?.durationLabel ?? null;
+  // No countdown once the driver is waiting at the pickup.
+  const eta = ride?.status === 'arrived' ? null : leg?.route?.durationLabel ?? null;
 
   const finish = (route) => { dismissRide(); navigation.navigate(route); };
   const person = driver ? ride?.passenger : ride?.driver;
@@ -164,7 +168,7 @@ export default function ActiveRideScreen({ navigation }) {
             <Text style={[TYPE.heading, styles.title]} accessibilityLiveRegion="polite">{t(driver ? `active.driverStatus.${ride.status}` : `ride.status.${ride.status}`)}</Text>
             {eta && <View style={styles.eta}>
               <Text style={TYPE.metric}>{eta}</Text>
-              <Text style={TYPE.caption}>{t(toPickup ? 'active.etaPickup' : leg?.live ? 'active.etaDropoff' : 'active.etaTrip')}</Text>
+              <Text style={TYPE.caption} numberOfLines={1}>{t(toPickup ? 'active.etaPickup' : leg?.live ? 'active.etaDropoff' : 'active.etaTrip')}</Text>
             </View>}
           </View>
           {sideNote && <Pressable onPress={driver ? undefined : gps.retry} disabled={driver || passengerFresh}
@@ -222,7 +226,7 @@ const styles = StyleSheet.create({
   markerStale: { backgroundColor: COLORS.inkMuted },
   header: { flexDirection: 'row', alignItems: 'flex-start' },
   title: { flex: 1, marginRight: SPACE.md },
-  eta: { alignItems: 'flex-end' },
+  eta: { alignItems: 'flex-end', flexShrink: 0, minWidth: 104 },
   sideNote: { marginTop: SPACE.xs },
   person: { marginTop: SPACE.md },
   plateRow: { flexDirection: 'row', alignItems: 'center', marginTop: SPACE.md, gap: SPACE.md },

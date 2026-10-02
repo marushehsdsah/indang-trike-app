@@ -22,7 +22,8 @@ const LABEL_PAINT = { 'text-color': ['get', 'color'], 'text-halo-color': '#FFFFF
 const AREA_LAYOUT = { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Italic'], 'text-size': 12, 'text-max-width': 8 };
 const AREA_PAINT = { 'text-color': ['get', 'color'], 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.4, 'text-opacity': 0.85 };
 
-export default function PlacesLayer() {
+// Static data: memoized so the map's per-second GPS re-renders skip it.
+export default React.memo(function PlacesLayer() {
   return (
     <GeoJSONSource id="service-area-places" data={PLACES}>
       <Layer id="places-area-label" type="symbol" minzoom={13} filter={rank(0)} layout={AREA_LAYOUT} paint={AREA_PAINT} />
@@ -32,4 +33,4 @@ export default function PlacesLayer() {
       <Layer id="places-label" type="symbol" minzoom={16.5} filter={rank(2)} layout={LABEL_LAYOUT} paint={LABEL_PAINT} />
     </GeoJSONSource>
   );
-}
+});

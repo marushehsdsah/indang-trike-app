@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { COLORS } from '../theme';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -15,11 +15,20 @@ import ProfileScreen from '../screens/ProfileScreen';
 import DriverScreen from '../screens/DriverScreen';
 import { useApp } from '../context/AppContext';
 import { ACTIVE_STATUSES } from '../utils/rideState';
+import { preloadRoadGraph } from '../data/roadNetwork';
 
 const Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
   const { user, loading, ride } = useApp();
+  // Loads the offline road graph once the signed-in app is idle, for riders
+  // and drivers alike, so no route, reroute, or live trip waits for it.
+  const signedIn = Boolean(user);
+  useEffect(() => {
+    if (!signedIn) return undefined;
+    const handle = requestIdleCallback(preloadRoadGraph);
+    return () => cancelIdleCallback(handle);
+  }, [signedIn]);
   if (loading) return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface }}><ActivityIndicator size="large" color={COLORS.brand} /></View>;
   const driver = user?.role === 'driver';
   const initial = !user?.profileComplete ? 'Profile' : ride && ACTIVE_STATUSES.includes(ride.status) ? (ride.status === 'searching' ? 'Searching' : 'ActiveRide') : driver ? 'Driver' : 'Passenger';

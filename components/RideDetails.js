@@ -7,6 +7,7 @@ import TripStops from './TripStops';
 import { COLORS, SPACE, TYPE } from '../theme';
 import { userName } from '../utils/rideState';
 import { useI18n } from '../i18n';
+import { fareSummary, placeName } from '../i18n/messages';
 
 // The other person on the trip, with message and call buttons when the server
 // shared their number.
@@ -35,7 +36,7 @@ export function TripFacts({ ride, style }) {
   const { t } = useI18n();
   return (
     <View style={style}>
-      <TripStops pickup={ride.trip.pickup.name} dropoff={ride.trip.dropoff.name} lines={2} />
+      <TripStops pickup={placeName(t, ride.trip.pickup)} dropoff={placeName(t, ride.trip.dropoff)} lines={2} />
       {ride.note ? (
         <View style={styles.note}>
           <MaterialCommunityIcons name="message-reply-text-outline" size={18} color={COLORS.inkSecondary} />
@@ -52,6 +53,7 @@ export function TripFacts({ ride, style }) {
           <Text style={TYPE.caption}>{t('trip.cash')}</Text>
         </View>
       </View>
+      {ride.fareDetails ? <Text style={[TYPE.caption, styles.fareSummary]}>{fareSummary(t, ride.fareDetails)}</Text> : null}
     </View>
   );
 }
@@ -64,4 +66,5 @@ const styles = StyleSheet.create({
   facts: { flexDirection: 'row', alignItems: 'center', marginTop: SPACE.md },
   factText: { flex: 1 },
   fare: { flexDirection: 'row', alignItems: 'baseline', gap: SPACE.xs },
+  fareSummary: { marginTop: SPACE.xs },
 });

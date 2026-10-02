@@ -7,7 +7,7 @@ const LINE_LAYOUT = { 'line-cap': 'round', 'line-join': 'round' };
 
 // A road route from the offline road graph: a blue line on a white casing.
 // `id` names the map source, so each route on one map needs its own.
-export default function RouteLine({ id, coordinates, width, casingWidth }) {
+export default React.memo(function RouteLine({ id, coordinates, width, casingWidth }) {
   const shape = useMemo(() => toLineFeature(coordinates), [coordinates]);
   const casingPaint = useMemo(() => ({ 'line-color': '#FFFFFF', 'line-width': casingWidth }), [casingWidth]);
   const linePaint = useMemo(() => ({ 'line-color': COLORS.route, 'line-width': width }), [width]);
@@ -17,4 +17,4 @@ export default function RouteLine({ id, coordinates, width, casingWidth }) {
       <Layer id={`${id}-line`} type="line" layout={LINE_LAYOUT} paint={linePaint} />
     </GeoJSONSource>
   );
-}
+});

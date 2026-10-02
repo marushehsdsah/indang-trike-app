@@ -21,7 +21,7 @@ function createModels(connection) {
     active: { type: Boolean, default: true },
     status: { type: String, default: 'searching', enum: ['searching', 'accepted', 'arrived', 'in_progress', 'completed', 'cancelled', 'no_driver'] },
     version: { type: Number, default: 1 }, trip: Schema.Types.Mixed, route: Schema.Types.Mixed,
-    passengers: Number, note: String, fare: Number,
+    passengers: Number, note: String, fare: Number, fareDetails: Schema.Types.Mixed,
     offerId: String, offerExpiresAt: Date, searchExpiresAt: Date, attemptedDrivers: { type: [String], default: [] },
     acceptedAt: Date, arrivedAt: Date, startedAt: Date, completedAt: Date, cancelledAt: Date,
     cancelledBy: String, cancellationReason: String,

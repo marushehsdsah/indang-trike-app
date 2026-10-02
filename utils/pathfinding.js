@@ -41,6 +41,12 @@ class FrontierHeap {
     this.allocate(Math.max(16, capacity));
   }
 
+  // Empties the heap but keeps its arrays for the next search.
+  clear() {
+    this.size = 0;
+    this.entryCount = 0;
+  }
+
   allocate(capacity) {
     const grow = (Type, values) => {
       const next = new Type(capacity);
@@ -121,6 +127,42 @@ class FrontierHeap {
 // nodes object so copies that only change metadata share one compilation.
 const compiledGraphs = new WeakMap();
 
+function isSorted(values) {
+  for (let index = 1; index < values.length; index += 1) {
+    if (values[index - 1] > values[index]) return false;
+  }
+  return true;
+}
+
+// Working arrays for searches over one compiled graph, kept between searches.
+// A node's entries belong to the current search only while its stamp equals
+// the search's generation, so nothing is cleared or reallocated per search:
+// on a phone that allocation and clearing cost more than a short search.
+function getSearchState(compiled) {
+  if (!compiled.search) {
+    const nodeCount = compiled.latitudes.length;
+    compiled.search = {
+      generation: 0,
+      reached: new Int32Array(nodeCount),
+      closed: new Int32Array(nodeCount),
+      elapsed: new Float64Array(nodeCount),
+      metres: new Float64Array(nodeCount),
+      previous: new Int32Array(nodeCount),
+      arrivalEdges: new Int32Array(nodeCount),
+      frontier: new FrontierHeap(1024),
+    };
+  }
+  const state = compiled.search;
+  if (state.generation >= 0x3fffffff) {
+    state.generation = 0;
+    state.reached.fill(0);
+    state.closed.fill(0);
+  }
+  state.generation += 1;
+  state.frontier.clear();
+  return state;
+}
+
 // Index-based copy of a graph for A*: coordinates and adjacency (CSR layout)
 // in typed arrays. Indices follow sorted node-ID order, so comparing two
 // indices breaks ties exactly as comparing the ID strings would.
@@ -128,7 +170,10 @@ function compileGraph(graph) {
   const cached = compiledGraphs.get(graph.nodes);
   if (cached && cached.edgesSource === graph.edges) return cached;
 
-  const nodeIds = Object.keys(graph.nodes).sort();
+  // The graph builder writes nodes in ID order; sorting is needed only when
+  // they are not, and checking costs far less than sorting 40,000 strings.
+  const nodeIds = Object.keys(graph.nodes);
+  if (!isSorted(nodeIds)) nodeIds.sort();
   const nodeCount = nodeIds.length;
   const indexById = new Map();
   nodeIds.forEach((nodeId, index) => indexById.set(nodeId, index));
@@ -246,38 +291,36 @@ function findFastestPath(graph, startNodeId, goalNodeId) {
     return 2 * EARTH_RADIUS_METERS * Math.asin(Math.min(1, Math.sqrt(h))) / maxMetresPerSecond;
   };
 
-  const nodeCount = latitudes.length;
-  // Infinite elapsed time marks a node A* has not reached yet.
-  const elapsed = new Float64Array(nodeCount).fill(Infinity);
-  const metres = new Float64Array(nodeCount);
-  const previous = new Int32Array(nodeCount).fill(NO_NODE);
-  const arrivalEdges = new Int32Array(nodeCount).fill(NO_NODE);
-  const closed = new Uint8Array(nodeCount);
-  const frontier = new FrontierHeap(edgeTargets.length + 1);
+  const { generation, reached, closed, elapsed, metres, previous, arrivalEdges, frontier } = getSearchState(compiled);
+  reached[start] = generation;
   elapsed[start] = 0;
+  metres[start] = 0;
+  previous[start] = NO_NODE;
+  arrivalEdges[start] = NO_NODE;
   frontier.push(heuristicSeconds(start), 0, 0, start);
 
   while (frontier.size) {
     const entry = frontier.pop();
     const node = frontier.nodes[entry];
     const poppedElapsed = frontier.elapsed[entry];
-    if (closed[node] || poppedElapsed > elapsed[node] + COST_EPSILON) continue;
+    if (closed[node] === generation || poppedElapsed > elapsed[node] + COST_EPSILON) continue;
     if (node === goal) return buildPath(graph, compiled, previous, arrivalEdges, start, goal);
-    closed[node] = 1;
+    closed[node] = generation;
 
     for (let edge = edgeStarts[node]; edge < edgeStarts[node + 1]; edge += 1) {
       const neighbour = edgeTargets[edge];
       const neighbourElapsed = elapsed[node] + edgeSeconds[edge];
       const neighbourMetres = metres[node] + edgeMetres[edge];
-      const reached = elapsed[neighbour] !== Infinity;
-      if (reached && !isBetterArrival(
+      const wasReached = reached[neighbour] === generation;
+      if (wasReached && !isBetterArrival(
         neighbourElapsed, neighbourMetres, node,
         elapsed[neighbour], metres[neighbour], previous[neighbour],
       )) continue;
 
-      const costChanged = !reached ||
+      const costChanged = !wasReached ||
         Math.abs(neighbourElapsed - elapsed[neighbour]) > COST_EPSILON ||
         Math.abs(neighbourMetres - metres[neighbour]) > COST_EPSILON;
+      reached[neighbour] = generation;
       elapsed[neighbour] = neighbourElapsed;
       metres[neighbour] = neighbourMetres;
       previous[neighbour] = node;

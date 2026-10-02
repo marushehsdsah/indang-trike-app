@@ -1,5 +1,12 @@
 const { haversineDistance } = require('./pathfinding');
 const { OFF_ROUTE_METERS, createRouteTrack, getGuidance, getRemainingCoordinates, projectOntoTrack } = require('./navigationGuide');
+const { formatDistance, formatDuration } = require('./routeDirections');
+
+// A vehicle off its route is routed again at most this often, and only after
+// moving this far from where it was last routed: the search is the costliest
+// thing a live trip screen does.
+const REROUTE_COOLDOWN_MS = 5000;
+const REROUTE_MOVE_METERS = 40;
 
 // How close a driver's live GPS must be to a stop before they can mark it
 // reached ("Arrived at pickup", "Complete trip").
@@ -31,4 +38,27 @@ function remainingRoute(route, position) {
   return { coordinates: getRemainingCoordinates(track, projection.distanceAlong), remainingMeters, remainingSeconds };
 }
 
-module.exports = { ARRIVE_RADIUS_METERS, distanceToStop, hasReachedStop, remainingRoute };
+// One step of a live leg (the line from a moving vehicle to a stop). While
+// the vehicle stays on the current route the line is that route trimmed to
+// what is ahead of it, which costs no search; off it, `reroute(vehicle)` runs
+// (the road search), throttled. `state` is { route, reroutedAt, reroutedFrom }
+// and is returned updated; `display` is the route to draw, with its distance
+// and time labels counting down; `live` says it follows the vehicle.
+function advanceLeg(state, { vehicle, now, reroute }) {
+  if (!vehicle) return { state, display: state.route ?? null, live: false };
+  if (state.route) {
+    const remaining = remainingRoute(state.route, vehicle);
+    if (remaining) {
+      return { state, live: true, display: { ...state.route, coordinates: remaining.coordinates,
+        distanceLabel: formatDistance(remaining.remainingMeters), durationLabel: formatDuration(remaining.remainingSeconds) } };
+    }
+  }
+  const due = !state.route || (now - (state.reroutedAt ?? -Infinity) >= REROUTE_COOLDOWN_MS &&
+    (!state.reroutedFrom || haversineDistance(vehicle, state.reroutedFrom) > REROUTE_MOVE_METERS));
+  if (!due) return { state, display: state.route, live: false };
+  const route = reroute(vehicle);
+  const next = { route: route ?? state.route ?? null, reroutedAt: now, reroutedFrom: vehicle };
+  return { state: next, display: next.route, live: Boolean(route) };
+}
+
+module.exports = { ARRIVE_RADIUS_METERS, REROUTE_COOLDOWN_MS, advanceLeg, distanceToStop, hasReachedStop, remainingRoute };

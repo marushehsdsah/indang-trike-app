@@ -1,3 +1,5 @@
+import { formatPeso } from '../utils/rideState';
+
 // Turns the codes the offline engine and the trip state return into text in
 // the chosen language. The engine itself keeps its English messages, which
 // the tests and the backend rely on.
@@ -35,4 +37,25 @@ export function stepInstruction(t, step, destinationName) {
     ? t('guide.depart', { direction: t(`compass.${step.compass ?? 'north'}`) })
     : t(`guide.turn.${step.type}`);
   return step.roadName ? t('guide.onRoad', { phrase, road: step.roadName }) : phrase;
+}
+
+// One line describing how a ride's fare was reached (data/fares.js
+// fareDetails), for the driver's offer and both sides' trip details.
+export function fareSummary(t, details) {
+  if (!details) return null;
+  const night = details.night && details.type !== 'flat' ? ` · ${t('fare.night')}` : '';
+  if (details.type === 'flat') return t('fare.summaryFlat');
+  if (details.type === 'regular') {
+    const full = details.passengers - details.discounted;
+    const parts = [
+      full > 0 ? t('fare.summaryRegularPart', { count: full, price: formatPeso(details.price) }) : null,
+      details.discounted > 0 ? t('fare.summaryIdPart', { count: details.discounted, price: formatPeso(details.student) }) : null,
+    ].filter(Boolean);
+    return [`${t('fare.regular')}${night}`, details.area, parts.join(' + ')].filter(Boolean).join(' · ');
+  }
+  return [
+    `${t('fare.special')}${night}`,
+    details.area ?? t('fare.withinPoblacion'),
+    details.extraPassengers > 0 ? t('fare.summaryExtra', { count: details.extraPassengers, price: formatPeso(details.extraFare) }) : null,
+  ].filter(Boolean).join(' · ');
 }

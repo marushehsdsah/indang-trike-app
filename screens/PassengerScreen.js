@@ -16,12 +16,14 @@ import { Chip, Divider, Money, SegmentedControl } from '../components/ui/Surface
 import useCurrentPickup from '../hooks/useCurrentPickup';
 import useAccountHistory from '../hooks/useAccountHistory';
 import useMapStatus from '../hooks/useMapStatus';
+import useStableCoordinate from '../hooks/useStableCoordinate';
 import { MUNICIPALITIES, getMunicipalityAt, isInIndangServiceArea } from '../data/indangMap';
 import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n';
 import { placeName, routeMessage } from '../i18n/messages';
 import { ACTIVE_STATUSES, formatPeso } from '../utils/rideState';
-import { getRoadGraph, getSearchablePlaces, preloadRoadGraph } from '../data/roadNetwork';
+import { SPECIAL_RULES, fareTotal, quoteTrip } from '../data/fares';
+import { getRoadGraph, getSearchablePlaces } from '../data/roadNetwork';
 import { MAX_PASSENGERS, MIN_PASSENGERS, createBookingPayload, getBookingState, resolveBookingRoute } from '../utils/bookingRoute';
 import { findNearestRoadNode, getRoadNameAtNode } from '../utils/roadGraph';
 import { searchPlaces } from '../utils/placeSearch';
@@ -59,6 +61,10 @@ function createPinnedPlace(t, coordinate) {
   };
 }
 
+// "Alulod · School / Petron" reads "School / Petron" on a chip that already
+// sits under "Which part of Alulod?".
+const areaName = (label) => (label.includes(' · ') ? label.split(' · ').slice(1).join(' · ') : label);
+
 // The last few places the rider actually went, newest first, one per name.
 function recentDestinations(rides) {
   const seen = new Set();
@@ -68,24 +74,23 @@ function recentDestinations(rides) {
     .slice(0, 3);
 }
 
-function PassengerStepper({ value, onChange }) {
-  const { t } = useI18n();
+function Stepper({ value, onChange, min, max, icon, label, fewerLabel, moreLabel }) {
   const step = (delta, enabled) => () => {
     if (!enabled) return;
     selectionFeedback();
     onChange(value + delta);
   };
-  const canDecrease = value > MIN_PASSENGERS, canIncrease = value < MAX_PASSENGERS;
+  const canDecrease = value > min, canIncrease = value < max;
   return (
-    <View style={styles.stepper} accessibilityLabel={t('trip.ridersLabel', { count: value })}>
+    <View style={styles.stepper} accessibilityLabel={label}>
       <Pressable onPress={step(-1, canDecrease)} disabled={!canDecrease} hitSlop={HIT_SLOP} accessibilityRole="button"
-        accessibilityLabel={t('trip.fewerRiders')} style={({ pressed }) => [styles.stepperButton, pressed && styles.pressed]}>
+        accessibilityLabel={fewerLabel} style={({ pressed }) => [styles.stepperButton, pressed && styles.pressed]}>
         <MaterialCommunityIcons name="minus" size={20} color={canDecrease ? COLORS.ink : COLORS.lineStrong} />
       </Pressable>
-      <MaterialCommunityIcons name="account" size={18} color={COLORS.inkSecondary} />
+      <MaterialCommunityIcons name={icon} size={18} color={COLORS.inkSecondary} />
       <Text style={[TYPE.subheading, styles.stepperValue]}>{value}</Text>
       <Pressable onPress={step(1, canIncrease)} disabled={!canIncrease} hitSlop={HIT_SLOP} accessibilityRole="button"
-        accessibilityLabel={t('trip.moreRiders')} style={({ pressed }) => [styles.stepperButton, pressed && styles.pressed]}>
+        accessibilityLabel={moreLabel} style={({ pressed }) => [styles.stepperButton, pressed && styles.pressed]}>
         <MaterialCommunityIcons name="plus" size={20} color={canIncrease ? COLORS.ink : COLORS.lineStrong} />
       </Pressable>
     </View>
@@ -113,6 +118,14 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
   const [passengers, setPassengers] = useState(1);
   const [note, setNote] = useState('');
   const [noteOpen, setNoteOpen] = useState(false);
+  // The fare: a special trip (whole trike) or a regular one (per passenger,
+  // where the taripa lists it), riders with a discount ID, and which listed
+  // area a stop is in when its barangay has several.
+  const [fareType, setFareType] = useState('special');
+  const [discounted, setDiscounted] = useState(0);
+  const [fareAreas, setFareAreas] = useState({});
+  // Day and night fares change at 9 PM and 4 AM, so the quote is redone each minute.
+  const [fareClock, setFareClock] = useState(Date.now);
   const [notice, setNotice] = useState(null);
   const [topHeight, setTopHeight] = useState(0);
   const [bottomHeight, setBottomHeight] = useState(0);
@@ -123,12 +136,6 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
   const requestIdRef = useRef(0);
   const activeRide = ride && ACTIVE_STATUSES.includes(ride.status) ? ride : null;
 
-  // Warms the offline road graph while the rider looks at the map, so the
-  // first route appears without waiting for the one-time load.
-  useEffect(() => {
-    const handle = requestIdleCallback(preloadRoadGraph);
-    return () => cancelIdleCallback(handle);
-  }, []);
 
   // Rebook from history arrives with a destination; older links with a
   // search to open.
@@ -154,7 +161,23 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  const pickupLatitude = pickup?.coordinate.latitude, pickupLongitude = pickup?.coordinate.longitude;
+  useEffect(() => {
+    if (!destination) return undefined;
+    const timer = setInterval(() => setFareClock(Date.now()), 60000);
+    return () => clearInterval(timer);
+  }, [destination]);
+  // A new stop may be in another barangay, so its area is chosen again. The
+  // GPS pickup keeps its choice while it follows the rider.
+  const destinationKey = destination ? destination.id ?? `${destination.coordinate.latitude},${destination.coordinate.longitude}` : null;
+  const pickupKey = pickup && pickup.kind !== 'current-location' ? pickup.id ?? `${pickup.coordinate.latitude},${pickup.coordinate.longitude}` : 'gps';
+  useEffect(() => { setFareAreas((areas) => ({ ...areas, dropoff: undefined })); }, [destinationKey]);
+  useEffect(() => { setFareAreas((areas) => ({ ...areas, pickup: undefined })); }, [pickupKey]);
+  useEffect(() => { setDiscounted((count) => Math.min(count, passengers)); }, [passengers]);
+
+  // The GPS pickup moves with every fix; the route is searched again only
+  // once it has moved 25 m, so standing still costs no searches.
+  const routePickup = useStableCoordinate(pickup?.coordinate, pickup?.kind === 'current-location' ? 25 : 0);
+  const pickupLatitude = routePickup?.latitude, pickupLongitude = routePickup?.longitude;
   const destinationLatitude = destination?.coordinate.latitude, destinationLongitude = destination?.coordinate.longitude;
 
   useEffect(() => {
@@ -183,8 +206,13 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
   // pickup chosen inside: no driver should wait for an absent rider.
   const blockedReason = !online ? t('trip.blockedOffline') : !connected || !config ? t('trip.blockedConnecting')
     : location.outsideServiceArea ? t('trip.blockedOutside') : null;
-  const canBook = routeState.canConfirm && !blockedReason;
-  const fare = config ? formatPeso(config.fare) : null;
+  const quote = useMemo(() => (pickup && destination && routeState.canConfirm
+    ? quoteTrip({ pickup: routePickup, dropoff: destination.coordinate, at: fareClock, areas: fareAreas }) : null),
+  [pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude, routeState.canConfirm, fareClock, fareAreas]);
+  const tripType = quote?.regular ? fareType : quote?.flat !== null && quote?.flat !== undefined ? 'flat' : 'special';
+  const total = quote && !quote.choose ? fareTotal(quote, { type: tripType, passengers, discounted }) : null;
+  const canBook = routeState.canConfirm && !blockedReason && total !== null;
+  const fare = total !== null ? formatPeso(total) : null;
 
   // Search lists the rider's own town first: the pickup's, or where GPS puts them.
   const townLatitude = pickupLatitude ?? location.pickup?.coordinate.latitude;
@@ -288,8 +316,10 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
     mapRef.current?.fit();
   };
 
+  // A GPS pickup is booked under the road it is nearest, so the driver (and
+  // the rider's history) read a place rather than "Current location".
   const createPayload = () => createBookingPayload({
-    trip: { pickup, dropoff: destination },
+    trip: { pickup: pickup?.kind === 'current-location' ? { ...createPinnedPlace(t, pickup.coordinate), kind: 'gps' } : pickup, dropoff: destination },
     route: routeResult.details,
     passengers,
     note,
@@ -300,11 +330,12 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
     setSubmitting(true);
     if (!bookingKeyRef.current) bookingKeyRef.current = `booking-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     try {
-      await bookRide({ ...createPayload(), idempotencyKey: bookingKeyRef.current });
+      await bookRide({ ...createPayload(), idempotencyKey: bookingKeyRef.current,
+        fareType: tripType === 'regular' ? 'regular' : 'special', discounted: tripType === 'regular' ? discounted : 0, fareAreas });
       // The booking is made: the next one is a new request with a new key.
       bookingKeyRef.current = null;
       followLocationRef.current = true;
-      setDestination(null); setNote(''); setPassengers(1); setNoteOpen(false);
+      setDestination(null); setNote(''); setPassengers(1); setNoteOpen(false); setFareType('special'); setDiscounted(0);
       navigation.navigate('Searching');
     } catch (failure) { Alert.alert(t('trip.unableToBook'), failure.message); }
     finally { setSubmitting(false); }
@@ -411,7 +442,8 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
                 <View style={styles.fareLine}>
                   <MaterialCommunityIcons name="rickshaw" size={20} color={COLORS.brand} />
                   <Text style={[TYPE.caption, styles.fareLineText]} numberOfLines={2}>
-                    {fare ? t('home.fareLine', { fare, max: MAX_PASSENGERS }) : t('home.fareLineNoFare', { max: MAX_PASSENGERS })}
+                    {town === 'Indang' ? t('home.fareLineIndang', { max: MAX_PASSENGERS })
+                      : config ? t('home.fareLine', { fare: formatPeso(config.fare), max: MAX_PASSENGERS }) : t('home.fareLineNoFare', { max: MAX_PASSENGERS })}
                   </Text>
                 </View>
               </FloatingCard>
@@ -482,16 +514,52 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
                       <Text style={[TYPE.body, styles.routeMessageText, !calculating && styles.danger]} numberOfLines={2}>{message}</Text>
                     </View>
                   )}
-                  <View style={styles.fareBox}>
-                    {config ? <Money amount={config.fare} size={28} /> : <Text style={TYPE.metric}>—</Text>}
-                    <Text style={TYPE.caption}>{t('trip.flatFare')}</Text>
+                  <View style={styles.fareBox} accessibilityLiveRegion="polite">
+                    {total !== null ? <Money amount={total} size={28} /> : <Text style={TYPE.metric}>—</Text>}
+                    <Text style={TYPE.caption} numberOfLines={1}>
+                      {t(tripType === 'flat' ? 'trip.flatFare' : tripType === 'regular' ? 'fare.regularShort' : 'fare.specialShort')}
+                      {quote?.night && tripType !== 'flat' ? ` · ${t('fare.night')}` : ''}
+                    </Text>
                   </View>
                 </View>
+                {quote?.regular && (
+                  <SegmentedControl value={tripType} onChange={setFareType} style={styles.fareType} options={[
+                    { value: 'special', label: t('fare.special'), accessibilityLabel: t('fare.specialA11y') },
+                    { value: 'regular', label: t('fare.regular'), accessibilityLabel: t('fare.regularA11y') },
+                  ]} />
+                )}
+                {quote?.choice && (
+                  <View style={styles.areaChoice}>
+                    <Text style={[TYPE.label, quote.choose && styles.areaPrompt]}>
+                      {t(quote.choice.endpoint === 'pickup' ? 'fare.chooseAreaPickup' : 'fare.chooseArea', { barangay: quote.choice.barangay })}
+                    </Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={styles.chips}>
+                      {quote.choice.options.map((option) => (
+                        <Chip key={option.id} tone="map" label={areaName(option.label)} selected={quote.choice.selected === option.id}
+                          onPress={() => setFareAreas((areas) => ({ ...areas, [quote.choice.endpoint]: option.id }))} />
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
                 <View style={styles.options}>
-                  <PassengerStepper value={passengers} onChange={setPassengers} />
+                  <Stepper value={passengers} onChange={setPassengers} min={MIN_PASSENGERS} max={MAX_PASSENGERS} icon="account"
+                    label={t('trip.ridersLabel', { count: passengers })} fewerLabel={t('trip.fewerRiders')} moreLabel={t('trip.moreRiders')} />
                   <Chip tone="map" icon="message-reply-text-outline" label={note || t('trip.addNote')} onPress={() => setNoteOpen(true)}
                     accessibilityLabel={note ? t('trip.editNote', { note }) : t('trip.addNote')} style={styles.noteChip} />
                 </View>
+                {tripType === 'regular' && (
+                  <View style={styles.idRow}>
+                    <Text style={[TYPE.label, styles.flex]}>{t('fare.withId')}</Text>
+                    <Stepper value={discounted} onChange={setDiscounted} min={0} max={passengers} icon="card-account-details-outline"
+                      label={t('fare.withIdA11y', { count: discounted })} fewerLabel={t('fare.fewerId')} moreLabel={t('fare.moreId')} />
+                  </View>
+                )}
+                {tripType !== 'flat' && quote && (
+                  <Text style={[TYPE.caption, styles.fareRule]}>
+                    {tripType === 'regular' ? t('fare.regularRule') : t('fare.specialRule', { extra: formatPeso(SPECIAL_RULES.extraPassenger) })}
+                    {' '}{t('fare.kidsFree')}
+                  </Text>
+                )}
                 <Button
                   label={canBook && fare ? t('trip.book', { fare }) : t('trip.bookPlain')}
                   onPress={handleConfirm}
@@ -575,6 +643,12 @@ const styles = StyleSheet.create({
   stepperButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   stepperValue: { minWidth: 20, textAlign: 'center', marginLeft: 2 },
   noteChip: { flexShrink: 1 },
+  flex: { flex: 1 },
+  fareType: { marginTop: SPACE.md },
+  areaChoice: { marginTop: SPACE.md },
+  areaPrompt: { color: COLORS.brand, fontWeight: '700' },
+  idRow: { flexDirection: 'row', alignItems: 'center', marginBottom: SPACE.md },
+  fareRule: { marginBottom: SPACE.md },
   noteInput: {
     borderWidth: 1.5, borderColor: COLORS.lineStrong, borderRadius: RADIUS.lg,
     paddingHorizontal: SPACE.md, paddingVertical: SPACE.sm,

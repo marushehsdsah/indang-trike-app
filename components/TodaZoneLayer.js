@@ -9,7 +9,7 @@ const LINE_PAINT = { 'line-color': COLORS.brand, 'line-width': 2, 'line-opacity'
 const LABEL_LAYOUT = { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': 12, 'text-transform': 'uppercase', 'text-letter-spacing': 0.08 };
 const LABEL_PAINT = { 'text-color': COLORS.brand, 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.5, 'text-opacity': 0.75 };
 
-export default function TodaZoneLayer({ shape }) {
+export default React.memo(function TodaZoneLayer({ shape }) {
   return (
     <GeoJSONSource id="toda-zone" data={shape}>
       <Layer id="toda-zone-fill" type="fill" beforeId="places-area-label" paint={FILL_PAINT} />
@@ -17,4 +17,4 @@ export default function TodaZoneLayer({ shape }) {
       <Layer id="toda-zone-label" type="symbol" beforeId="places-area-label" maxzoom={15.5} layout={LABEL_LAYOUT} paint={LABEL_PAINT} />
     </GeoJSONSource>
   );
-}
+});

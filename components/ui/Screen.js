@@ -16,7 +16,7 @@ export default function Screen({
 }) {
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: background }, style]} edges={edges}>
-      <StatusBar style={statusBarStyle} />
+      <StatusBarStyle style={statusBarStyle} />
       {children}
     </SafeAreaView>
   );
@@ -26,11 +26,17 @@ export default function Screen({
 export function BleedScreen({ children, statusBarStyle = 'dark', background = COLORS.canvas, style }) {
   return (
     <View style={[styles.screen, { backgroundColor: background }, style]}>
-      <StatusBar style={statusBarStyle} />
+      <StatusBarStyle style={statusBarStyle} />
       {children}
     </View>
   );
 }
+
+// The status bar is set again only when its style changes; re-rendering it
+// with every GPS update sends the same style to Android each time.
+const StatusBarStyle = React.memo(function StatusBarStyle({ style }) {
+  return <StatusBar style={style} />;
+});
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },

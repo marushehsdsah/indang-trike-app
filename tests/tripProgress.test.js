@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { ARRIVE_RADIUS_METERS, distanceToStop, hasReachedStop, remainingRoute } = require('../utils/tripProgress');
+const { ARRIVE_RADIUS_METERS, REROUTE_COOLDOWN_MS, advanceLeg, distanceToStop, hasReachedStop, remainingRoute } = require('../utils/tripProgress');
 const { haversineDistance } = require('../utils/pathfinding');
 
 // A straight road north from (14.19, 120.88), about 1.1 km long, with a point
@@ -38,4 +38,27 @@ test('the remaining route starts at the vehicle and shrinks as it moves', () => 
 test('a vehicle off the route gets no trimmed route', () => {
   assert.equal(remainingRoute(route, step(5, 0.001)), null); // ~108 m away
   assert.equal(remainingRoute(null, step(5)), null);
+});
+
+test('a live leg trims its route on the way and searches again only when off it, throttled', () => {
+  let searches = 0;
+  const reroute = () => { searches += 1; return route; };
+  // The first position has no route yet: one search.
+  const at = (n, east) => ({ latitude: ORIGIN.latitude + n * 0.001, longitude: ORIGIN.longitude + (east ?? 0) });
+  let leg = advanceLeg({}, { vehicle: at(0), now: 0, reroute });
+  assert.equal(searches, 1);
+  // On the route, later positions only trim it.
+  for (let n = 1; n <= 5; n += 1) leg = advanceLeg(leg.state, { vehicle: at(n), now: n * 500, reroute });
+  assert.equal(searches, 1);
+  assert.equal(leg.live, true);
+  assert.ok(Math.abs(leg.display.coordinates[0].latitude - at(5).latitude) < 1e-6);
+  assert.match(leg.display.distanceLabel, /m$/);
+  // Off the route: searched again, but not again within the cooldown.
+  const off = at(5, 0.001);
+  leg = advanceLeg(leg.state, { vehicle: off, now: REROUTE_COOLDOWN_MS - 1, reroute });
+  assert.equal(searches, 1, 'within the cooldown of the first search');
+  leg = advanceLeg(leg.state, { vehicle: off, now: REROUTE_COOLDOWN_MS + 1, reroute });
+  assert.equal(searches, 2);
+  leg = advanceLeg(leg.state, { vehicle: off, now: 3 * REROUTE_COOLDOWN_MS, reroute });
+  assert.equal(searches, 2, 'not moved since the last search');
 });

@@ -29,7 +29,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
       ? passenger.location : null;
     return {
       id: String(result._id), status: result.status, version: result.version, trip: result.trip, route: result.route,
-      passengers: result.passengers, note: result.note, fare: result.fare,
+      passengers: result.passengers, note: result.note, fare: result.fare, fareDetails: result.fareDetails ?? null,
       driver: contact(driver, assigned), passenger: contact(passenger, assigned),
       driverLocation: assigned && driver?.location ? driver.location : null,
       driverConnected: assigned && driver ? connected(driver._id) : false,
@@ -106,7 +106,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     if (existing) return { ride: await view(existing, user._id), reused: true };
     requireValue(!await Ride.exists({ passengerId: String(user._id), active: true }), 409, 'You already have an active booking.');
     let ride;
-    try { ride = await Ride.create({ ...bookingFields(body), passengerId: String(user._id), fare: 45, searchExpiresAt: new Date(clock() + searchMs) }); }
+    try { ride = await Ride.create({ ...bookingFields(body, clock()), passengerId: String(user._id), searchExpiresAt: new Date(clock() + searchMs) }); }
     catch (error) { if (error.code === 11000) throw new HttpError(409, 'You already have an active booking.'); throw error; }
     await tickUnsafe(); notify(user._id);
     return { ride: await view(await Ride.findById(ride._id), user._id), reused: false };
