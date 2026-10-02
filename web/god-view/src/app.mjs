@@ -1,5 +1,5 @@
 import { API_BASE_URL } from './config.mjs';
-import { filterUsers, isLive, locationLabel, statusLabel, snapshotTiming } from './model.mjs';
+import { filterUsers, isLive, locationLabel, routeSummary, statusLabel, snapshotTiming } from './model.mjs';
 
 const $ = id => document.getElementById(id);
 const tokenKey = 'indanggo.god-view.session';
@@ -7,6 +7,9 @@ let token = '', generation = 0, snapshot = null, selected = null, role = 'all';
 let connected = false, timer, pending = false, controller, fleetMap = null, mapStarting = false, serverOffset = 0;
 const now = () => Date.now() + serverOffset;
 const visibleUsers = () => filterUsers(snapshot?.users || [], role, $('search').value);
+const routeFor = (user) => user && (snapshot?.routes || []).find(route => route.driverId === user.id || route.passengerId === user.id);
+// A matched ride's path shows while its driver or passenger is listed.
+const visibleRoutes = (users) => { const ids = new Set(users.map(user => user.id)); return (snapshot?.routes || []).filter(route => ids.has(route.driverId) || ids.has(route.passengerId)); };
 const text = (tag, value, className = '') => { const node = document.createElement(tag); node.textContent = value; node.className = className; return node; };
 function storeToken(value) { token = value; try { value ? sessionStorage.setItem(tokenKey, value) : sessionStorage.removeItem(tokenKey); } catch {} }
 function showError(id, message) { $(id).textContent = message; $(id).hidden = !message; }
@@ -78,7 +81,8 @@ async function refresh() {
 
 function selectUser(id) {
   selected = id; render();
-  fleetMap?.focus(snapshot?.users.find(user => user.id === id));
+  const user = snapshot?.users.find(item => item.id === id);
+  fleetMap?.focus(user, routeFor(user));
 }
 
 function renderDetails() {
@@ -97,6 +101,8 @@ function renderDetails() {
     if (!user.inServiceArea) panel.append(text('p', `Outside ${snapshot.serviceArea.name}`, 'outside-label'));
   }
   if (user.ride) panel.append(text('p', `${user.ride.pickup} → ${user.ride.destination}`, 'trip-summary'));
+  const route = routeFor(user);
+  if (route) for (const line of routeSummary(route)) panel.append(text('p', line, 'route-summary'));
 }
 
 function render() {
@@ -123,7 +129,7 @@ function render() {
   $('empty').hidden = users.length > 0;
   $('empty').querySelector('h3').textContent = snapshot?.users.length ? 'No matching people' : 'No one online yet';
   $('empty').querySelector('p').textContent = snapshot?.users.length ? 'Try another name or account type.' : 'Connected drivers and passengers will appear here when they open the app.';
-  fleetMap?.update(users, selected, now(), connected); renderDetails();
+  fleetMap?.update(users, selected, now(), connected, visibleRoutes(users)); renderDetails();
 }
 
 $('login-form').addEventListener('submit', async event => {

@@ -69,6 +69,13 @@ idle passengers and unavailable drivers may have no recent location.
   to accept rides and still appear in the dashboard.
 - **Live GPS:** measured within 30 seconds, accuracy at most 100 metres, and
   not invalidated by the phone. No location is invented when GPS is missing.
+- **Route guide:** a matched ride (accepted through in progress) is drawn as
+  the driver's route guide shows it: a solid blue road route from the driver's
+  live GPS to the pickup (computed on the API's offline road graph, as the app
+  does), then the booked trip to the destination, dashed until pickup and
+  solid once the trip starts. Green and yellow dots mark pickup and
+  destination. Selecting the driver or passenger frames the whole path and
+  lists each leg's distance and time. Unmatched requests draw no route.
 - **Last known:** an old/invalidated reading, drawn in grey with its age. If
   dashboard updates fail or take over 10 seconds, counts pause and markers are
   marked last known until a fresh snapshot arrives.

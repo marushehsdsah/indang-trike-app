@@ -1,6 +1,8 @@
 const { normalizePhilippinePhone } = require('../utils/registration');
-const { isFreshFix } = require('../utils/rideState');
+const { ASSIGNED_STATUSES, isFreshFix } = require('../utils/rideState');
+const { calculateRoute } = require('../utils/roadGraph');
 const { SERVICE_AREA_NAME, INDANG_BOUNDS, isInIndangServiceArea } = require('../data/indangMap');
+const { getRoadGraph } = require('../data/roadNetwork');
 const { requireValue } = require('./policy');
 
 function parseAdminPhones(value = '') {
@@ -14,7 +16,39 @@ function measuredLocation(fix) {
   return { latitude: fix.latitude, longitude: fix.longitude, timestamp: fix.timestamp, accuracy: fix.accuracy };
 }
 
-function buildOverview(users, rides, connectedIds, now) {
+// [longitude, latitude] rounded to about 1 m, as the map draws it.
+const toLngLat = ({ latitude, longitude }) => [Math.round(longitude * 1e5) / 1e5, Math.round(latitude * 1e5) / 1e5];
+const toLine = (route) => ({ coordinates: route.coordinates.map(toLngLat), distanceMeters: route.distanceMeters, durationSeconds: route.durationSeconds });
+
+// The road route between two points on the app's offline road graph, or null.
+function roadRoute(from, to) {
+  const roadGraph = getRoadGraph();
+  if (roadGraph.status !== 'ready') return null;
+  const result = calculateRoute(roadGraph.graph, from, to);
+  return result.status === 'ok' ? result.route : null;
+}
+
+// For each matched ride, the path the driver's route guide shows: from the
+// driver's live GPS to the pickup until pickup ("approach", computed the same
+// way as in the app), then the booked trip from pickup to destination.
+function buildRideRoutes(rides, people, findRoute) {
+  const byId = new Map(people.map((person) => [person.id, person]));
+  return rides.filter((ride) => ASSIGNED_STATUSES.includes(ride.status) && ride.driverId).map((ride) => {
+    const toPickup = ride.status !== 'in_progress', driver = byId.get(String(ride.driverId));
+    const pickup = ride.trip?.pickup, dropoff = ride.trip?.dropoff;
+    const approach = toPickup && driver?.locationStatus === 'live' && pickup?.coordinate ? findRoute(driver.location, pickup.coordinate) : null;
+    return {
+      rideId: String(ride._id), status: ride.status, stage: toPickup ? 'to-pickup' : 'to-destination',
+      driverId: String(ride.driverId), passengerId: String(ride.passengerId),
+      pickup: pickup?.coordinate ? { name: pickup.name || 'Pickup', coordinate: toLngLat(pickup.coordinate) } : null,
+      dropoff: dropoff?.coordinate ? { name: dropoff.name || 'Destination', coordinate: toLngLat(dropoff.coordinate) } : null,
+      trip: ride.route?.coordinates?.length > 1 ? toLine(ride.route) : null,
+      approach: approach?.coordinates?.length > 1 ? toLine(approach) : null,
+    };
+  });
+}
+
+function buildOverview(users, rides, connectedIds, now, findRoute = roadRoute) {
   const activeByUser = new Map();
   for (const ride of rides) {
     activeByUser.set(String(ride.passengerId), ride);
@@ -44,11 +78,23 @@ function buildOverview(users, rides, connectedIds, now) {
       activeRides: new Set(people.filter(user => user.ride).map(user => user.ride.id)).size,
       liveLocations: people.filter(user => user.locationStatus === 'live').length },
     users: people,
+    routes: buildRideRoutes(rides, people, findRoute),
   };
 }
 
 function createAdmin({ models, presence, clock, adminPhones }) {
   const allowed = parseAdminPhones(adminPhones);
+  // A driver's route to the pickup changes only when they move; every admin
+  // polls every 3 s, so recent routes are reused.
+  const approachCache = new Map();
+  function cachedRoute(from, to) {
+    const key = `${from.latitude},${from.longitude}>${to.latitude},${to.longitude}`;
+    if (!approachCache.has(key)) {
+      if (approachCache.size >= 200) approachCache.clear();
+      approachCache.set(key, roadRoute(from, to));
+    }
+    return approachCache.get(key);
+  }
   function middleware(req, res, next) {
     res.set('Cache-Control', 'no-store');
     requireValue(allowed.has(normalizePhilippinePhone(req.user.phone)), 403, 'This account does not have God view access. Ask the pilot administrator to enable it.');
@@ -58,12 +104,12 @@ function createAdmin({ models, presence, clock, adminPhones }) {
     const ids = [...presence.keys()];
     const [users, rides] = await Promise.all([
       models.User.find({ _id: { $in: ids } }).select('firstName lastName role plate toda available location locationAvailable').lean(),
-      models.Ride.find({ active: true, $or: [{ passengerId: { $in: ids } }, { driverSlot: { $in: ids } }] }).select('passengerId driverId driverSlot status trip').lean(),
+      models.Ride.find({ active: true, $or: [{ passengerId: { $in: ids } }, { driverSlot: { $in: ids } }] }).select('passengerId driverId driverSlot status trip route').lean(),
     ]);
     // A phone can disconnect while the database reads are in flight.
-    return buildOverview(users, rides, new Set([...presence].filter(([, sockets]) => sockets.size).map(([id]) => id)), clock());
+    return buildOverview(users, rides, new Set([...presence].filter(([, sockets]) => sockets.size).map(([id]) => id)), clock(), cachedRoute);
   }
   return { middleware, overview };
 }
 
-module.exports = { createAdmin, parseAdminPhones, buildOverview };
+module.exports = { createAdmin, parseAdminPhones, buildOverview, buildRideRoutes };

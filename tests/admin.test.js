@@ -61,3 +61,47 @@ test('only a driver ready for matching is counted available', () => {
   assert.equal(result.summary.availableDrivers, 1);
   assert.equal(result.users.find(item => item.id === 'offered').status, 'offered');
 });
+
+test('matched rides carry the route guide path: driver to pickup, then the trip', () => {
+  const tripRoute = { coordinates: [{ latitude: 14.385026, longitude: 120.880477 }, { latitude: 14.3240901, longitude: 120.9120501 }], distanceMeters: 7900, durationSeconds: 1020 };
+  const approachRoute = { coordinates: [{ latitude: 14.386264, longitude: 120.880802 }, DEFAULT_TRIP.pickup.coordinate], distanceMeters: 150, durationSeconds: 40 };
+  const asked = [];
+  const findRoute = (from, to) => { asked.push([from, to]); return approachRoute; };
+  const driverAt = (id, location) => user(id, { role: 'driver', available: true, location });
+  const people = [driverAt('on-the-way', { ...fix, latitude: 14.386264, longitude: 120.880802 }), driverAt('driving', fix),
+    driverAt('stale-gps', { ...fix, timestamp: now - 31000 }), user('p1'), user('p2'), user('p3'), user('p4')];
+  const rides = [
+    { _id: 'accepted', status: 'accepted', passengerId: 'p1', driverId: 'on-the-way', driverSlot: 'on-the-way', trip: DEFAULT_TRIP, route: tripRoute },
+    { _id: 'riding', status: 'in_progress', passengerId: 'p2', driverId: 'driving', driverSlot: 'driving', trip: DEFAULT_TRIP, route: tripRoute },
+    { _id: 'no-gps', status: 'arrived', passengerId: 'p3', driverId: 'stale-gps', driverSlot: 'stale-gps', trip: DEFAULT_TRIP, route: tripRoute },
+    { _id: 'unmatched', status: 'searching', passengerId: 'p4', driverSlot: 'driving', trip: DEFAULT_TRIP, route: tripRoute },
+  ];
+  const { routes } = buildOverview(people, rides, new Set(people.map(item => item._id)), now, findRoute);
+  const byRide = Object.fromEntries(routes.map(route => [route.rideId, route]));
+  assert.deepEqual(Object.keys(byRide).sort(), ['accepted', 'no-gps', 'riding'], 'only matched rides are drawn');
+
+  const toPickup = byRide.accepted;
+  assert.equal(toPickup.stage, 'to-pickup');
+  assert.equal(toPickup.driverId, 'on-the-way');
+  assert.equal(toPickup.passengerId, 'p1');
+  assert.deepEqual(toPickup.approach, { coordinates: [[120.8808, 14.38626], [120.88048, 14.38503]], distanceMeters: 150, durationSeconds: 40 });
+  assert.deepEqual(toPickup.trip.coordinates, [[120.88048, 14.38503], [120.91205, 14.32409]], '[longitude, latitude], rounded to about 1 m');
+  assert.deepEqual(toPickup.pickup, { name: DEFAULT_TRIP.pickup.name, coordinate: [120.88048, 14.38503] });
+  assert.equal(asked.length, 1);
+  assert.deepEqual([asked[0][0].latitude, asked[0][0].longitude], [14.386264, 120.880802], 'routed from the driver\'s live GPS');
+  assert.deepEqual(asked[0][1], DEFAULT_TRIP.pickup.coordinate, 'to the pickup');
+
+  assert.equal(byRide.riding.stage, 'to-destination');
+  assert.equal(byRide.riding.approach, null, 'after pickup the guide follows the trip');
+  assert.equal(byRide['no-gps'].approach, null, 'no route is invented without live GPS');
+  assert.equal(byRide['no-gps'].trip.distanceMeters, 7900);
+});
+
+test('the driver\'s route to the pickup follows real roads', () => {
+  const driver = user('driver', { role: 'driver', available: true, location: { ...fix, latitude: 14.386264, longitude: 120.880802 } });
+  const ride = { _id: 'ride', status: 'accepted', passengerId: 'passenger', driverId: 'driver', trip: DEFAULT_TRIP };
+  const [route] = buildOverview([driver, user('passenger')], [ride], new Set(['driver', 'passenger']), now).routes;
+  assert.ok(route.approach.coordinates.length > 2, 'more than a straight line');
+  assert.ok(route.approach.distanceMeters > 100 && route.approach.distanceMeters < 1000, `${route.approach.distanceMeters} m`);
+  assert.equal(route.trip, null, 'a ride without a stored route draws only the approach');
+});

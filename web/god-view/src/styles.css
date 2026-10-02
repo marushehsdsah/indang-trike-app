@@ -392,6 +392,21 @@ input::placeholder{
 .legend-dot.stale{
   background:#aeb6b1
 }
+.legend-line{
+  width:16px;
+  height:0;
+  display:inline-block;
+  vertical-align:middle;
+  border-top:4px solid #2563eb
+}
+.legend-line.upcoming{
+  border-top:3px dashed rgba(37,99,235,.6)
+}
+.route-summary{
+  font-size:11px;
+  color:#2563eb;
+  margin:4px 0 0
+}
 .notice{
   margin:0 34px 16px;
   border:1px solid #e7d7b0;
