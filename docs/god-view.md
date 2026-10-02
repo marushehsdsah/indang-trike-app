@@ -77,6 +77,13 @@ idle passengers and unavailable drivers may have no recent location.
   destination during the trip. Green and yellow dots mark pickup and
   destination. Selecting the driver or passenger frames the whole path and
   lists each leg's distance and time.
+- **Places:** the same establishments, landmarks and named areas the app
+  draws (`assets/places`, from the offline place index): a dot coloured by
+  category (food, shops, schools, health, churches, government, transport,
+  parks, lodging, landmarks, services) with its name. Landmarks appear from
+  zoom 14, other establishments from zoom 16, subdivisions and business
+  parks as italic labels from zoom 13. Streets and buildings come from the
+  base map.
 - **On a trip:** a driver and passenger travelling together share one blue
   **DP** marker at the trike (placed by the driver's phone, or the
   passenger's when the driver has no fix). Clicking it, or either person in

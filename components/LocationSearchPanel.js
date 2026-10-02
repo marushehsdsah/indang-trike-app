@@ -14,10 +14,18 @@ function formatKind(kind) {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-function getKindIcon(kind) {
+// One icon per map category (utils/placeCategories.js), so a result looks like
+// its dot on the map.
+const CATEGORY_ICONS = {
+  road: 'road-variant', food: 'silverware-fork-knife', shopping: 'shopping-outline', education: 'school-outline',
+  health: 'hospital-box-outline', worship: 'church', government: 'office-building-outline', transport: 'bus',
+  leisure: 'tree-outline', lodging: 'bed-outline', landmark: 'star-outline', services: 'store-outline', area: 'home-group',
+};
+
+function getPlaceIcon({ kind, category }) {
+  if (CATEGORY_ICONS[category]) return CATEGORY_ICONS[category];
   if (kind === 'road') return 'road-variant';
   if (SCHOOL_KINDS.has(kind)) return 'school-outline';
-  if (kind === 'pin') return 'map-marker-outline';
   return 'map-marker-outline';
 }
 
@@ -109,7 +117,7 @@ export default function LocationSearchPanel({
           <View key={place.id ?? place.name}>
             {index > 0 && <Divider inset={SPACE.lg + 40} />}
             <ListRow
-              icon={getKindIcon(place.kind)}
+              icon={getPlaceIcon(place)}
               iconTone="neutral"
               title={place.name}
               subtitle={place.town ? `${formatKind(place.kind)} · ${place.town}` : formatKind(place.kind)}

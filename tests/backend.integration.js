@@ -80,6 +80,10 @@ test('the separate God view website may call the API, but every overview needs a
   const ordinary = await account();
   assert.equal((await request('/admin/overview', ordinary.token)).status, 403);
   const admin = await account('passenger', adminPhone);
+  assert.equal((await request('/admin/map', ordinary.token)).status, 403);
+  const map = await request('/admin/map', admin.token);
+  assert.equal(map.body.boundary.features.length, 2, 'both towns');
+  assert.ok(map.body.places.features.length > 1000, 'the same establishments and landmarks the app draws');
   const initial = await request('/admin/overview', admin.token);
   assert.equal(initial.status, 200);
   assert.equal(initial.body.users.some(item => item.id === admin.user.id), false, 'dashboard login is not mobile presence');

@@ -128,6 +128,7 @@ function validatePlaces(places) {
       typeof place.name === 'string' && place.name.trim() !== '' &&
       typeof place.kind === 'string' &&
       (place.town === undefined || typeof place.town === 'string') &&
+      (place.category === undefined || typeof place.category === 'string') &&
       isCoordinatePair(place.coordinate);
     if (!valid) fail(`place ${place?.id ?? '(unknown)'} must have id, name, kind, and coordinate`);
   }
@@ -152,10 +153,11 @@ function loadRoadGraph(data) {
       status: 'ready',
       graph: {
         ...graph,
-        places: graph.places.map(({ id, name, kind, town, coordinate }) => ({
+        places: graph.places.map(({ id, name, kind, category, town, coordinate }) => ({
           id,
           name,
           kind,
+          ...(category ? { category } : {}),
           ...(town ? { town } : {}),
           coordinate: toCoordinate(coordinate),
         })),

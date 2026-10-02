@@ -4,6 +4,7 @@ import { Camera, Map, ViewAnnotation } from '@maplibre/maplibre-react-native';
 import IconButton from './ui/IconButton';
 import { COLORS, ELEVATION, SPACE } from '../theme';
 import IndangMapLayers from './IndangMapLayers';
+import PlacesLayer from './PlacesLayer';
 import MapAttribution from './MapAttribution';
 import RouteLine from './RouteLine';
 import { MAP_STYLE_URL } from './mapStyles';
@@ -116,6 +117,7 @@ export default function RouteMap({
       >
         <Camera ref={cameraRef} initialViewState={INITIAL_VIEW} minZoom={INDANG_MIN_ZOOM} />
         <IndangMapLayers />
+        <PlacesLayer />
         {routeCoordinates && <RouteLine id="route" coordinates={routeCoordinates} width={6} casingWidth={10} />}
         {pickup && (
           <ViewAnnotation lngLat={toLngLat(pickup.coordinate)} title={pickup.name} anchor="center">

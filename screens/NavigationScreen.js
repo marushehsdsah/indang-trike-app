@@ -7,6 +7,7 @@ import { isFreshFix, ACTIVE_STATUSES } from '../utils/rideState';
 import { StatusBar } from 'expo-status-bar';
 import { Camera, Map, ViewAnnotation } from '@maplibre/maplibre-react-native';
 import IndangMapLayers from '../components/IndangMapLayers';
+import PlacesLayer from '../components/PlacesLayer';
 import MapAttribution from '../components/MapAttribution';
 import RouteLine from '../components/RouteLine';
 import { NAVIGATION_STYLE_URL } from '../components/mapStyles';
@@ -342,6 +343,7 @@ function NavigationGuide({ navigation, trip, initialRoute }) {
       >
         <Camera ref={cameraRef} initialViewState={initialView} minZoom={INDANG_MIN_ZOOM} />
         <IndangMapLayers />
+        <PlacesLayer />
         {remainingCoordinates.length > 1 && <RouteLine id="guide-route" coordinates={remainingCoordinates} width={10} casingWidth={16} />}
         {nextManeuverCoordinate && (
           <ViewAnnotation lngLat={toLngLat(nextManeuverCoordinate)} anchor="center">

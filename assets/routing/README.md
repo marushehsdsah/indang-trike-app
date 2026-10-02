@@ -15,11 +15,11 @@ to that page, on every map that draws this data.
 | Field | Value |
 | --- | --- |
 | Source | OpenStreetMap via the Overpass API (`https://overpass-api.de/api/interpreter`) |
-| Snapshot timestamp (`osm3s.timestamp_osm_base`) | `2026-10-01T16:34:13Z` |
+| Snapshot timestamp (`osm3s.timestamp_osm_base`) | `2026-10-02T04:43:06Z` |
 | General Trias bounding box (south, west, north, east) | `14.220186, 120.859841, 14.417857, 120.932959` |
 | Indang bounding box | `14.120982, 120.810720, 14.246597, 120.929805` |
 | Clip polygons | `assets/geo/general-trias-municipality.json` (PSGC `0402108000`), `assets/geo/indang-municipality.json` (PSGC `0402110000`) |
-| Raw snapshot SHA-256 | `d91452b6ec910cf820efde827508816ed91f346080feac1c4b6686c3e62d91c8` |
+| Raw snapshot SHA-256 | `b934c866d34f6a15893c3b04bba29acb6b983f1cca4de93f9ab2f6512cbf87f7` |
 
 Each bounding box is the extent of that town's polygon. The raw Overpass
 response is a build input and is not committed; the generated graph is.
@@ -28,9 +28,24 @@ response is a build input and is not committed; the generated graph is.
 
 | Nodes | Directed edges | Places | Bytes |
 | ---: | ---: | ---: | ---: |
-| 39,360 | 81,338 | 2,806 | 8,526,795 |
+| 39,360 | 81,338 | 3,330 | 8,664,456 |
 
-Every place carries its `town`: 2,352 in General Trias and 454 in Indang.
+Every place carries its `town` (2,726 in General Trias, 604 in Indang) and a
+map `category` (food, shopping, education, health, worship, government,
+transport, leisure, lodging, landmark, services, area, or road; see
+`utils/placeCategories.js`). 1,106 places are named streets; the rest are
+establishments, landmarks, named buildings, and named areas such as
+subdivisions and business parks.
+
+## Places layer
+
+`--places assets/places/service-area-places.json` also writes the map's places
+layer: 2,043 points, every non-street place except barangay and other place
+names (the base map labels those), each with its `name`, `category`, map
+`color`, and `rank`: 423 landmarks (rank 1, drawn from zoom 14), 1,447 other
+establishments (rank 2, from zoom 16), and 173 named areas (rank 0, labels
+only). The app (`components/PlacesLayer.js`) and the God view draw it over the
+same base map.
 
 The two towns do not touch (their boundaries are about 425 m apart at the
 closest), so the graph is two road networks: General Trias (27,896 nodes) and
@@ -75,20 +90,36 @@ alone), and the default and longest routes stayed under 20 ms.
 ## Overpass query
 
 ```overpass
-[out:json][timeout:240];
+[out:json][timeout:300];
 (
   way["highway"](14.220186,120.859841,14.417857,120.932959);
   nwr["name"]["amenity"](14.220186,120.859841,14.417857,120.932959);
-  nwr["name"]["place"](14.220186,120.859841,14.417857,120.932959);
   nwr["name"]["shop"](14.220186,120.859841,14.417857,120.932959);
   nwr["name"]["tourism"](14.220186,120.859841,14.417857,120.932959);
   nwr["name"]["public_transport"](14.220186,120.859841,14.417857,120.932959);
+  nwr["name"]["place"](14.220186,120.859841,14.417857,120.932959);
+  nwr["name"]["leisure"](14.220186,120.859841,14.417857,120.932959);
+  nwr["name"]["historic"](14.220186,120.859841,14.417857,120.932959);
+  nwr["name"]["office"](14.220186,120.859841,14.417857,120.932959);
+  nwr["name"]["healthcare"](14.220186,120.859841,14.417857,120.932959);
+  nwr["name"]["craft"](14.220186,120.859841,14.417857,120.932959);
+  nwr["name"]["man_made"](14.220186,120.859841,14.417857,120.932959);
+  nwr["name"]["building"](14.220186,120.859841,14.417857,120.932959);
+  nwr["name"]["landuse"](14.220186,120.859841,14.417857,120.932959);
   way["highway"](14.120982,120.810720,14.246597,120.929805);
   nwr["name"]["amenity"](14.120982,120.810720,14.246597,120.929805);
-  nwr["name"]["place"](14.120982,120.810720,14.246597,120.929805);
   nwr["name"]["shop"](14.120982,120.810720,14.246597,120.929805);
   nwr["name"]["tourism"](14.120982,120.810720,14.246597,120.929805);
   nwr["name"]["public_transport"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["place"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["leisure"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["historic"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["office"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["healthcare"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["craft"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["man_made"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["building"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["landuse"](14.120982,120.810720,14.246597,120.929805);
 );
 (._;>;);
 out body;
@@ -106,7 +137,8 @@ curl --fail --retry 3 -A "IndangGO-road-graph-builder/1.0" \
   --data-urlencode data@/tmp/service-area-overpass.query \
   https://overpass-api.de/api/interpreter --output /tmp/service-area-overpass.json
 node scripts/build-road-graph.js --input /tmp/service-area-overpass.json \
-  --output assets/routing/service-area-road-graph.json
+  --output assets/routing/service-area-road-graph.json \
+  --places assets/places/service-area-places.json
 npm test
 ```
 
@@ -154,9 +186,15 @@ and re-run the tests whenever you rebuild.
 8. Indexes nodes in 0.005° grid cells (`"<floor(lat/0.005)>:<floor(lon/0.005)>"`)
    for nearest-road snapping.
 9. Extracts named places tagged `amenity`, `shop`, `tourism`,
-   `public_transport`, or `place` (area and relation centroids), plus one
-   on-road point per named routable road, all inside the towns. Each place
-   records its `town` (the boundary feature's `city_name`).
+   `public_transport`, `healthcare`, `leisure`, `historic`, `office`, `craft`,
+   `man_made`, `place`, `landuse`, or `building` (the first present names the
+   kind; area and relation centroids), plus one on-road point per named
+   routable road, all inside the towns. A bare `yes` uses the tag as the kind
+   (`office=yes` is "office"), and named land use is an area
+   (`landuse=residential` is "residential_area", usually a subdivision). Named
+   homes (`building=house`, `terrace`, ...) and names that are only an address
+   code ("Block 15", "B4 L43", a bare "Phase 7") are skipped. Each place
+   records its `town` (the boundary feature's `city_name`) and `category`.
 
 Node coordinates are rounded to six decimal places (about 0.1 m). Output is
 deterministic: the same snapshot always produces byte-identical JSON.

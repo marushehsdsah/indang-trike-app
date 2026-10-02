@@ -58,8 +58,10 @@ async function main() {
     await page.locator('#login-error').filter({ hasText: 'does not have God view access' }).waitFor();
     await page.locator('#phone').fill('09179999991');
     await page.locator('#password').fill('pilot-test-password');
+    const mapData = page.waitForResponse((response) => response.url().endsWith('/api/admin/map'));
     await page.locator('#sign-in').click();
     await page.locator('#dashboard').waitFor({ state: 'visible' });
+    assert.ok((await (await mapData).json()).places.features.length > 1000, 'establishments and landmarks reach the map');
     await page.waitForFunction(() => document.querySelector('#count-online').textContent === '3');
     await page.waitForFunction(() => document.querySelectorAll('.person-marker').length === 2);
     // The map canvas must fill its panel, not only the size it started at.
@@ -148,7 +150,7 @@ async function main() {
     assert.equal(await page.locator('.user-row').count(), 0);
     assert.equal(await page.evaluate(() => sessionStorage.getItem('indanggo.god-view.session')), null);
     assert.deepEqual(errors, []);
-    console.log('Browser checks passed: separate-origin site, full-size map, requested/to-passenger/trip lines, merged trip marker, access control, real GPS markers, missing/stale GPS, safe text, role/search filters, disconnect/reconnect, responsive layout and logout.');
+    console.log('Browser checks passed: separate-origin site, full-size map, places layer, requested/to-passenger/trip lines, merged trip marker, access control, real GPS markers, missing/stale GPS, safe text, role/search filters, disconnect/reconnect, responsive layout and logout.');
   } finally {
     await browser?.close(); sockets.forEach(socket => socket.disconnect());
     site?.close(); if (siteDir) fs.rmSync(siteDir, { recursive: true, force: true });

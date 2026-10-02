@@ -45,7 +45,7 @@ async function startMap() {
   try {
     const [mapModule, data] = await Promise.all([import('./map.mjs'), request('/admin/map')]);
     if (run !== generation) return;
-    fleetMap = mapModule.createFleetMap($('map'), snapshot.serviceArea, data.boundary, selectUser, message => showError('map-error', message));
+    fleetMap = mapModule.createFleetMap($('map'), snapshot.serviceArea, data.boundary, data.places, selectUser, message => showError('map-error', message));
     render();
   } catch (error) {
     if (run === generation) showError('map-error', error.status === 401 || error.status === 403 ? 'Map access expired. Refresh to sign in again.' : 'Map unavailable. You can still use the people list; use Refresh now to retry.');

@@ -11,17 +11,28 @@ const { createMapPolygons, isCoordinateInPolygons } = require('../utils/geojson'
 const { haversineDistance } = require('../utils/pathfinding');
 const { SPATIAL_CELL_SIZE_DEGREES, getSpatialCellKey, validateRoadGraph } = require('../utils/roadGraph');
 const { getRoadSpeedKph, getWayDirection, isRoutableWay } = require('../utils/roadRules');
+const { CATEGORY_COLORS, categorizePlace, placeRank } = require('../utils/placeCategories');
 
 const DEFAULT_MUNICIPALITY_PATHS = [
   path.join(__dirname, '../assets/geo/general-trias-municipality.json'),
   path.join(__dirname, '../assets/geo/indang-municipality.json'),
 ];
 const USAGE = 'Usage: node scripts/build-road-graph.js --input <overpass.json> --output <graph.json> ' +
-  '[--municipality <boundary.geojson>]...';
+  '[--municipality <boundary.geojson>]... [--places <places.geojson>]';
 const COORDINATE_DECIMALS = 6;
 const UNNAMED_ROAD = 'Unnamed road';
 // The first tag present names the place's kind, e.g. amenity=school -> "school".
-const PLACE_KIND_TAGS = ['amenity', 'shop', 'tourism', 'public_transport', 'place'];
+const PLACE_KIND_TAGS = ['amenity', 'shop', 'tourism', 'public_transport', 'healthcare', 'leisure', 'historic', 'office',
+  'craft', 'man_made', 'place', 'landuse', 'building'];
+// Named homes are mostly block/lot codes or family names, not establishments.
+const PRIVATE_BUILDINGS = new Set(['house', 'terrace', 'detached', 'semidetached_house', 'bungalow', 'hut', 'shed',
+  'garage', 'garages', 'roof', 'cabin', 'farm_auxiliary', 'static_caravan']);
+// Names that are only an address code ("Block 15", "B45 L20 ..."): lots and
+// blocks inside subdivisions, not places anyone searches for.
+// "Phase 3 Extension Clubhouse" is a place; a bare "Phase 7" is not.
+const ADDRESS_CODE_NAME = /^(block|blk|lot)\s*[\d-]|^b\d+\s*l\d+|^phase\s*\d+$/i;
+// Named land use reads better as an area, e.g. a subdivision is "residential area".
+const LANDUSE_AREAS = { residential: 'residential_area', industrial: 'industrial_area', commercial: 'commercial_area', retail: 'retail_area' };
 const ELEMENT_TYPE_ORDER = { node: 0, way: 1, relation: 2 };
 
 function round(value, decimals) {
@@ -188,7 +199,7 @@ function buildRoadGraph(osm, municipality) {
   const places = extractPlaces({ sourceNodes, ways, relations, isInside, namedRoads, nodes })
     .map((place) => {
       const town = getTown(place.coordinate);
-      return town ? { id: place.id, name: place.name, kind: place.kind, town, coordinate: place.coordinate } : place;
+      return town ? { id: place.id, name: place.name, kind: place.kind, category: place.category, town, coordinate: place.coordinate } : place;
     });
   // The app loads this exact contract, so never emit a graph it would reject.
   return validateRoadGraph(finalizeGraph({ osm, nodes, edges, places, nominalMaxSpeedKph }));
@@ -203,9 +214,13 @@ function centroid(points) {
   };
 }
 
+// { key, kind }: the tag that classifies a named element, or null. A bare
+// "yes" (office=yes) uses the tag itself as the kind.
 function getPlaceKind(tags) {
-  const kindTag = PLACE_KIND_TAGS.find((tag) => tags[tag]);
-  return kindTag && tags[kindTag];
+  const key = PLACE_KIND_TAGS.find((tag) => tags[tag] && tags[tag] !== 'no' && !(tag === 'building' && PRIVATE_BUILDINGS.has(tags[tag])));
+  if (!key) return null;
+  const value = tags[key];
+  return { key, kind: value === 'yes' ? key : key === 'landuse' ? (LANDUSE_AREAS[value] ?? value) : value };
 }
 
 function extractPlaces({ sourceNodes, ways, relations, isInside, namedRoads, nodes }) {
@@ -213,13 +228,14 @@ function extractPlaces({ sourceNodes, ways, relations, isInside, namedRoads, nod
   const wayById = new Map(ways.map((way) => [way.id, way]));
   const wayNodes = (way) => way.nodes.map((nodeId) => sourceNodes.get(nodeId)).filter(Boolean);
   const addPlace = (type, element, point) => {
-    const kind = getPlaceKind(element.tags ?? {});
+    const classified = getPlaceKind(element.tags ?? {});
     const name = element.tags?.name?.trim();
-    if (!kind || !name || !point || !isInside(point)) return;
+    if (!classified || !name || ADDRESS_CODE_NAME.test(name) || !point || !isInside(point)) return;
     places.set(`${type}/${element.id}`, {
       id: `${type}/${element.id}`,
       name,
-      kind,
+      kind: classified.kind,
+      category: categorizePlace(classified.key, classified.kind),
       coordinate: roundPair(point.lat, point.lon),
     });
   };
@@ -255,7 +271,7 @@ function extractPlaces({ sourceNodes, ways, relations, isInside, namedRoads, nod
       // Equal distances (within float noise) keep the earlier, lower node ID.
       if (!best || distance < best.distance - 1e-6) best = { distance, point };
     }
-    places.set(id, { id, name, kind: 'road', coordinate: best.point });
+    places.set(id, { id, name, kind: 'road', category: 'road', coordinate: best.point });
   }
 
   return [...places.values()].sort((a, b) => compareElementIds(a.id, b.id));
@@ -325,11 +341,25 @@ function finalizeGraph({ osm, nodes, edges, places, nominalMaxSpeedKph }) {
   };
 }
 
+// The map's places layer: every named establishment, landmark and named area
+// (subdivisions, business parks) as a point. Roads are labelled by the base
+// map, and so are barangays and other place names.
+function buildPlacesLayer(graph) {
+  const features = graph.places
+    .filter(({ kind, category }) => category !== 'road' && (category !== 'area' || kind.endsWith('_area')))
+    .map(({ name, kind, category, coordinate: [latitude, longitude] }) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [longitude, latitude] },
+      properties: { name, category, rank: placeRank(category, kind), color: CATEGORY_COLORS[category] },
+    }));
+  return { type: 'FeatureCollection', features };
+}
+
 function parseArgs(argv) {
   const args = { municipality: [] };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
-    if (!['--input', '--output', '--municipality'].includes(flag) || !argv[index + 1]) {
+    if (!['--input', '--output', '--municipality', '--places'].includes(flag) || !argv[index + 1]) {
       throw new Error(USAGE);
     }
     if (flag === '--municipality') args.municipality.push(argv[index + 1]);
@@ -358,6 +388,11 @@ function main(argv) {
   fs.writeFileSync(args.output, json);
 
   const edgeCount = Object.values(graph.edges).reduce((sum, list) => sum + list.length, 0);
+  if (args.places) {
+    const layer = buildPlacesLayer(graph);
+    fs.writeFileSync(args.places, `${JSON.stringify(layer)}\n`);
+    console.log(`placesLayer=${layer.features.length}`);
+  }
   console.log([
     `nodes=${Object.keys(graph.nodes).length}`,
     `edges=${edgeCount}`,
@@ -377,5 +412,6 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildPlacesLayer,
   buildRoadGraph,
 };

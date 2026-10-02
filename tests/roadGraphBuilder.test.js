@@ -6,7 +6,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const fixture = require('./fixtures/indang-osm-small.json');
 const municipality = require('../assets/geo/indang-municipality.json');
-const { buildRoadGraph } = require('../scripts/build-road-graph');
+const { buildPlacesLayer, buildRoadGraph } = require('../scripts/build-road-graph');
 const { getRoadSpeedKph, getWayDirection, isRoutableWay } = require('../utils/roadRules');
 
 const BUILDER_PATH = path.join(__dirname, '../scripts/build-road-graph.js');
@@ -123,11 +123,11 @@ test('extracts named places and routable named roads deterministically', () => {
   const graph = buildRoadGraph(fixture, municipality);
 
   assert.deepEqual(graph.places, [
-    { id: 'node/200', name: 'Cavite State University', kind: 'school', town: 'Indang', coordinate: [14.1985, 120.8815] },
-    { id: 'way/100', name: 'Mabini Street', kind: 'road', town: 'Indang', coordinate: [14.196, 120.88] },
-    { id: 'way/101', name: 'Rizal Street', kind: 'road', town: 'Indang', coordinate: [14.197, 120.88] },
-    { id: 'way/103', name: 'Indang-Trece Martires Road', kind: 'road', town: 'Indang', coordinate: [14.198, 120.881] },
-    { id: 'way/300', name: 'Indang Public Market', kind: 'marketplace', town: 'Indang', coordinate: [14.1943, 120.87915] },
+    { id: 'node/200', name: 'Cavite State University', kind: 'school', category: 'education', town: 'Indang', coordinate: [14.1985, 120.8815] },
+    { id: 'way/100', name: 'Mabini Street', kind: 'road', category: 'road', town: 'Indang', coordinate: [14.196, 120.88] },
+    { id: 'way/101', name: 'Rizal Street', kind: 'road', category: 'road', town: 'Indang', coordinate: [14.197, 120.88] },
+    { id: 'way/103', name: 'Indang-Trece Martires Road', kind: 'road', category: 'road', town: 'Indang', coordinate: [14.198, 120.881] },
+    { id: 'way/300', name: 'Indang Public Market', kind: 'marketplace', category: 'shopping', town: 'Indang', coordinate: [14.1943, 120.87915] },
   ]);
   assert.equal(JSON.stringify(buildRoadGraph(fixture, municipality)), JSON.stringify(graph));
 });
@@ -197,7 +197,7 @@ test('CLI writes the graph and reports concise errors', () => {
     assert.equal(serviceArea.status, 0, serviceArea.stderr);
     assert.match(serviceArea.stdout, /nodes=8 edges=12 places=6 /);
     const boundaryRoad = JSON.parse(fs.readFileSync(output, 'utf8')).places.find(({ id }) => id === 'way/104');
-    assert.deepEqual(boundaryRoad, { id: 'way/104', name: 'Boundary Road', kind: 'road', town: 'General Trias', coordinate: [14.3, 120.9] });
+    assert.deepEqual(boundaryRoad, { id: 'way/104', name: 'Boundary Road', kind: 'road', category: 'road', town: 'General Trias', coordinate: [14.3, 120.9] });
 
     const missing = spawnSync(process.execPath, [BUILDER_PATH, '--output', output], { encoding: 'utf8' });
     assert.notEqual(missing.status, 0);
@@ -205,4 +205,45 @@ test('CLI writes the graph and reports concise errors', () => {
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('collects establishments, landmarks and named areas, but not named homes', () => {
+  const osm = JSON.parse(JSON.stringify(fixture));
+  const near = (id, tags, lat = 14.1975, lon = 120.8805) => ({ type: 'node', id, lat, lon, tags });
+  osm.elements.push(
+    near(901, { name: 'Lot 39', building: 'house' }),
+    near(902, { name: 'B4 L43', building: 'terrace' }),
+    near(903, { name: 'Columbarium', building: 'yes' }),
+    near(904, { name: 'Gateway Business Park', landuse: 'industrial' }),
+    near(905, { name: 'Southville 2', landuse: 'residential' }),
+    near(906, { name: 'Pasong Elo Bridge', man_made: 'bridge' }),
+    near(907, { name: 'GSIS', office: 'yes' }),
+    near(908, { name: 'Jollibee', amenity: 'fast_food', building: 'commercial' }),
+    near(909, { name: 'Block 15', landuse: 'residential' }),
+    near(910, { name: 'B45 L20 Casoria Street, Bella Vista', craft: 'studio' }),
+    near(911, { name: 'Phase 7', place: 'neighbourhood' }),
+    near(912, { name: 'Phase 3 Extension Clubhouse', building: 'yes' }),
+  );
+  const byName = Object.fromEntries(buildRoadGraph(osm, municipality).places.map((place) => [place.name, place]));
+  assert.equal(byName['Lot 39'], undefined);
+  assert.equal(byName['B4 L43'], undefined);
+  assert.equal(byName['Block 15'], undefined, 'block and lot codes are addresses, not places');
+  assert.equal(byName['B45 L20 Casoria Street, Bella Vista'], undefined);
+  assert.equal(byName['Phase 7'], undefined);
+  assert.equal(byName['Phase 3 Extension Clubhouse'].category, 'services', 'a named place in a phase is kept');
+  assert.deepEqual(['Columbarium', 'Gateway Business Park', 'Southville 2', 'Pasong Elo Bridge', 'GSIS', 'Jollibee']
+    .map((name) => [name, byName[name].kind, byName[name].category]), [
+    ['Columbarium', 'building', 'services'],
+    ['Gateway Business Park', 'industrial_area', 'area'],
+    ['Southville 2', 'residential_area', 'area'],
+    ['Pasong Elo Bridge', 'bridge', 'landmark'],
+    ['GSIS', 'office', 'services'],
+    ['Jollibee', 'fast_food', 'food'],
+  ]);
+
+  const layer = buildPlacesLayer(buildRoadGraph(osm, municipality));
+  const ranks = Object.fromEntries(layer.features.map(({ properties }) => [properties.name, properties.rank]));
+  assert.equal(ranks['Mabini Street'], undefined, 'streets are labelled by the base map');
+  assert.deepEqual([ranks['Cavite State University'], ranks['Pasong Elo Bridge'], ranks.Jollibee, ranks['Southville 2']], [1, 1, 2, 0]);
+  assert.deepEqual(layer.features.find(({ properties }) => properties.name === 'Jollibee').geometry.coordinates, [120.8805, 14.1975]);
 });

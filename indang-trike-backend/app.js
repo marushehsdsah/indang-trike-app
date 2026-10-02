@@ -9,6 +9,7 @@ const { createDispatch } = require('./dispatch');
 const { createAdmin } = require('./admin');
 const { requireValue, profileFields, publicUser } = require('./policy');
 const { SERVICE_AREA_NAME, INDANG_BOUNDARY_SHAPE } = require('../data/indangMap');
+const SERVICE_AREA_PLACES = require('../assets/places/service-area-places.json');
 
 async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://127.0.0.1:27017/indang_trike_db', clock = Date.now, dispatchOptions, adminPhones = process.env.GOD_VIEW_ADMIN_PHONES || '' } = {}) {
   const connection = await mongoose.createConnection(mongoUri, { serverSelectionTimeoutMS: 5000 }).asPromise();
@@ -41,7 +42,8 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   app.use('/api', auth.middleware);
   app.use('/api/admin', admin.middleware);
   app.get('/api/admin/overview', async (req, res) => res.json(await admin.overview()));
-  app.get('/api/admin/map', (req, res) => res.json({ boundary: INDANG_BOUNDARY_SHAPE }));
+  // The service area and the same places layer the app draws (assets/places).
+  app.get('/api/admin/map', (req, res) => res.json({ boundary: INDANG_BOUNDARY_SHAPE, places: SERVICE_AREA_PLACES }));
   app.get('/api/config', (req, res) => res.json({ fare: 45, currency: 'PHP', maxPassengers: 4, gpsMaxAgeMs: 30000 }));
   app.get('/api/me', (req, res) => res.json({ user: publicUser(req.user) }));
   app.patch('/api/me', async (req, res) => {
