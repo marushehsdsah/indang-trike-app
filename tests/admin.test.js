@@ -20,7 +20,7 @@ test('overview includes connected users only, retaining people with no GPS', () 
   assert.equal(result.summary.online, 2);
   assert.equal(result.summary.drivers, 1);
   assert.equal(result.summary.passengers, 1);
-  assert.equal(result.serviceArea.name, 'Indang and General Trias');
+  assert.equal(result.serviceArea.name, 'Indang');
 });
 
 test('overview distinguishes live, stale, invalidated and out-of-area measured positions', () => {
@@ -63,12 +63,12 @@ test('only a driver ready for matching is counted available', () => {
 });
 
 test('booked rides carry their path: the request, the driver to the passenger, then the trip', () => {
-  const tripRoute = { coordinates: [{ latitude: 14.385026, longitude: 120.880477 }, { latitude: 14.3240901, longitude: 120.9120501 }], distanceMeters: 7900, durationSeconds: 1020 };
-  const approachRoute = { coordinates: [{ latitude: 14.386264, longitude: 120.880802 }, DEFAULT_TRIP.pickup.coordinate], distanceMeters: 150, durationSeconds: 40 };
+  const tripRoute = { coordinates: [{ latitude: 14.197805, longitude: 120.881639 }, { latitude: 14.1598801, longitude: 120.8699701 }], distanceMeters: 7900, durationSeconds: 1020 };
+  const approachRoute = { coordinates: [{ latitude: 14.195639, longitude: 120.880948 }, DEFAULT_TRIP.pickup.coordinate], distanceMeters: 150, durationSeconds: 40 };
   const asked = [];
   const findRoute = (from, to) => { asked.push([from, to]); return approachRoute; };
   const driverAt = (id, location) => user(id, { role: 'driver', available: true, location });
-  const people = [driverAt('on-the-way', { ...fix, latitude: 14.386264, longitude: 120.880802 }), driverAt('driving', fix),
+  const people = [driverAt('on-the-way', { ...fix, latitude: 14.195639, longitude: 120.880948 }), driverAt('driving', fix),
     driverAt('stale-gps', { ...fix, timestamp: now - 31000 }), user('p1'), user('p2'), user('p3'), user('p4')];
   const rides = [
     { _id: 'accepted', status: 'accepted', passengerId: 'p1', driverId: 'on-the-way', driverSlot: 'on-the-way', trip: DEFAULT_TRIP, route: tripRoute },
@@ -88,11 +88,11 @@ test('booked rides carry their path: the request, the driver to the passenger, t
   assert.equal(toPickup.stage, 'to-pickup');
   assert.equal(toPickup.driverId, 'on-the-way');
   assert.equal(toPickup.passengerId, 'p1');
-  assert.deepEqual(toPickup.approach, { coordinates: [[120.8808, 14.38626], [120.88048, 14.38503]], distanceMeters: 150, durationSeconds: 40 });
-  assert.deepEqual(toPickup.trip.coordinates, [[120.88048, 14.38503], [120.91205, 14.32409]], '[longitude, latitude], rounded to about 1 m');
-  assert.deepEqual(toPickup.pickup, { name: DEFAULT_TRIP.pickup.name, coordinate: [120.88048, 14.38503] });
+  assert.deepEqual(toPickup.approach, { coordinates: [[120.88095, 14.19564], [120.88164, 14.19781]], distanceMeters: 150, durationSeconds: 40 });
+  assert.deepEqual(toPickup.trip.coordinates, [[120.88164, 14.19781], [120.86997, 14.15988]], '[longitude, latitude], rounded to about 1 m');
+  assert.deepEqual(toPickup.pickup, { name: DEFAULT_TRIP.pickup.name, coordinate: [120.88164, 14.19781] });
   assert.equal(asked.length, 1);
-  assert.deepEqual([asked[0][0].latitude, asked[0][0].longitude], [14.386264, 120.880802], 'routed from the driver\'s live GPS');
+  assert.deepEqual([asked[0][0].latitude, asked[0][0].longitude], [14.195639, 120.880948], 'routed from the driver\'s live GPS');
   assert.deepEqual(asked[0][1], DEFAULT_TRIP.pickup.coordinate, 'to the pickup');
 
   assert.equal(byRide.riding.stage, 'to-destination');
@@ -102,7 +102,7 @@ test('booked rides carry their path: the request, the driver to the passenger, t
 });
 
 test('the driver\'s route to the pickup follows real roads', () => {
-  const driver = user('driver', { role: 'driver', available: true, location: { ...fix, latitude: 14.386264, longitude: 120.880802 } });
+  const driver = user('driver', { role: 'driver', available: true, location: { ...fix, latitude: 14.195639, longitude: 120.880948 } });
   const ride = { _id: 'ride', status: 'accepted', passengerId: 'passenger', driverId: 'driver', trip: DEFAULT_TRIP };
   const [route] = buildOverview([driver, user('passenger')], [ride], new Set(['driver', 'passenger']), now).routes;
   assert.ok(route.approach.coordinates.length > 2, 'more than a straight line');

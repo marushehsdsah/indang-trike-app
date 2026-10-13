@@ -1,4 +1,4 @@
-# Offline road graph: Indang and General Trias
+# Offline road graph: Indang
 
 `service-area-road-graph.json` is the road network the app routes on. Booking,
 search, snapping, and A* routing read only this file; the app never calls a
@@ -16,29 +16,38 @@ to that page, on every map that draws this data.
 | --- | --- |
 | Source | OpenStreetMap via the Overpass API (`https://overpass-api.de/api/interpreter`) |
 | Snapshot timestamp (`osm3s.timestamp_osm_base`) | `2026-10-01T16:34:13Z` |
-| General Trias bounding box (south, west, north, east) | `14.220186, 120.859841, 14.417857, 120.932959` |
-| Indang bounding box | `14.120982, 120.810720, 14.246597, 120.929805` |
-| Clip polygons | `assets/geo/general-trias-municipality.json` (PSGC `0402108000`), `assets/geo/indang-municipality.json` (PSGC `0402110000`) |
+| Indang bounding box (south, west, north, east) | `14.120982, 120.810720, 14.246597, 120.929805` |
+| Clip polygon | `assets/geo/indang-municipality.json` (PSGC `0402110000`) |
 | Raw snapshot SHA-256 | `d91452b6ec910cf820efde827508816ed91f346080feac1c4b6686c3e62d91c8` |
 
-Each bounding box is the extent of that town's polygon. The raw Overpass
+The bounding box is the extent of the town's polygon. The raw Overpass
 response is a build input and is not committed; the generated graph is.
 
 ## Graph statistics
 
 | Nodes | Directed edges | Places | Bytes |
 | ---: | ---: | ---: | ---: |
-| 39,360 | 81,338 | 2,806 | 8,526,795 |
+| 11,380 | 23,222 | 458 | 2,418,383 |
 
-Every place carries its `town`: 2,352 in General Trias and 454 in Indang.
+Every place carries its `town`, `Indang`.
 
-The two towns do not touch (their boundaries are about 425 m apart at the
-closest), so the graph is two road networks: General Trias (27,896 nodes) and
-Indang (11,230 nodes). No route joins them, and the app and backend require a
-trip's pickup and destination to be in the same town. The other 234 nodes are
-25 small fragments, mostly service roads whose connections lie outside the
-towns or are unmapped. A point that snaps to one of those fragments gets the
-"No drivable route found" state.
+Indang's main road network holds 11,230 nodes. The rest are small fragments,
+mostly service roads whose connections lie outside the town or are unmapped. A
+point that snaps to one of those fragments gets the "No drivable route found"
+state.
+
+### General Trias removal (2026-10-14)
+
+From 2026-10-01 the graph also covered General Trias. On 2026-10-14 it was cut
+back to Indang from the same snapshot rather than rebuilt from a new download,
+so Indang's roads, places, and routes are unchanged: 300 random Indang routes
+were compared before and after and matched exactly. The cut kept every node
+and edge inside the Indang polygon and every place tagged `Indang`, then
+rebuilt the spatial index, bounds, and `maxSpeedKph` (still 60.6) the way the
+builder does. Four road names were used in both towns (Acacia Road, Bonifacio
+Street, Ilang-ilang Street, Sampaguita Street), and the builder had placed each
+name's one search point in General Trias; those points were recomputed from
+Indang's roads, as an Indang-only build would.
 
 ## Performance verification
 
@@ -70,19 +79,15 @@ validates, and compiles the graph once, and the home screen warms it while
 idle so the first booking route does not pay for it.
 
 On 2026-10-02 the two-town graph validated in about 190 ms in Node (run
-alone), and the default and longest routes stayed under 20 ms.
+alone), and the default and longest routes stayed under 20 ms. On 2026-10-14
+the Indang-only graph validated in 30 ms under Node 24 on Windows, with 4.1 ms
+default and 4.5 ms longest-route medians and 13.9 ms for 25 searches.
 
 ## Overpass query
 
 ```overpass
 [out:json][timeout:240];
 (
-  way["highway"](14.220186,120.859841,14.417857,120.932959);
-  nwr["name"]["amenity"](14.220186,120.859841,14.417857,120.932959);
-  nwr["name"]["place"](14.220186,120.859841,14.417857,120.932959);
-  nwr["name"]["shop"](14.220186,120.859841,14.417857,120.932959);
-  nwr["name"]["tourism"](14.220186,120.859841,14.417857,120.932959);
-  nwr["name"]["public_transport"](14.220186,120.859841,14.417857,120.932959);
   way["highway"](14.120982,120.810720,14.246597,120.929805);
   nwr["name"]["amenity"](14.120982,120.810720,14.246597,120.929805);
   nwr["name"]["place"](14.120982,120.810720,14.246597,120.929805);
@@ -94,7 +99,8 @@ alone), and the default and longest routes stayed under 20 ms.
 out body;
 ```
 
-One box per town keeps the land between them out of the download.
+The 2026-10-01 snapshot also downloaded General Trias' box
+(`14.220186,120.859841,14.417857,120.932959`); a rebuild needs only Indang's.
 
 ## Rebuild
 
@@ -110,7 +116,7 @@ node scripts/build-road-graph.js --input /tmp/service-area-overpass.json \
 npm test
 ```
 
-Without `--municipality` the builder clips to both towns' boundaries; pass
+Without `--municipality` the builder clips to Indang's boundary; pass
 `--municipality <file>` once per town to use others. Overpass rejects requests
 without a `User-Agent` header (HTTP 406), so keep the `-A` option. The builder
 prints the node, edge, place, byte, and snapshot timestamp counts; copy them

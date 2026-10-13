@@ -16,14 +16,9 @@ import Button from '../components/ui/Button';
 import { ACTIVE_STATUSES, formatFare, userName } from '../utils/rideState';
 
 // Tapping any of these opens booking with the destination search already
-// filled in, so the rider never types a whole place name. Each town has its
-// own; search lists the rider's town first, so the shared queries find its places.
+// filled in, so the rider never types a whole place name. Keyed by town name
+// (see MUNICIPALITIES).
 const SHORTCUTS = {
-  'General Trias': [
-    { label: 'CvSU Gentri', icon: 'school-outline', query: 'Cavite State University' },
-    { label: 'Public market', icon: 'storefront-outline', query: 'Market' },
-    { label: 'City hall', icon: 'office-building-outline', query: 'City Hall' },
-  ],
   Indang: [
     { label: 'CvSU Main', icon: 'school-outline', query: 'Cavite State University' },
     { label: 'Public market', icon: 'storefront-outline', query: 'Indang Public Market' },

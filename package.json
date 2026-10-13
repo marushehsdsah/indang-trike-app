@@ -10,7 +10,8 @@
     "test": "node --test tests/*.test.js",
     "test:backend": "node tests/backend.integration.js",
     "test:god-view": "node tests/godView.browser.js",
-    "backend": "node server.js"
+    "backend": "node server.js",
+    "simulate": "node scripts/simulate-trip.js"
   },
   "dependencies": {
     "@maplibre/maplibre-react-native": "^11.4.0",

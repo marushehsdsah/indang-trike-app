@@ -189,15 +189,14 @@ test('CLI writes the graph and reports concise errors', () => {
     assert.match(built.stdout, /nodes=7 edges=10 places=5 bytes=\d+ sourceTimestamp=2026-09-22T08:45:51Z/);
     assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')), buildRoadGraph(fixture, municipality));
 
-    // Without --municipality the builder uses the whole service area. The
-    // fixture's Boundary Road lies outside Indang but inside General Trias.
+    // Without --municipality the builder uses the service area, Indang, so the
+    // fixture's Boundary Road, which lies outside Indang, is still left out.
     const serviceArea = spawnSync(process.execPath, [
       BUILDER_PATH, '--input', path.join(__dirname, 'fixtures/indang-osm-small.json'), '--output', output,
     ], { encoding: 'utf8' });
     assert.equal(serviceArea.status, 0, serviceArea.stderr);
-    assert.match(serviceArea.stdout, /nodes=8 edges=12 places=6 /);
-    const boundaryRoad = JSON.parse(fs.readFileSync(output, 'utf8')).places.find(({ id }) => id === 'way/104');
-    assert.deepEqual(boundaryRoad, { id: 'way/104', name: 'Boundary Road', kind: 'road', town: 'General Trias', coordinate: [14.3, 120.9] });
+    assert.match(serviceArea.stdout, /nodes=7 edges=10 places=5 /);
+    assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')), buildRoadGraph(fixture, municipality));
 
     const missing = spawnSync(process.execPath, [BUILDER_PATH, '--output', output], { encoding: 'utf8' });
     assert.notEqual(missing.status, 0);

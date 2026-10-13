@@ -2,6 +2,7 @@ const { normalizePhilippinePhone } = require('../utils/registration');
 const { SERVICE_AREA_EITHER, getMunicipalityAt, isInIndangServiceArea } = require('../data/indangMap');
 const { getRoadGraph } = require('../data/roadNetwork');
 const { resolveBookingRoute, createBookingPayload } = require('../utils/bookingRoute');
+const { ratingSummary } = require('../utils/rating');
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -24,7 +25,7 @@ function publicUser(user) {
   return {
     id: String(user._id), phone: user.phone, firstName: user.firstName || '', lastName: user.lastName || '',
     email: user.email || '', role: user.role || 'passenger', plate: user.plate, toda: user.toda, capacity: user.capacity,
-    available: Boolean(user.available), createdAt: user.createdAt,
+    available: Boolean(user.available), createdAt: user.createdAt, rating: ratingSummary(user),
     profileComplete: Boolean(user.firstName && user.lastName && user.email && (user.role !== 'driver' || (user.plate && user.toda && user.capacity))),
   };
 }

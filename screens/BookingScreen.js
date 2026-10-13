@@ -40,9 +40,14 @@ function createPinnedPlace(coordinate) {
   };
 }
 
+const LOCATION_TEXT_INSET = SPACE.md + 12 + SPACE.md;
+
 function LocationRow({ label, place, active, isPickup, onPress, onPinPress }) {
   return (
-    <View style={[styles.locationRow, active && styles.locationRowActive]}>
+    <View style={styles.locationRow}>
+      {/* Always mounted and faded in: on Android a background added to a view
+          after it mounts is drawn without its corner radius. */}
+      <View pointerEvents="none" style={[styles.locationHighlight, active && styles.locationHighlightActive]} />
       <Pressable
         style={styles.locationMain}
         onPress={onPress}
@@ -51,12 +56,12 @@ function LocationRow({ label, place, active, isPickup, onPress, onPinPress }) {
       >
         <View style={isPickup ? styles.pickupDot : styles.destinationSquare} />
         <View style={styles.locationText}>
-          <Text style={TYPE.overline}>{label.toUpperCase()}</Text>
+          <Text style={[TYPE.overline, active && styles.locationLabelActive]}>{label.toUpperCase()}</Text>
           <Text style={[TYPE.body, styles.locationName]} numberOfLines={1}>{place?.name || `Choose ${label.toLowerCase()}`}</Text>
         </View>
       </Pressable>
       <Pressable
-        style={({ pressed }) => [styles.pinButton, pressed && styles.pressed]}
+        style={({ pressed }) => [styles.pinButton, active && styles.pinButtonActive, pressed && styles.pressed]}
         onPress={onPinPress}
         hitSlop={HIT_SLOP}
         accessibilityRole="button"
@@ -309,7 +314,8 @@ export default function BookingScreen({ navigation, route: screenRoute }) {
               onPress={() => openSearch('pickup')}
               onPinPress={() => startMapPick('pickup')}
             />
-            <Divider inset={SPACE.xxl + SPACE.sm} />
+            {/* Hidden, not removed, while a row is highlighted, so the rows never shift. */}
+            <Divider inset={LOCATION_TEXT_INSET} style={[styles.locationDivider, (activeEndpoint || pickTarget) && styles.locationDividerHidden]} />
             <LocationRow
               label="Destination"
               place={destination}
@@ -385,13 +391,25 @@ const styles = StyleSheet.create({
   top: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: SPACE.lg },
   topRow: { flexDirection: 'row', marginBottom: SPACE.md },
 
+  // The highlight sits inside the card's padding, and its radius is the card's
+  // minus that padding, so the two curves stay parallel.
   card: {
     backgroundColor: COLORS.surface, borderRadius: RADIUS.xl,
-    paddingHorizontal: SPACE.lg, ...ELEVATION.floating,
+    padding: SPACE.sm, ...ELEVATION.floating,
   },
-  locationRow: { flexDirection: 'row', alignItems: 'center', minHeight: 60, borderRadius: RADIUS.md },
-  locationRowActive: { backgroundColor: COLORS.brandTint },
-  locationMain: { flex: 1, flexDirection: 'row', alignItems: 'center', minHeight: 60, paddingLeft: SPACE.xs },
+  locationRow: {
+    flexDirection: 'row', alignItems: 'center', minHeight: 60,
+    paddingHorizontal: SPACE.md, paddingRight: SPACE.xs,
+  },
+  locationHighlight: {
+    ...StyleSheet.absoluteFillObject, borderRadius: RADIUS.xl - SPACE.sm,
+    backgroundColor: COLORS.brandTint, opacity: 0,
+  },
+  locationHighlightActive: { opacity: 1 },
+  locationLabelActive: { color: COLORS.brand },
+  locationMain: { flex: 1, flexDirection: 'row', alignItems: 'center', minHeight: 60 },
+  locationDivider: { marginRight: SPACE.md },
+  locationDividerHidden: { opacity: 0 },
   pickupDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 3.5, borderColor: COLORS.brand },
   destinationSquare: {
     width: 12, height: 12, borderRadius: 3,
@@ -399,7 +417,8 @@ const styles = StyleSheet.create({
   },
   locationText: { flex: 1, marginLeft: SPACE.md },
   locationName: { marginTop: 1 },
-  pinButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  pinButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  pinButtonActive: { backgroundColor: COLORS.surface },
   pressed: { opacity: 0.6 },
 
   notice: {

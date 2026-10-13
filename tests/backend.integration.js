@@ -10,7 +10,7 @@ let now = Date.now();
 const sockets = [];
 const dbName = `indang_test_${randomUUID().replaceAll('-', '')}`;
 const adminPhone = '09179999999';
-const fix = (latitude = 14.385026) => ({ latitude, longitude: 120.880477, accuracy: 5, timestamp: now, speed: 0, heading: 0 });
+const fix = (latitude = 14.197805) => ({ latitude, longitude: 120.881639, accuracy: 5, timestamp: now, speed: 0, heading: 0 });
 
 before(async () => {
   const mongoRoot = process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017';
@@ -65,7 +65,7 @@ async function state(accountValue) { return (await request('/state', accountValu
 async function action(accountValue, rideId, name, body = {}) { return request(`/rides/${rideId}/${name}`, accountValue.token, body); }
 
 test('health reports the database and the service area bookings are accepted in', async () => {
-  assert.deepEqual(await request('/health'), { status: 200, body: { ok: true, serviceArea: 'Indang and General Trias' } });
+  assert.deepEqual(await request('/health'), { status: 200, body: { ok: true, serviceArea: 'Indang' } });
 });
 
 test('the separate God view website may call the API, but every overview needs admin authorization', async () => {
@@ -103,32 +103,32 @@ test('the separate God view website may call the API, but every overview needs a
   assert.equal((await request('/admin/overview', admin.token)).status, 401);
 });
 
-test('a booking outside both towns, or between them, is rejected before any ride is created', async () => {
+test('a booking outside Indang is rejected before any ride is created', async () => {
   const passenger = await account();
   const book = (dropoff) => request('/rides', passenger.token, {
     trip: { pickup: DEFAULT_TRIP.pickup, dropoff: { name: 'Elsewhere', coordinate: dropoff } }, passengers: 1, note: '', idempotencyKey: randomUUID(),
   });
-  // Tanza, just west of General Trias.
-  const outside = await book({ latitude: 14.385026, longitude: 120.86 });
+  // Just past Indang's boundary, 2.2 km northeast of CvSU Main Campus.
+  const outside = await book({ latitude: 14.21, longitude: 120.898 });
   assert.equal(outside.status, 400);
-  assert.equal(outside.body.error, 'Pickup and destination must be inside Indang or General Trias.');
-  // CvSU Main Campus in Indang: inside the service area, but another town.
-  const crossTown = await book({ latitude: 14.197805, longitude: 120.881639 });
-  assert.equal(crossTown.status, 400);
-  assert.equal(crossTown.body.error, 'Pickup and destination must be in the same town.');
+  assert.equal(outside.body.error, 'Pickup and destination must be inside Indang.');
+  // CvSU General Trias Campus: General Trias is no longer served.
+  const generalTrias = await book({ latitude: 14.385026, longitude: 120.880477 });
+  assert.equal(generalTrias.status, 400);
+  assert.equal(generalTrias.body.error, 'Pickup and destination must be inside Indang.');
   assert.equal(await backend.models.Ride.countDocuments({ passengerId: String(passenger.user.id) }), 0);
 });
 
 test('an Indang pickup is offered only to Indang drivers within Indang\'s 5 km radius', async () => {
-  // A pickup 330 m inside Indang, near where the towns are closest.
+  // A pickup 330 m inside Indang's northeastern boundary.
   const trip = {
-    pickup: { name: 'Near the General Trias boundary', coordinate: { latitude: 14.222498, longitude: 120.893654 } },
+    pickup: { name: 'Near the Indang boundary', coordinate: { latitude: 14.222498, longitude: 120.893654 } },
     dropoff: { name: 'CvSU Main Campus', coordinate: { latitude: 14.197805, longitude: 120.881639 } },
   };
   const spots = {
-    generalTrias: { latitude: 14.227011, longitude: 120.899407 }, // 0.8 km, but in General Trias
+    outsideIndang: { latitude: 14.227011, longitude: 120.899407 }, // 0.8 km, but outside Indang
     cvsuMain: { latitude: 14.197805, longitude: 120.881639 }, // 3.0 km, in Indang
-    harasan: { latitude: 14.15988, longitude: 120.86997 }, // 7.4 km: beyond 5 km, though within General Trias' 8 km
+    harasan: { latitude: 14.15988, longitude: 120.86997 }, // 7.4 km: in Indang, beyond 5 km
   };
   const passenger = await account(), drivers = {};
   for (const [name, coordinate] of Object.entries(spots)) {
@@ -141,22 +141,22 @@ test('an Indang pickup is offered only to Indang drivers within Indang\'s 5 km r
   assert.equal(booked.status, 201, JSON.stringify(booked.body));
   const rideId = booked.body.ride.id;
   assert.equal((await state(drivers.cvsuMain)).offer?.id, rideId, 'the nearest Indang driver is offered');
-  assert.equal((await state(drivers.generalTrias)).offer, null, 'a closer driver in the other town is not');
+  assert.equal((await state(drivers.outsideIndang)).offer, null, 'a closer driver outside Indang is not');
   const offer = (await state(drivers.cvsuMain)).offer;
   assert.equal((await action(drivers.cvsuMain, rideId, 'decline', { offerId: offer.offerId })).status, 200);
   assert.equal((await state(drivers.harasan)).offer, null, 'nobody beyond Indang\'s radius is asked');
-  assert.equal((await state(drivers.generalTrias)).offer, null);
+  assert.equal((await state(drivers.outsideIndang)).offer, null);
   await action(passenger, rideId, 'cancel');
   for (const driver of Object.values(drivers)) await request('/driver/availability', driver.token, { available: false });
 });
 
-test('General Trias matching offers the nearest driver inside the city and radius, then the next one', async () => {
-  // Real places around the CvSU General Trias pickup.
+test('Indang matching offers the nearest driver inside the town and radius, then the next one', async () => {
+  // Real places around the CvSU Main Campus pickup.
   const spots = {
-    cityHall: { latitude: 14.386264, longitude: 120.880802 }, // 142 m
-    tanza: { latitude: 14.385026, longitude: 120.86 }, // 2.2 km, outside General Trias
-    annunciation: { latitude: 14.362451, longitude: 120.89572 }, // 3.0 km
-    manggahan: { latitude: 14.291231, longitude: 120.910972 }, // 10.9 km, beyond the 8 km radius
+    poblacion: { latitude: 14.195541, longitude: 120.879616 }, // 333 m, Poblacion I Barangay Hall
+    outside: { latitude: 14.21, longitude: 120.898 }, // 2.2 km, just outside Indang
+    calumpang: { latitude: 14.213003, longitude: 120.865981 }, // 2.4 km, Calumpang Cerca Barangay Hall
+    guyam: { latitude: 14.138817, longitude: 120.873971 }, // 6.6 km, beyond the 5 km radius
   };
   const passenger = await account(), drivers = {};
   for (const [name, coordinate] of Object.entries(spots)) {
@@ -169,31 +169,31 @@ test('General Trias matching offers the nearest driver inside the city and radiu
   assert.equal(booked.status, 201);
   const rideId = booked.body.ride.id;
 
-  const first = (await state(drivers.cityHall)).offer;
+  const first = (await state(drivers.poblacion)).offer;
   assert.equal(first?.id, rideId, 'the closest driver is offered first');
-  for (const name of ['tanza', 'annunciation', 'manggahan']) assert.equal((await state(drivers[name])).offer, null, `${name} waits`);
-  assert.equal((await action(drivers.cityHall, rideId, 'decline', { offerId: first.offerId })).status, 200);
+  for (const name of ['outside', 'calumpang', 'guyam']) assert.equal((await state(drivers[name])).offer, null, `${name} waits`);
+  assert.equal((await action(drivers.poblacion, rideId, 'decline', { offerId: first.offerId })).status, 200);
 
-  const second = (await state(drivers.annunciation)).offer;
-  assert.equal(second?.id, rideId, 'the next driver inside General Trias is offered, skipping Tanza');
-  assert.equal((await state(drivers.tanza)).offer, null);
-  assert.equal((await state(drivers.manggahan)).offer, null);
-  assert.equal((await state(drivers.cityHall)).offer, null, 'a driver who declined is not asked again');
+  const second = (await state(drivers.calumpang)).offer;
+  assert.equal(second?.id, rideId, 'the next driver inside Indang is offered, skipping the one outside it');
+  assert.equal((await state(drivers.outside)).offer, null);
+  assert.equal((await state(drivers.guyam)).offer, null);
+  assert.equal((await state(drivers.poblacion)).offer, null, 'a driver who declined is not asked again');
 
-  assert.equal((await action(drivers.annunciation, rideId, 'accept', { offerId: second.offerId })).body.ride.status, 'accepted');
-  for (const step of ['arrive', 'start', 'complete']) assert.equal((await action(drivers.annunciation, rideId, step)).status, 200);
+  assert.equal((await action(drivers.calumpang, rideId, 'accept', { offerId: second.offerId })).body.ride.status, 'accepted');
+  for (const step of ['arrive', 'start', 'complete']) assert.equal((await action(drivers.calumpang, rideId, step)).status, 200);
   const done = await backend.models.Ride.findById(rideId);
   assert.equal(done.status, 'completed');
-  assert.equal(done.driverId, String(drivers.annunciation.user.id));
-  assert.deepEqual(done.attemptedDrivers, [String(drivers.cityHall.user.id), String(drivers.annunciation.user.id)]);
+  assert.equal(done.driverId, String(drivers.calumpang.user.id));
+  assert.deepEqual(done.attemptedDrivers, [String(drivers.poblacion.user.id), String(drivers.calumpang.user.id)]);
   for (const driver of Object.values(drivers)) await request('/driver/availability', driver.token, { available: false });
 });
 
-test('a southern General Trias pickup reaches a driver waiting in the town centre', async () => {
+test('a southern Indang pickup reaches a driver waiting in the town centre', async () => {
   const passenger = await account(), driver = await account('driver');
   await connect(driver.token);
-  // General Trias City Hall, 7.7 km from the Vista Mall terminal pickup.
-  assert.equal((await request('/driver/location', driver.token, { ...fix(), latitude: 14.386264, longitude: 120.880802 })).status, 200);
+  // Indang Municipal Hall, 4.8 km from the Harasan pickup.
+  assert.equal((await request('/driver/location', driver.token, { ...fix(), latitude: 14.202808, longitude: 120.875309 })).status, 200);
   assert.equal((await request('/driver/availability', driver.token, { available: true })).status, 200);
   const southbound = { pickup: DEFAULT_TRIP.dropoff, dropoff: DEFAULT_TRIP.pickup };
   const booked = await request('/rides', passenger.token, { trip: southbound, passengers: 1, note: '', idempotencyKey: randomUUID() });
@@ -240,6 +240,57 @@ test('real passenger/driver flow persists exclusive assignment, authorized actio
   await request('/driver/availability', driver.token, { available: false });
 });
 
+test('after a completed ride each side rates the other once, and the next trip shows the averages', async () => {
+  const passenger = await account(), driver = await account('driver'), stranger = await account();
+  await online(driver);
+  const ride = (await book(passenger)).body.ride;
+  let offer = (await state(driver)).offer;
+  assert.deepEqual(offer.passenger.rating, { average: null, count: 0 }, 'a new passenger has no rating yet');
+  assert.equal((await request(`/rides/${ride.id}/rating`, passenger.token, { stars: 5 })).status, 409, 'not before the ride is completed');
+  await action(driver, ride.id, 'accept', { offerId: offer.offerId });
+  for (const step of ['arrive', 'start', 'complete']) await action(driver, ride.id, step);
+
+  const rate = (who, body) => request(`/rides/${ride.id}/rating`, who.token, body);
+  assert.equal((await rate(stranger, { stars: 1 })).status, 403, 'only participants rate');
+  assert.equal((await rate(passenger, { stars: 0 })).status, 400);
+  assert.equal((await rate(passenger, { stars: 5, tags: ['Did not pay'] })).status, 400, 'a passenger tag cannot describe a driver');
+  const rated = await rate(passenger, { stars: 5, tags: ['Safe driving'], comment: 'Smooth trip' });
+  assert.equal(rated.status, 200, JSON.stringify(rated.body));
+  assert.deepEqual(rated.body.ride.myRating, { stars: 5, tags: ['Safe driving'], comment: 'Smooth trip' });
+  assert.equal((await rate(passenger, { stars: 1 })).status, 409, 'a ride is rated once per side');
+  assert.equal((await state(passenger)).lastRide.myRating.stars, 5, 'the app knows the passenger already rated');
+  assert.equal((await state(driver)).lastRide.myRating, null, 'the driver has not rated yet');
+  // The driver reports a safety concern about the passenger.
+  assert.equal((await rate(driver, { stars: 2, tags: ['Did not pay'] })).status, 200);
+
+  assert.deepEqual((await state(driver)).user.rating, { average: 5, count: 1 });
+  assert.deepEqual((await state(passenger)).user.rating, { average: 2, count: 1 });
+  const history = (await request('/history', driver.token)).body.rides;
+  assert.equal(history.find((entry) => entry.id === ride.id).myRating.stars, 2);
+  assert.equal(await backend.models.Rating.countDocuments({ rideId: ride.id }), 2);
+  assert.equal(await backend.models.Rating.countDocuments({ rideId: ride.id, flagged: true }), 1);
+
+  // On the next booking the driver sees the passenger's average on the offer,
+  // and the passenger sees the driver's once accepted.
+  const next = (await book(passenger)).body.ride;
+  offer = (await state(driver)).offer;
+  assert.equal(offer.id, next.id);
+  assert.deepEqual(offer.passenger.rating, { average: 2, count: 1 });
+  await action(driver, next.id, 'accept', { offerId: offer.offerId });
+  assert.deepEqual((await state(passenger)).ride.driver.rating, { average: 5, count: 1 });
+
+  // Admins see both averages and the safety report.
+  // The God view test registered the admin earlier in this run.
+  const admin = (await request('/login', null, { phone: adminPhone, password: 'strong-password' })).body;
+  await connect(passenger.token);
+  const people = (await request('/admin/overview', admin.token)).body.users;
+  const reported = people.find((person) => person.id === passenger.user.id);
+  assert.deepEqual([reported.rating, reported.safetyReports], [{ average: 2, count: 1 }, 1]);
+  assert.equal(people.find((person) => person.id === driver.user.id).safetyReports, 0);
+  await action(passenger, next.id, 'cancel');
+  await request('/driver/availability', driver.token, { available: false });
+});
+
 test('retrying a booking is idempotent and cannot create a second active request', async () => {
   const passenger = await account();
   const key = randomUUID();
@@ -267,7 +318,7 @@ test('one driver receives only one concurrent reservation and cancellation canno
 
 test('offer expiry moves to the next nearest driver and search timeout is real', async () => {
   const p = await account(), d1 = await account('driver'), d2 = await account('driver');
-  await online(d1, 14.3851); await online(d2, 14.3872);
+  await online(d1, 14.1979); await online(d2, 14.2);
   const { body: { ride } } = await book(p);
   const original = (await state(d1)).offer;
   assert.equal(original.id, ride.id);
@@ -293,8 +344,8 @@ test('bad or stale GPS never makes a driver available', async () => {
 
 test('a driver outside the service area stays online with live GPS but is offered rides only inside it', async () => {
   const passenger = await account(), driver = await account('driver');
-  // 2.2 km west of the pickup: inside the matching radius, outside the municipality.
-  const outside = { ...fix(), longitude: 120.86 };
+  // 2.2 km northeast of the pickup: inside the matching radius, outside the municipality.
+  const outside = { ...fix(), latitude: 14.21, longitude: 120.898 };
   await connect(driver.token);
   assert.equal((await request('/driver/location', driver.token, outside)).status, 200);
   assert.equal((await request('/driver/availability', driver.token, { available: true })).status, 200);
@@ -345,10 +396,10 @@ test('private GPS is delivered to the assigned passenger but never a stranger', 
   const booked = await book(p), offer = (await state(d)).offer;
   await action(d, offer.id, 'accept', { offerId: offer.offerId });
   now += 2000;
-  await request('/driver/location', d.token, fix(14.3852));
+  await request('/driver/location', d.token, fix(14.198));
   await new Promise((resolve) => setTimeout(resolve, 30));
   assert.equal(received.at(-1).rideId, booked.body.ride.id);
-  assert.equal(received.at(-1).location.latitude, 14.3852);
+  assert.equal(received.at(-1).location.latitude, 14.198);
   assert.equal(leaked.length, 0);
   await action(p, offer.id, 'cancel');
   await request('/driver/availability', d.token, { available: false });
@@ -366,11 +417,11 @@ test('passenger GPS reaches only the driver holding the ride', async () => {
   assert.equal(offer.passengerLocation, null, 'an offered driver does not see the passenger yet');
   await action(d, offer.id, 'accept', { offerId: offer.offerId });
   now += 1000;
-  assert.equal((await request('/passenger/location', p.token, fix(14.3857))).status, 200);
+  assert.equal((await request('/passenger/location', p.token, fix(14.1985))).status, 200);
   await new Promise((resolve) => setTimeout(resolve, 30));
   assert.equal(received.at(-1).rideId, booked.body.ride.id);
-  assert.equal(received.at(-1).location.latitude, 14.3857);
-  assert.equal((await state(d)).ride.passengerLocation.latitude, 14.3857);
+  assert.equal(received.at(-1).location.latitude, 14.1985);
+  assert.equal((await state(d)).ride.passengerLocation.latitude, 14.1985);
   assert.equal(leaked.length, 0);
   await action(p, offer.id, 'cancel');
   assert.equal((await state(d)).lastRide.passengerLocation, null, 'sharing ends with the ride');

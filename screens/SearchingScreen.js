@@ -9,6 +9,7 @@ import { Sheet } from '../components/ui/Surfaces';
 import ConnectionBanner from '../components/ConnectionBanner';
 import RideDetails from '../components/RideDetails';
 import LiveLocationMarker from '../components/LiveLocationMarker';
+import SearchPulse from '../components/SearchPulse';
 import { useApp } from '../context/AppContext';
 import { COLORS, SPACE, TYPE } from '../theme';
 
@@ -34,9 +35,12 @@ export default function SearchingScreen({ navigation }) {
     finally { setBusy(false); }
   };
   const searching = ride?.status === 'searching';
+  const liveFix = gps.status === 'ready' ? gps.fix : null;
   return <BleedScreen>
     <RouteMap pickup={ride?.trip.pickup} destination={ride?.trip.dropoff} route={ride?.route} bottomInset={height}>
-      {gps.status === 'ready' && gps.fix && <LiveLocationMarker coordinate={gps.fix} title="Your location" />}
+      {/* Pulses where the passenger is: live GPS, or the pickup without it. */}
+      {searching && <SearchPulse coordinate={liveFix ?? ride.trip.pickup.coordinate} />}
+      {liveFix && <LiveLocationMarker coordinate={liveFix} title="Your location" />}
     </RouteMap>
     <View style={[styles.top, { paddingTop: insets.top + SPACE.md }]}><ConnectionBanner /></View>
     <Sheet style={[styles.sheet, { paddingBottom: insets.bottom + SPACE.lg }]} onLayout={({ nativeEvent }) => setHeight(nativeEvent.layout.height)}>

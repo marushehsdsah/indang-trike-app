@@ -119,11 +119,12 @@ export default function RegisterScreen({ navigation }) {
             label="Mobile number"
             icon="phone"
             prefix="+63"
-            placeholder="912 345 6789"
-            keyboardType="phone-pad"
+            placeholder="9123456789"
+            keyboardType="number-pad"
             textContentType="telephoneNumber"
+            maxLength={10}
             value={phone}
-            onChangeText={setPhone}
+            onChangeText={(text) => setPhone(text.replace(/\D/g, '').slice(0, 10))}
           />
 
           <Field

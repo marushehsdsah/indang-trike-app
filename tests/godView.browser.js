@@ -29,7 +29,7 @@ async function main() {
       const result = await response.json(); assert.ok(response.ok, JSON.stringify(result)); return result;
     }
     async function account(phone, role, firstName) {
-      await request('/register', { phone, role, firstName, lastName: 'Pilot', email: `${phone}@example.com`, password: 'pilot-test-password', ...(role === 'driver' ? { plate: 'TEST-101', toda: 'General Trias', capacity: 4 } : {}) });
+      await request('/register', { phone, role, firstName, lastName: 'Pilot', email: `${phone}@example.com`, password: 'pilot-test-password', ...(role === 'driver' ? { plate: 'TEST-101', toda: 'Indang Poblacion', capacity: 4 } : {}) });
       return request('/login', { phone, password: 'pilot-test-password' });
     }
     async function connect(account) {
@@ -72,7 +72,7 @@ async function main() {
     await page.locator('[data-role=driver]').click();
     assert.equal(await page.locator('.user-row').count(), 1);
     await page.locator('.user-row').click();
-    await page.locator('#person-details').getByText('TEST-101 · General Trias').waitFor();
+    await page.locator('#person-details').getByText('TEST-101 · Indang Poblacion').waitFor();
     await page.locator('[data-role=all]').click();
     await page.locator('#search').fill('Bea');
     assert.equal(await page.locator('.user-row').count(), 1);

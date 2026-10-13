@@ -9,6 +9,7 @@ import Button from '../components/ui/Button';
 import IconButton from '../components/ui/IconButton';
 import { Sheet } from '../components/ui/Surfaces';
 import RideDetails from '../components/RideDetails';
+import RatingPrompt from '../components/RatingPrompt';
 import ConnectionBanner from '../components/ConnectionBanner';
 import LiveLocationMarker from '../components/LiveLocationMarker';
 import { useApp } from '../context/AppContext';
@@ -22,6 +23,7 @@ export default function ActiveRideScreen({ navigation }) {
   const { user, ride, gps, rideAction, connected, dismissRide } = useApp();
   const insets = useSafeAreaInsets(), { height } = useWindowDimensions();
   const [sheetHeight, setSheetHeight] = useState(350), [busy, setBusy] = useState(false), [now, setNow] = useState(Date.now());
+  const [ratingSkipped, setRatingSkipped] = useState(false);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const driver = user.role === 'driver', home = driver ? 'Driver' : 'Passenger';
   const position = driver ? gps.fix : ride?.driverLocation;
@@ -76,6 +78,7 @@ export default function ActiveRideScreen({ navigation }) {
             : passengerPosition ? 'Passenger GPS paused · last fix ' + Math.max(0, Math.floor((now - passengerPosition.timestamp) / 1000)) + 's ago' : 'Waiting for the passenger\'s GPS'}
         </Text>}
         {!terminal && !(driver ? fresh : passengerFresh) && <Button label="Retry GPS" variant="ghost" size="sm" onPress={gps.retry} />}
+        {ride?.status === 'completed' && !ratingSkipped && <RatingPrompt ride={ride} asDriver={driver} onSkip={() => setRatingSkipped(true)} style={styles.rating} />}
         {ride && <RideDetails ride={ride} driver={driver} />}
         {ride?.cancellationReason && <Text style={[TYPE.caption, { marginBottom: SPACE.md }]}>{ride.cancellationReason}</Text>}
         {!terminal && driver && leg?.route && fresh && <Button label={toPickup ? 'Navigate to pickup' : 'Navigate to destination'} icon="navigation-variant" variant="secondary"
@@ -91,6 +94,6 @@ export default function ActiveRideScreen({ navigation }) {
 }
 const styles = StyleSheet.create({
   top: { position: 'absolute', left: SPACE.lg, right: SPACE.lg, top: 0, gap: SPACE.sm },
-  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0 }, button: { marginBottom: SPACE.sm },
+  sheet: { position: 'absolute', left: 0, right: 0, bottom: 0 }, button: { marginBottom: SPACE.sm }, rating: { marginTop: SPACE.md },
   marker: { width: 42, height: 42, borderRadius: 21, backgroundColor: COLORS.route, borderWidth: 3, borderColor: '#FFF', alignItems: 'center', justifyContent: 'center', ...ELEVATION.floating },
 });

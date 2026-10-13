@@ -48,7 +48,7 @@ test('describes every booking state with literal copy', () => {
   });
   assert.deepEqual(getBookingState({ status: 'outside-service-area', endpoint: 'destination' }), {
     canConfirm: false,
-    message: 'Destination is outside Indang and General Trias. Choose a point inside Indang or General Trias.',
+    message: 'Destination is outside Indang. Choose a point inside Indang.',
     ...NO_METRICS,
   });
   assert.deepEqual(getBookingState({ status: 'unsnappable', endpoint: 'pickup' }), {

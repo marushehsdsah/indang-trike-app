@@ -4,7 +4,7 @@ const model = () => import('../web/god-view/src/model.mjs');
 
 test('dashboard filters combine role with case-insensitive name and vehicle search', async () => {
   const { filterUsers } = await model();
-  const users = [{ id: 'd', role: 'driver', name: 'Ana Cruz', plate: 'ABC-123', toda: 'Gentri' }, { id: 'p', role: 'passenger', name: 'Ana Reyes' }];
+  const users = [{ id: 'd', role: 'driver', name: 'Ana Cruz', plate: 'ABC-123', toda: 'Indang Poblacion' }, { id: 'p', role: 'passenger', name: 'Ana Reyes' }];
   assert.deepEqual(filterUsers(users, 'driver', ' ana ').map(user => user.id), ['d']);
   assert.deepEqual(filterUsers(users, 'all', 'abc-123').map(user => user.id), ['d']);
   assert.deepEqual(filterUsers(users, 'all', 'missing'), []);

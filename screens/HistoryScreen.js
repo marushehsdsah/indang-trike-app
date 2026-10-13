@@ -6,6 +6,7 @@ import Button from '../components/ui/Button';
 import { Card, Badge, EmptyState, SegmentedControl } from '../components/ui/Surfaces';
 import BottomNav from '../components/BottomNav';
 import ConnectionBanner from '../components/ConnectionBanner';
+import RatingPrompt, { Stars } from '../components/RatingPrompt';
 import useAccountHistory from '../hooks/useAccountHistory';
 import { useApp } from '../context/AppContext';
 import { formatFare, STATUS_LABELS } from '../utils/rideState';
@@ -13,7 +14,8 @@ import { COLORS, SPACE, TYPE } from '../theme';
 
 export default function HistoryScreen({ navigation }) {
   const { user } = useApp(), { rides, loading, error, fromCache, reload } = useAccountHistory();
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState('all'), [rating, setRating] = useState(null);
+  const driver = user.role === 'driver';
   const visible = rides.filter((ride) => filter === 'all' || ride.status === filter);
   return <Screen>
     <AppHeader title={user.role === 'driver' ? 'Your trips' : 'Your rides'} />
@@ -30,8 +32,12 @@ export default function HistoryScreen({ navigation }) {
           <Text style={[TYPE.overline, styles.space]}>DROP-OFF</Text><Text style={TYPE.body}>{ride.trip.dropoff.name}</Text>
           <View style={[styles.row, styles.space]}>
             <Text style={[TYPE.subheading, { flex: 1 }]}>{ride.status === 'completed' ? formatFare(ride.fare) : 'No fare collected'}</Text>
-            {user.role !== 'driver' && <Button label="Rebook" size="sm" full={false} variant="secondary" onPress={() => navigation.navigate('Booking', { destination: ride.trip.dropoff })} />}
+            {ride.status === 'completed' && (ride.myRating ? <Stars value={ride.myRating.stars} size={16} />
+              : rating !== ride.id && <Button label="Rate" icon="star-outline" size="sm" full={false} variant="secondary" onPress={() => setRating(ride.id)} />)}
+            {!driver && <Button label="Rebook" size="sm" full={false} variant="secondary" onPress={() => navigation.navigate('Booking', { destination: ride.trip.dropoff })} />}
           </View>
+          {rating === ride.id && !ride.myRating && <RatingPrompt ride={ride} asDriver={driver} style={styles.space}
+            onSkip={() => setRating(null)} onRated={() => { setRating(null); reload(); }} />}
         </Card>)}
     </ScrollView>
     <BottomNav active="history" navigation={navigation} />

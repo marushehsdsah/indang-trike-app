@@ -40,6 +40,8 @@ export default function ProfileScreen({ navigation }) {
           <View style={[styles.row, { marginTop: SPACE.lg, justifyContent: 'space-between' }]}>
             <View><Text style={TYPE.subheading}>{stats?.trips ?? '—'}</Text><Text style={TYPE.caption}>Completed trips</Text></View>
             <View><Text style={TYPE.subheading}>{stats ? formatFare(stats.totalFare) : '—'}</Text><Text style={TYPE.caption}>{user.role === 'driver' ? 'Cash fares earned' : 'Trip fares'}</Text></View>
+            <View><Text style={TYPE.subheading}>{user.rating?.average ? `★ ${user.rating.average.toFixed(1)}` : '—'}</Text>
+              <Text style={TYPE.caption}>{user.rating?.count ? `Rating · ${user.rating.count} trip${user.rating.count === 1 ? '' : 's'}` : 'No ratings yet'}</Text></View>
           </View>
         </Card>
         <Card style={styles.section}>

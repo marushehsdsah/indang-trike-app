@@ -13,7 +13,6 @@ const { SPATIAL_CELL_SIZE_DEGREES, getSpatialCellKey, validateRoadGraph } = requ
 const { getRoadSpeedKph, getWayDirection, isRoutableWay } = require('../utils/roadRules');
 
 const DEFAULT_MUNICIPALITY_PATHS = [
-  path.join(__dirname, '../assets/geo/general-trias-municipality.json'),
   path.join(__dirname, '../assets/geo/indang-municipality.json'),
 ];
 const USAGE = 'Usage: node scripts/build-road-graph.js --input <overpass.json> --output <graph.json> ' +
