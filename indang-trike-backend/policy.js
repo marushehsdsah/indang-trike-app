@@ -1,4 +1,4 @@
-const { normalizePhilippinePhone } = require('../utils/registration');
+const { normalizePhilippinePhone, sanitizeName } = require('../utils/registration');
 const { SERVICE_AREA_EITHER, getMunicipalityAt, isInIndangServiceArea } = require('../data/indangMap');
 const { getRoadGraph } = require('../data/roadNetwork');
 const { resolveBookingRoute, createBookingPayload } = require('../utils/bookingRoute');
@@ -12,6 +12,7 @@ function cleanText(value, max = 80) { return typeof value === 'string' ? value.t
 function profileFields(body, role) {
   const firstName = cleanText(body.firstName), lastName = cleanText(body.lastName), email = cleanText(body.email, 254).toLowerCase();
   requireValue(firstName && lastName, 400, 'First and last names are required.');
+  requireValue(sanitizeName(firstName) === firstName && sanitizeName(lastName) === lastName, 400, 'Names can only contain letters and spaces.');
   requireValue(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 400, 'Enter a valid email address.');
   const fields = { firstName, lastName, email };
   if (role === 'driver') {

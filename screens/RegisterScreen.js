@@ -12,7 +12,7 @@ import { SegmentedControl } from '../components/ui/Surfaces';
 import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
 import { SERVICE_AREA_NAME } from '../data/indangMap';
 import { successFeedback, warningFeedback } from '../utils/feedback';
-import { getApiBaseUrl, submitRegistration } from '../utils/registration';
+import { getApiBaseUrl, sanitizeName, submitRegistration } from '../utils/registration';
 
 const API_BASE_URL = getApiBaseUrl({
   configuredUrl: process.env.EXPO_PUBLIC_API_URL,
@@ -89,7 +89,7 @@ export default function RegisterScreen({ navigation }) {
               autoCapitalize="words"
               textContentType="givenName"
               value={firstName}
-              onChangeText={setFirstName}
+              onChangeText={(text) => setFirstName(sanitizeName(text))}
               style={styles.nameField}
             />
             <Field
@@ -98,7 +98,7 @@ export default function RegisterScreen({ navigation }) {
               autoCapitalize="words"
               textContentType="familyName"
               value={lastName}
-              onChangeText={setLastName}
+              onChangeText={(text) => setLastName(sanitizeName(text))}
               style={[styles.nameField, styles.nameFieldLast]}
             />
           </View>

@@ -40,7 +40,10 @@ async function main() {
     await account('09179999991', 'passenger', 'Admin');
     const driver = await account('09179999992', 'driver', 'Alex');
     const passenger = await account('09179999993', 'passenger', 'Bea');
-    const missing = await account('09179999994', 'passenger', '<img src=x onerror=alert(1)>');
+    const missing = await account('09179999994', 'passenger', 'Missing');
+    // Registration rejects symbols in names, so plant the unsafe name directly to
+    // keep checking that God view escapes names saved before that rule existed.
+    await backend.models.User.updateOne({ phone: '+639179999994' }, { firstName: '<img src=x onerror=alert(1)>' });
     await connect(driver); await connect(passenger); const missingSocket = await connect(missing);
     const fix = { ...DEFAULT_TRIP.pickup.coordinate, timestamp: Date.now(), accuracy: 5 };
     await request('/driver/location', fix, driver.token);

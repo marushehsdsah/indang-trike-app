@@ -459,3 +459,12 @@ test('an assigned ride survives server restart and expires authentication by ser
   now += 8 * 24 * 3600000;
   assert.equal((await request('/state', p.token)).status, 401);
 });
+
+test('names with symbols are rejected at registration and profile update', async () => {
+  const bad = await request('/register', null, { phone: `0917${sequence++}`, password: 'strong-password', firstName: 'Juan1', lastName: 'Cruz', email: `${sequence}@example.com`, role: 'passenger' });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.error ?? bad.body.message, 'Names can only contain letters and spaces.');
+  const p = await account();
+  assert.equal((await request('/me', p.token, { firstName: 'Juan', lastName: '<b>Cruz</b>', email: 'juan@example.com' }, 'PATCH')).status, 400);
+  assert.equal((await request('/me', p.token, { firstName: 'Peña', lastName: 'Dela Cruz', email: 'juan@example.com' }, 'PATCH')).status, 200);
+});

@@ -54,12 +54,14 @@ export default function LoginScreen({ navigation }) {
               <Field
                 label="Mobile number"
                 icon="phone"
-                placeholder="0912 345 6789"
-                keyboardType="phone-pad"
+                placeholder="09123456789"
+                keyboardType="number-pad"
+                textContentType="telephoneNumber"
                 autoCapitalize="none"
                 autoCorrect={false}
+                maxLength={11}
                 value={account}
-                onChangeText={setAccount}
+                onChangeText={(text) => setAccount(text.replace(/\D/g, '').slice(0, 11))}
               />
               <Field
                 label="Password"

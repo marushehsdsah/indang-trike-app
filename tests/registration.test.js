@@ -16,6 +16,7 @@ function loadRegistrationModule() {
 
 const {
   getApiBaseUrl,
+  sanitizeName,
   submitRegistration,
   validateRegistration,
 } = loadRegistrationModule();
@@ -93,6 +94,14 @@ test('requires every displayed field and acceptance of the terms', () => {
   assert.equal(validateRegistration?.({ ...validForm, phone: '123' }), 'Enter a valid Philippine mobile number.');
   assert.equal(validateRegistration?.({ ...validForm, password: 'short' }), 'Password must be at least 8 characters.');
   assert.equal(validateRegistration?.({ ...validForm, acceptedTerms: false }), 'You must accept the Terms of Service and Privacy Policy.');
+});
+
+test('names accept letters and spaces only', () => {
+  assert.equal(sanitizeName?.('Juan123!@#'), 'Juan');
+  assert.equal(sanitizeName?.('Dela Cruz'), 'Dela Cruz');
+  assert.equal(sanitizeName?.('Peñafrancia'), 'Peñafrancia');
+  assert.equal(validateRegistration?.({ ...validForm, firstName: 'Juan$' }), 'Names can only contain letters and spaces.');
+  assert.equal(validateRegistration?.({ ...validForm, lastName: 'Dela_Cruz' }), 'Names can only contain letters and spaces.');
 });
 
 test('surfaces the backend error when registration is rejected', async () => {

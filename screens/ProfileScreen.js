@@ -11,6 +11,7 @@ import OfflineMapCard from '../components/OfflineMapCard';
 import { useApp } from '../context/AppContext';
 import useAccountHistory from '../hooks/useAccountHistory';
 import { formatFare, userName } from '../utils/rideState';
+import { sanitizeName } from '../utils/registration';
 import { COLORS, SPACE, TYPE } from '../theme';
 
 export default function ProfileScreen({ navigation }) {
@@ -19,7 +20,7 @@ export default function ProfileScreen({ navigation }) {
   const [form, setForm] = useState({});
   useEffect(() => { setForm({ firstName: user.firstName, lastName: user.lastName, email: user.email, plate: user.plate || '', toda: user.toda || '', capacity: String(user.capacity || 4) }); },
     [user.id, user.firstName, user.lastName, user.email, user.plate, user.toda, user.capacity]);
-  const field = (key) => ({ value: form[key] || '', onChangeText: (value) => setForm((previous) => ({ ...previous, [key]: value })) });
+  const field = (key, clean = (value) => value) => ({ value: form[key] || '', onChangeText: (value) => setForm((previous) => ({ ...previous, [key]: clean(value) })) });
   const save = async () => {
     if (busy) return;
     setBusy(true);
@@ -47,8 +48,8 @@ export default function ProfileScreen({ navigation }) {
         <Card style={styles.section}>
           {!user.profileComplete && <Text style={[TYPE.body, { marginBottom: SPACE.lg }]}>Complete your profile to start using IndangGO.</Text>}
           {editing ? <>
-            <Field label="First name" {...field('firstName')} maxLength={80} />
-            <Field label="Last name" {...field('lastName')} maxLength={80} />
+            <Field label="First name" {...field('firstName', sanitizeName)} maxLength={80} />
+            <Field label="Last name" {...field('lastName', sanitizeName)} maxLength={80} />
             <Field label="Email" {...field('email')} autoCapitalize="none" keyboardType="email-address" />
             {user.role === 'driver' && <>
               <Field label="Vehicle plate" {...field('plate')} autoCapitalize="characters" maxLength={24} />
