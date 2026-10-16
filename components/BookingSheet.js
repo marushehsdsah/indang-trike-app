@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Button from './ui/Button';
 import { Sheet } from './ui/Surfaces';
 import { MAX_PASSENGERS, MIN_PASSENGERS } from '../utils/bookingRoute';
 import { COLORS, HIT_SLOP, RADIUS, SPACE, TYPE } from '../theme';
 import { selectionFeedback } from '../utils/feedback';
+import { formatFare } from '../utils/rideState';
 
 const NO_METRIC = '—';
 
@@ -37,6 +38,10 @@ export default function BookingSheet({
   passengers,
   note,
   fare,
+  fareLabel = 'FLAT',
+  // The taripa areas of a stop whose barangay has several fares (quoteTrip's `choice`).
+  fareChoice = null,
+  onFareAreaChange,
   onPassengersChange,
   onNoteChange,
   onConfirm,
@@ -95,9 +100,35 @@ export default function BookingSheet({
         </View>
         <View style={styles.fareBlock}>
           <Text style={TYPE.subheading}>{fare}</Text>
-          <Text style={[TYPE.overline, styles.fareLabel]}>FLAT</Text>
+          <Text style={[TYPE.overline, styles.fareLabel]}>{fareLabel}</Text>
         </View>
       </View>
+
+      {fareChoice && (
+        <View style={styles.areaBlock}>
+          <Text style={TYPE.caption}>
+            Which part of {fareChoice.barangay} is your {fareChoice.endpoint === 'pickup' ? 'pickup' : 'destination'}?
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.areaRow} keyboardShouldPersistTaps="handled">
+            {fareChoice.options.map((option) => {
+              const selected = option.id === fareChoice.selected;
+              return (
+                <Pressable
+                  key={option.id}
+                  onPress={() => { selectionFeedback(); onFareAreaChange?.(fareChoice.endpoint, option.id); }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${option.label}, ${formatFare(option.fare)}`}
+                  style={({ pressed }) => [styles.areaChip, selected && styles.areaChipSelected, pressed && styles.pressed]}
+                >
+                  <Text style={[TYPE.captionStrong, selected && styles.areaChipTextSelected]}>{option.label}</Text>
+                  <Text style={[TYPE.caption, selected && styles.areaChipTextSelected]}>{formatFare(option.fare)}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
 
       <View style={styles.controlRow}>
         <Text style={TYPE.body}>Passengers</Text>
@@ -176,6 +207,15 @@ const styles = StyleSheet.create({
   rideSub: { marginTop: 2 },
   fareBlock: { alignItems: 'flex-end' },
   fareLabel: { marginTop: 2 },
+
+  areaBlock: { marginTop: SPACE.md },
+  areaRow: { paddingTop: SPACE.sm },
+  areaChip: {
+    borderWidth: 1, borderColor: COLORS.line, borderRadius: RADIUS.pill,
+    paddingHorizontal: SPACE.md, paddingVertical: SPACE.xs + 2, marginRight: SPACE.sm,
+  },
+  areaChipSelected: { backgroundColor: COLORS.brand, borderColor: COLORS.brand },
+  areaChipTextSelected: { color: COLORS.onBrand },
 
   controlRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

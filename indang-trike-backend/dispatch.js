@@ -1,6 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const { ASSIGNED_STATUSES, GPS_MAX_AGE_MS, isFreshFix, rankDrivers, validateFix, nextRideStatus } = require('../utils/rideState');
 const { getMunicipalityAt } = require('../data/indangMap');
+const { findToda, todaServes } = require('../data/todaZones');
 const { HttpError, requireValue, publicUser, bookingFields, cleanText } = require('./policy');
 const { ratingSummary, validateRating } = require('../utils/rating');
 
@@ -32,7 +33,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
       ? passenger.location : null;
     return {
       id: String(result._id), status: result.status, version: result.version, trip: result.trip, route: result.route,
-      passengers: result.passengers, note: result.note, fare: result.fare,
+      passengers: result.passengers, note: result.note, fare: result.fare, fareDetails: result.fareDetails ?? null,
       driver: contact(driver, assigned), passenger: contact(passenger, assigned),
       driverLocation: assigned && driver?.location ? driver.location : null,
       driverConnected: assigned && driver ? connected(driver._id) : false,
@@ -82,8 +83,13 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
       // Drivers share GPS from anywhere, but only those in the pickup's town get
       // its offers, within that town's radius: the towns' roads do not connect.
       const town = getMunicipalityAt(ride.trip.pickup.coordinate);
+      // An Indang TODA's drivers serve only trips inside its barangays.
+      const inTodaScope = (user) => {
+        const toda = findToda(user.toda);
+        return !toda || todaServes(toda, ride.trip.pickup.coordinate, ride.trip.dropoff.coordinate);
+      };
       const candidates = rankDrivers(users.filter((user) => publicUser(user).profileComplete && user.locationAvailable &&
-        user.location && town && getMunicipalityAt(user.location) === town && !ride.attemptedDrivers.includes(String(user._id)))
+        user.location && town && getMunicipalityAt(user.location) === town && !ride.attemptedDrivers.includes(String(user._id)) && inTodaScope(user))
         .map((user) => ({ id: String(user._id), available: user.available, capacity: user.capacity, location: user.location, connected: connected(user._id), busy: slots.has(String(user._id)) })),
       ride.trip.pickup.coordinate, ride.passengers, clock(), options.radius ?? town?.matchRadiusMeters ?? 0);
       for (const candidate of candidates) {
@@ -106,7 +112,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     if (existing) return { ride: await view(existing, user._id), reused: true };
     requireValue(!await Ride.exists({ passengerId: String(user._id), active: true }), 409, 'You already have an active booking.');
     let ride;
-    try { ride = await Ride.create({ ...bookingFields(body), passengerId: String(user._id), fare: 45, searchExpiresAt: new Date(clock() + searchMs) }); }
+    try { ride = await Ride.create({ ...bookingFields(body, clock()), passengerId: String(user._id), searchExpiresAt: new Date(clock() + searchMs) }); }
     catch (error) { if (error.code === 11000) throw new HttpError(409, 'You already have an active booking.'); throw error; }
     await tickUnsafe(); notify(user._id);
     return { ride: await view(await Ride.findById(ride._id), user._id), reused: false };

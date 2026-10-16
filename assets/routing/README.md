@@ -27,9 +27,22 @@ response is a build input and is not committed; the generated graph is.
 
 | Nodes | Directed edges | Places | Bytes |
 | ---: | ---: | ---: | ---: |
-| 11,380 | 23,222 | 458 | 2,418,383 |
+| 11,380 | 23,222 | 608 | 2,450,263 |
 
-Every place carries its `town`, `Indang`.
+Every place carries its `town`, `Indang`, and a map `category` (food,
+shopping, education, health, worship, government, transport, leisure, lodging,
+landmark, services, area, or road; see `utils/placeCategories.js`). 73 places
+are named streets; the rest are establishments, landmarks, named buildings, and
+named areas such as subdivisions.
+
+## Places layer
+
+`--places assets/places/service-area-places.json` also writes the map's places
+layer: 496 points, every non-street place except barangay and other place
+names (the base map labels those), each with its `name`, `category`, map
+`color`, and `rank`: 149 landmarks (rank 1, drawn from zoom 14), 333 other
+establishments (rank 2, from zoom 16), and 14 named areas (rank 0, labels
+only). The God view draws it over the same base map.
 
 Indang's main road network holds 11,230 nodes. The rest are small fragments,
 mostly service roads whose connections lie outside the town or are unmapped. A
@@ -48,6 +61,11 @@ builder does. Four road names were used in both towns (Acacia Road, Bonifacio
 Street, Ilang-ilang Street, Sampaguita Street), and the builder had placed each
 name's one search point in General Trias; those points were recomputed from
 Indang's roads, as an Indang-only build would.
+
+On 2026-10-16 the places were replaced by the Indang places of the categorised
+2026-10-02 snapshot (`sourceTimestamp`), keeping the same roads (the two
+snapshots' Indang roads are identical) and the four recomputed street points
+above, and the places layer was cut to Indang the same way.
 
 ## Performance verification
 
@@ -86,14 +104,22 @@ default and 4.5 ms longest-route medians and 13.9 ms for 25 searches.
 ## Overpass query
 
 ```overpass
-[out:json][timeout:240];
+[out:json][timeout:300];
 (
   way["highway"](14.120982,120.810720,14.246597,120.929805);
   nwr["name"]["amenity"](14.120982,120.810720,14.246597,120.929805);
-  nwr["name"]["place"](14.120982,120.810720,14.246597,120.929805);
   nwr["name"]["shop"](14.120982,120.810720,14.246597,120.929805);
   nwr["name"]["tourism"](14.120982,120.810720,14.246597,120.929805);
   nwr["name"]["public_transport"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["place"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["leisure"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["historic"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["office"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["healthcare"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["craft"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["man_made"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["building"](14.120982,120.810720,14.246597,120.929805);
+  nwr["name"]["landuse"](14.120982,120.810720,14.246597,120.929805);
 );
 (._;>;);
 out body;
@@ -112,7 +138,8 @@ curl --fail --retry 3 -A "IndangGO-road-graph-builder/1.0" \
   --data-urlencode data@/tmp/service-area-overpass.query \
   https://overpass-api.de/api/interpreter --output /tmp/service-area-overpass.json
 node scripts/build-road-graph.js --input /tmp/service-area-overpass.json \
-  --output assets/routing/service-area-road-graph.json
+  --output assets/routing/service-area-road-graph.json \
+  --places assets/places/service-area-places.json
 npm test
 ```
 
@@ -160,9 +187,15 @@ and re-run the tests whenever you rebuild.
 8. Indexes nodes in 0.005° grid cells (`"<floor(lat/0.005)>:<floor(lon/0.005)>"`)
    for nearest-road snapping.
 9. Extracts named places tagged `amenity`, `shop`, `tourism`,
-   `public_transport`, or `place` (area and relation centroids), plus one
-   on-road point per named routable road, all inside the towns. Each place
-   records its `town` (the boundary feature's `city_name`).
+   `public_transport`, `healthcare`, `leisure`, `historic`, `office`, `craft`,
+   `man_made`, `place`, `landuse`, or `building` (the first present names the
+   kind; area and relation centroids), plus one on-road point per named
+   routable road, all inside the towns. A bare `yes` uses the tag as the kind
+   (`office=yes` is "office"), and named land use is an area
+   (`landuse=residential` is "residential_area", usually a subdivision). Named
+   homes (`building=house`, `terrace`, ...) and names that are only an address
+   code ("Block 15", "B4 L43", a bare "Phase 7") are skipped. Each place
+   records its `town` (the boundary feature's `city_name`) and `category`.
 
 Node coordinates are rounded to six decimal places (about 0.1 m). Output is
 deterministic: the same snapshot always produces byte-identical JSON.

@@ -4,6 +4,7 @@ const { randomUUID } = require('node:crypto');
 const { io } = require('socket.io-client');
 const { createBackend } = require('../indang-trike-backend/app');
 const { DEFAULT_TRIP } = require('../data/indangMap');
+const { fareDetails, quoteTrip } = require('../data/fares');
 
 let backend, base, sequence = 1000000;
 let now = Date.now();
@@ -80,6 +81,10 @@ test('the separate God view website may call the API, but every overview needs a
   const ordinary = await account();
   assert.equal((await request('/admin/overview', ordinary.token)).status, 403);
   const admin = await account('passenger', adminPhone);
+  assert.equal((await request('/admin/map', ordinary.token)).status, 403);
+  const map = await request('/admin/map', admin.token);
+  assert.equal(map.body.boundary.features.length, 1, 'Indang');
+  assert.ok(map.body.places.features.length > 400, 'the same establishments and landmarks the app draws');
   const initial = await request('/admin/overview', admin.token);
   assert.equal(initial.status, 200);
   assert.equal(initial.body.users.some(item => item.id === admin.user.id), false, 'dashboard login is not mobile presence');
@@ -137,7 +142,9 @@ test('an Indang pickup is offered only to Indang drivers within Indang\'s 5 km r
     assert.equal((await request('/driver/location', drivers[name].token, { ...fix(), ...coordinate })).status, 200);
     assert.equal((await request('/driver/availability', drivers[name].token, { available: true })).status, 200);
   }
-  const booked = await request('/rides', passenger.token, { trip, passengers: 1, note: '', idempotencyKey: randomUUID() });
+  // Mataas na Lupa has three fare areas on the taripa; the rider names one.
+  const booked = await request('/rides', passenger.token, { trip, passengers: 1, note: '', idempotencyKey: randomUUID(),
+    fareAreas: { pickup: 'mataas-na-lupa-metrogate' } });
   assert.equal(booked.status, 201, JSON.stringify(booked.body));
   const rideId = booked.body.ride.id;
   assert.equal((await state(drivers.cvsuMain)).offer?.id, rideId, 'the nearest Indang driver is offered');
@@ -203,6 +210,41 @@ test('a southern Indang pickup reaches a driver waiting in the town centre', asy
   await request('/driver/availability', driver.token, { available: false });
 });
 
+test('an Indang TODA driver is offered only trips inside its TODA\'s barangays', async () => {
+  // PCHTI-TODA serves Pulo, Carasuchi, Harasan and Tambo Ilaya (TODAs_coordinates.xlsx).
+  const place = (name, latitude, longitude) => ({ name, coordinate: { latitude, longitude } });
+  const pulo = place('Pulo Barangay Hall', 14.16990, 120.87269), harasan = place('Barangay Harasan', 14.16053, 120.87006);
+  const poblacion = place('Poblacion', 14.19558, 120.87956);
+  const phone = `0917${sequence++}`;
+  const registered = await request('/register', null, { phone, password: 'strong-password', firstName: 'Pulo', lastName: 'Driver',
+    email: `${sequence}@example.com`, role: 'driver', plate: 'PCH-1', toda: 'pchti toda', capacity: 4 });
+  assert.equal(registered.status, 201, JSON.stringify(registered.body));
+  assert.equal(registered.body.user.toda, 'PCHTI-TODA', 'stored under the official name');
+  const pchti = (await request('/login', null, { phone, password: 'strong-password' })).body;
+  const unzoned = await account('driver'); // "Test TODA": not an Indang TODA, so no barangay limit
+  for (const [driver, spot] of [[pchti, pulo], [unzoned, harasan]]) {
+    await connect(driver.token);
+    assert.equal((await request('/driver/location', driver.token, { ...fix(), ...spot.coordinate })).status, 200);
+    assert.equal((await request('/driver/availability', driver.token, { available: true })).status, 200);
+  }
+  const book = async (dropoff) => {
+    const passenger = await account();
+    const booked = await request('/rides', passenger.token, { trip: { pickup: pulo, dropoff }, passengers: 1, note: '', idempotencyKey: randomUUID() });
+    assert.equal(booked.status, 201, JSON.stringify(booked.body));
+    return { passenger, rideId: booked.body.ride.id };
+  };
+
+  const inside = await book(harasan);
+  assert.equal((await state(pchti)).offer?.id, inside.rideId, 'Pulo to Harasan: the nearest driver, from PCHTI-TODA');
+  await action(inside.passenger, inside.rideId, 'cancel');
+
+  const leaving = await book(poblacion);
+  assert.equal((await state(pchti)).offer, null, 'Pulo to Poblacion leaves PCHTI-TODA\'s barangays');
+  assert.equal((await state(unzoned)).offer?.id, leaving.rideId, 'a driver without an Indang TODA still gets it');
+  await action(leaving.passenger, leaving.rideId, 'cancel');
+  for (const driver of [pchti, unzoned]) await request('/driver/availability', driver.token, { available: false });
+});
+
 test('auth validates credentials, returns stored identity, rejects foreign roles and revokes sessions', async () => {
   const passenger = await account();
   assert.equal(passenger.user.firstName, 'Test');
@@ -221,6 +263,9 @@ test('real passenger/driver flow persists exclusive assignment, authorized actio
   const booking = await book(passenger);
   assert.equal(booking.status, 201);
   const ride = booking.body.ride;
+  // The server prices the default trip from the taripa at its own clock (day or night).
+  const fare = fareDetails(quoteTrip({ pickup: DEFAULT_TRIP.pickup.coordinate, dropoff: DEFAULT_TRIP.dropoff.coordinate, at: now })).total;
+  assert.equal(ride.fare, fare);
   const offer = (await state(driver)).offer;
   assert.equal(offer.id, ride.id);
   assert.equal(offer.passenger.phone, undefined, 'contacts are private until acceptance');
@@ -234,8 +279,8 @@ test('real passenger/driver flow persists exclusive assignment, authorized actio
   assert.equal((await action(driver, ride.id, 'complete')).body.ride.status, 'completed');
   const history = (await request('/history', passenger.token)).body.rides;
   assert.equal(history[0].status, 'completed');
-  assert.equal(history[0].fare, 45);
-  assert.deepEqual((await request('/stats', driver.token)).body, { trips: 1, totalFare: 45, todayTrips: 1, todayFare: 45 });
+  assert.equal(history[0].fare, fare);
+  assert.deepEqual((await request('/stats', driver.token)).body, { trips: 1, totalFare: fare, todayTrips: 1, todayFare: fare });
   assert.equal((await state(driver)).ride, null);
   await request('/driver/availability', driver.token, { available: false });
 });
@@ -467,4 +512,36 @@ test('names with symbols are rejected at registration and profile update', async
   const p = await account();
   assert.equal((await request('/me', p.token, { firstName: 'Juan', lastName: '<b>Cruz</b>', email: 'juan@example.com' }, 'PATCH')).status, 400);
   assert.equal((await request('/me', p.token, { firstName: 'Peña', lastName: 'Dela Cruz', email: 'juan@example.com' }, 'PATCH')).status, 200);
+});
+
+test('an Indang booking is charged from the taripa by the server, not the app', async () => {
+  const passenger = await account();
+  const plaza = { name: 'Indang Town Plaza', coordinate: { latitude: 14.19576, longitude: 120.87849 } };
+  const bancod = { name: 'Bancod Elementary School', coordinate: { latitude: 14.21077, longitude: 120.87758 } };
+  const book = (extra) => request('/rides', passenger.token, { trip: { pickup: plaza, dropoff: bancod }, passengers: 3, note: '',
+    idempotencyKey: randomUUID(), fare: 1, ...extra });
+  // Bancod's puroks have different fares, so the rider must say which one.
+  const unchosen = await book({});
+  assert.equal(unchosen.status, 400);
+  assert.match(unchosen.body.error, /Choose which part of Bancod/);
+  // TARIPA, Purok III from Indang by day: ₱17 regular, ₱14 with a student/senior/PWD ID.
+  now = Date.UTC(2026, 9, 2, 2, 0); // 10:00 AM in the Philippines
+  const regular = await book({ fareType: 'regular', discounted: 1, fareAreas: { dropoff: 'bancod-purok-3' } });
+  assert.equal(regular.status, 201, JSON.stringify(regular.body));
+  assert.equal(regular.body.ride.fare, 2 * 17 + 14, 'the fare the app sent is ignored');
+  assert.equal(regular.body.ride.fareDetails.type, 'regular');
+  assert.equal((await action(passenger, regular.body.ride.id, 'cancel')).status, 200);
+  // A special trip at night: ₱39 for two passengers, ₱15 for the third.
+  now = Date.UTC(2026, 9, 2, 14, 0); // 10:00 PM in the Philippines
+  const special = await book({ fareType: 'special', fareAreas: { dropoff: 'bancod-purok-3' } });
+  assert.equal(special.status, 201, JSON.stringify(special.body));
+  assert.equal(special.body.ride.fare, 39 + 15);
+  assert.equal(special.body.ride.fareDetails.night, true);
+  assert.equal((await action(passenger, special.body.ride.id, 'cancel')).status, 200);
+  // Regular fares exist only on the Bancod routes.
+  const alulod = { name: 'Alulod Elementary School', coordinate: { latitude: 14.20623, longitude: 120.88944 } };
+  const noRegular = await request('/rides', passenger.token, { trip: { pickup: plaza, dropoff: alulod }, passengers: 1, note: '',
+    idempotencyKey: randomUUID(), fareType: 'regular', fareAreas: { dropoff: 'alulod-school' } });
+  assert.equal(noRegular.status, 400);
+  now = Date.now();
 });

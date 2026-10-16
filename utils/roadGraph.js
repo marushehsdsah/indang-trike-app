@@ -128,6 +128,7 @@ function validatePlaces(places) {
       typeof place.name === 'string' && place.name.trim() !== '' &&
       typeof place.kind === 'string' &&
       (place.town === undefined || typeof place.town === 'string') &&
+      (place.category === undefined || typeof place.category === 'string') &&
       isCoordinatePair(place.coordinate);
     if (!valid) fail(`place ${place?.id ?? '(unknown)'} must have id, name, kind, and coordinate`);
   }
@@ -143,19 +144,33 @@ function validateRoadGraph(data) {
   return data;
 }
 
+// The checks for a graph that was already validated in full when it was
+// built and tested (tests/roadGraphData.test.js): its shape, not every record.
+function checkTrustedRoadGraph(data) {
+  if (!isPlainObject(data)) fail('expected a graph object');
+  validateMetadata(data.metadata);
+  if (!isPlainObject(data.nodes) || !isPlainObject(data.edges) || !isPlainObject(data.spatialIndex) || !Array.isArray(data.places)) {
+    fail('expected nodes, edges, spatialIndex, and places');
+  }
+  return data;
+}
+
 // Validates bundled graph data once and exposes places in app coordinates.
-// Never throws: a broken graph must disable booking, not crash the screen.
-function loadRoadGraph(data) {
+// `trusted` skips the per-record checks, which take a phone most of a second,
+// for the graph bundled in a release build. Never throws: a broken graph must
+// disable booking, not crash the screen.
+function loadRoadGraph(data, { trusted = false } = {}) {
   try {
-    const graph = validateRoadGraph(data);
+    const graph = trusted ? checkTrustedRoadGraph(data) : validateRoadGraph(data);
     return {
       status: 'ready',
       graph: {
         ...graph,
-        places: graph.places.map(({ id, name, kind, town, coordinate }) => ({
+        places: graph.places.map(({ id, name, kind, category, town, coordinate }) => ({
           id,
           name,
           kind,
+          ...(category ? { category } : {}),
           ...(town ? { town } : {}),
           coordinate: toCoordinate(coordinate),
         })),

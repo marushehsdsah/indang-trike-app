@@ -114,6 +114,7 @@ function buildSteps(routePath) {
       steps.push({
         type: 'depart',
         instruction: describe('depart', group.roadName, getBearingOutOfStart(group.segments)),
+        compass: getCompassPoint(getBearingOutOfStart(group.segments)),
         roadName: group.roadName,
         distanceMeters: distance,
         startCoordinate: group.segments[0].fromCoordinate,

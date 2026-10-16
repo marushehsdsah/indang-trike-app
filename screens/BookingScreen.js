@@ -18,6 +18,7 @@ import { getRoadGraph, getSearchablePlaces } from '../data/roadNetwork';
 import { createBookingPayload, getBookingState, resolveBookingRoute } from '../utils/bookingRoute';
 import { findNearestRoadNode, getRoadNameAtNode } from '../utils/roadGraph';
 import { searchPlaces } from '../utils/placeSearch';
+import { fareDetails, quoteTrip } from '../data/fares';
 import { COLORS, ELEVATION, HIT_SLOP, RADIUS, SPACE, TYPE } from '../theme';
 
 // Lets the "calculating" state paint before A* occupies the JS thread.
@@ -79,7 +80,7 @@ function LocationRow({ label, place, active, isPickup, onPress, onPinPress }) {
 
 export default function BookingScreen({ navigation, route: screenRoute }) {
   const params = screenRoute?.params;
-  const { bookRide, ride: activeRide, config, connected, online, error: connectionError } = useApp();
+  const { bookRide, ride: activeRide, config, connected, online, error: connectionError, serverOffset } = useApp();
   const [pickup, setPickup] = useState(null);
   const [destination, setDestination] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -92,6 +93,8 @@ export default function BookingScreen({ navigation, route: screenRoute }) {
   const [routeResult, setRouteResult] = useState({ status: 'calculating' });
   const [passengers, setPassengers] = useState(1);
   const [note, setNote] = useState('');
+  // Which taripa area each stop is in, when its barangay has several fares.
+  const [fareAreas, setFareAreas] = useState({});
   // Transient, non-blocking messages (location fallback, outside-area taps).
   const [notice, setNotice] = useState(null);
 
@@ -149,12 +152,27 @@ export default function BookingScreen({ navigation, route: screenRoute }) {
     return () => clearTimeout(timer);
   }, [pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude]);
 
+  // A choice belongs to one stop: moving that stop clears it.
+  useEffect(() => setFareAreas(({ dropoff }) => (dropoff ? { dropoff } : {})), [pickupLatitude, pickupLongitude]);
+  useEffect(() => setFareAreas(({ pickup: chosen }) => (chosen ? { pickup: chosen } : {})), [destinationLatitude, destinationLongitude]);
+
+  // The taripa fare (data/fares.js) as a preview; the server charges the same
+  // table with its own clock when the ride is booked.
+  const quote = useMemo(() => (pickup && destination ? quoteTrip({
+    pickup: pickup.coordinate, dropoff: destination.coordinate, at: Date.now() + (serverOffset || 0), areas: fareAreas,
+  }) : null), [pickup, destination, fareAreas, serverOffset]);
+  const fareTotal = quote && !quote.choose ? fareDetails(quote, { passengers }).total : null;
+  const fareChoice = quote?.choice ?? null;
+  const chooseAreaMessage = quote?.choose
+    ? `Choose which part of ${quote.choose.barangay} the ${quote.choose.endpoint === 'pickup' ? 'pickup' : 'destination'} is in.` : null;
+
   const routeState = getBookingState(routeResult, routeResult.details);
   // Live GPS keeps working outside Indang, but booking does not, even for a
   // pickup chosen inside Indang: no driver should wait for an absent rider.
   const bookingState = !online ? { ...routeState, canConfirm: false, message: OFFLINE_BOOKING_MESSAGE }
     : !connected || !config ? { ...routeState, canConfirm: false, message: connectionError || WAITING_FOR_SERVER }
-    : location.outsideServiceArea ? { ...routeState, canConfirm: false, message: RIDER_OUTSIDE_MESSAGE } : routeState;
+    : location.outsideServiceArea ? { ...routeState, canConfirm: false, message: RIDER_OUTSIDE_MESSAGE }
+    : routeState.canConfirm && chooseAreaMessage ? { ...routeState, canConfirm: false, message: chooseAreaMessage } : routeState;
   const route = routeResult.status === 'ok' ? routeResult.details : null;
   // Search lists the rider's own town first: the pickup's, or where GPS puts them.
   const townLatitude = pickupLatitude ?? location.pickup?.coordinate.latitude;
@@ -249,7 +267,7 @@ export default function BookingScreen({ navigation, route: screenRoute }) {
     setSubmitting(true);
     if (!bookingKeyRef.current) bookingKeyRef.current = `booking-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     try {
-      await bookRide({ ...createPayload(), idempotencyKey: bookingKeyRef.current });
+      await bookRide({ ...createPayload(), fareAreas, idempotencyKey: bookingKeyRef.current });
     } catch (failure) { Alert.alert('Unable to book', failure.message); }
     finally { setSubmitting(false); }
   };
@@ -372,7 +390,10 @@ export default function BookingScreen({ navigation, route: screenRoute }) {
           calculating={routeResult.status === 'calculating'}
           passengers={passengers}
           note={note}
-          fare={config ? formatFare(config.fare) : '—'}
+          fare={fareTotal !== null ? formatFare(fareTotal) : '—'}
+          fareLabel={quote?.flat != null ? 'FLAT' : quote?.night ? 'NIGHT TARIPA' : 'TARIPA'}
+          fareChoice={fareChoice}
+          onFareAreaChange={(endpoint, id) => setFareAreas((previous) => ({ ...previous, [endpoint]: id }))}
           submitting={submitting}
           onPassengersChange={setPassengers}
           onNoteChange={setNote}

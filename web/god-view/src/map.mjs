@@ -7,8 +7,24 @@ import { isLive, locationLabel, routeFeatures } from './model.mjs';
 const ROUTE_COLOR = ['match', ['get', 'kind'], 'requested', '#8461d4', 'approach', '#1b9776', '#2563eb'];
 const LINE = ['==', ['geometry-type'], 'LineString'];
 const MARKER_TEXT = { driver: 'D', passenger: 'P', trip: 'DP' };
+// Establishments, landmarks and named areas, drawn as in the app
+// (components/PlacesLayer.js): landmarks from zoom 14, everything else from 16.
+const rank = (value) => ['==', ['get', 'rank'], value];
+const DOT_PAINT = { 'circle-color': ['get', 'color'], 'circle-radius': ['case', rank(1), 5, 4], 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5 };
+const LABEL_LAYOUT = { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'], 'text-size': ['case', rank(1), 12, 11],
+  'text-anchor': 'top', 'text-offset': [0, 0.6], 'text-max-width': 9, 'symbol-sort-key': ['get', 'rank'] };
+const LABEL_PAINT = { 'text-color': ['get', 'color'], 'text-halo-color': '#ffffff', 'text-halo-width': 1.4 };
+const PLACE_LAYERS = [
+  { id: 'places-area-label', type: 'symbol', minzoom: 13, filter: rank(0),
+    layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Italic'], 'text-size': 12, 'text-max-width': 8 },
+    paint: { ...LABEL_PAINT, 'text-opacity': 0.85 } },
+  { id: 'places-landmark-dot', type: 'circle', minzoom: 14, filter: rank(1), paint: DOT_PAINT },
+  { id: 'places-dot', type: 'circle', minzoom: 16, filter: rank(2), paint: DOT_PAINT },
+  { id: 'places-landmark-label', type: 'symbol', minzoom: 14.5, filter: rank(1), layout: LABEL_LAYOUT, paint: LABEL_PAINT },
+  { id: 'places-label', type: 'symbol', minzoom: 16.5, filter: rank(2), layout: LABEL_LAYOUT, paint: LABEL_PAINT },
+];
 
-export function createFleetMap(container, area, boundary, onSelect, onError) {
+export function createFleetMap(container, area, boundary, places, onSelect, onError) {
   const map = new Map({ container, style: 'https://tiles.openfreemap.org/styles/positron',
     bounds: area.bounds, fitBoundsOptions: { padding: 60 }, attributionControl: false, maxPitch: 0 });
   const markers = new globalThis.Map();
@@ -25,6 +41,10 @@ export function createFleetMap(container, area, boundary, onSelect, onError) {
     map.addSource('service-area', { type: 'geojson', data: boundary });
     map.addLayer({ id: 'area-fill', type: 'fill', source: 'service-area', paint: { 'fill-color': '#16765b', 'fill-opacity': 0.045 } });
     map.addLayer({ id: 'area-border', type: 'line', source: 'service-area', paint: { 'line-color': '#168366', 'line-width': 2, 'line-opacity': 0.65, 'line-dasharray': [4, 3] } });
+    if (places) {
+      map.addSource('service-area-places', { type: 'geojson', data: places });
+      for (const layer of PLACE_LAYERS) map.addLayer({ ...layer, source: 'service-area-places' });
+    }
     map.addSource('ride-routes', { type: 'geojson', data: routeData });
     const round = { 'line-cap': 'round', 'line-join': 'round' };
     map.addLayer({ id: 'route-casing', type: 'line', source: 'ride-routes', filter: LINE,

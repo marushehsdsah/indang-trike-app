@@ -13,7 +13,7 @@ import { useApp } from '../context/AppContext';
 import useAccountHistory from '../hooks/useAccountHistory';
 import ConnectionBanner from '../components/ConnectionBanner';
 import Button from '../components/ui/Button';
-import { ACTIVE_STATUSES, formatFare, userName } from '../utils/rideState';
+import { ACTIVE_STATUSES, userName } from '../utils/rideState';
 
 // Tapping any of these opens booking with the destination search already
 // filled in, so the rider never types a whole place name. Keyed by town name
@@ -58,7 +58,7 @@ function greeting() {
 }
 
 export default function PassengerScreen({ navigation }) {
-  const { user, ride, config, gps } = useApp();
+  const { user, ride, gps } = useApp();
   const { rides } = useAccountHistory();
   const recent = rides.filter((item) => item.status === 'completed').slice(0, 3).map((item) => ({ id: item.id, title: item.trip.dropoff.name, subtitle: item.route.distanceLabel, query: item.trip.dropoff.name }));
   const active = ride && ACTIVE_STATUSES.includes(ride.status);
@@ -134,7 +134,7 @@ export default function PassengerScreen({ navigation }) {
             </View>
             <View style={styles.rideText}>
               <Text style={TYPE.subheading}>Standard Trike</Text>
-              <Text style={[TYPE.caption, styles.rideSub]}>Up to 4 passengers{config ? ` · ${formatFare(config.fare)} flat fare` : ''}</Text>
+              <Text style={[TYPE.caption, styles.rideSub]}>Up to 4 passengers · Indang taripa fares</Text>
             </View>
           </View>
           <Divider />
