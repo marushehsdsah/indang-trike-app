@@ -61,7 +61,7 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   app.patch('/api/me', async (req, res) => {
     const user = await dispatch.run(async () => {
       if (req.user.role === 'driver') requireValue(!await models.Ride.exists({ active: true, driverSlot: String(req.user._id) }), 409, 'Finish or decline your trip before editing vehicle details.');
-      return models.User.findByIdAndUpdate(req.user._id, { $set: profileFields(req.body, req.user.role || 'passenger') }, { returnDocument: 'after', runValidators: true });
+      return models.User.findByIdAndUpdate(req.user._id, { $set: profileFields(req.body, req.user.role || 'passenger', req.user) }, { returnDocument: 'after', runValidators: true });
     });
     dispatch.notify(req.user._id); res.json({ user: publicUser(user) });
   });

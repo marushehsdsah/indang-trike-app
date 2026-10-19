@@ -204,6 +204,25 @@ test('matching offers the nearest Indang driver inside the radius, then the next
   for (const driver of Object.values(drivers)) await request('/driver/availability', driver.token, { available: false });
 });
 
+test('only the TODA tester can change its TODA from the profile', async () => {
+  const profile = (who, toda) => ({ firstName: 'Test', lastName: 'Driver', email: who.user.email, plate: 'TEST-1', toda, capacity: 4 });
+  const driver = await account('driver');
+  const locked = await request('/me', driver.token, profile(driver, 'BITODA'), 'PATCH');
+  assert.equal(locked.status, 200, JSON.stringify(locked.body));
+  assert.equal(locked.body.user.toda, 'Test TODA', 'a driver keeps the TODA it signed up with');
+  assert.equal(locked.body.user.todaChoices, undefined);
+  const tester = await account('driver');
+  await backend.models.User.updateOne({ _id: tester.user.id }, { $set: { todaTester: true } });
+  const me = (await request('/me', tester.token)).body.user;
+  assert.ok(me.todaChoices.includes('BITODA') && me.todaChoices.includes('ALITODA'), 'the tester is offered every Indang TODA');
+  const switched = await request('/me', tester.token, profile(tester, 'alitoda'), 'PATCH');
+  assert.equal(switched.status, 200, JSON.stringify(switched.body));
+  assert.equal(switched.body.user.toda, 'ALITODA');
+  assert.equal((await request('/me', tester.token, profile(tester, 'Somewhere TODA'), 'PATCH')).status, 400, 'only an Indang TODA');
+  assert.equal((await request('/me', driver.token, { ...profile(driver, 'BITODA'), todaTester: true }, 'PATCH')).body.user.todaChoices, undefined,
+    'the API cannot grant the tester mark');
+});
+
 test('an Indang TODA driver is offered only trips inside its TODA\'s barangays', async () => {
   // PCHTI-TODA serves Pulo, Carasuchi, Harasan and Tambo Ilaya (TODAs_coordinates.xlsx).
   const place = (name, latitude, longitude) => ({ name, coordinate: { latitude, longitude } });

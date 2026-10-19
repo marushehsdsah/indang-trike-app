@@ -7,6 +7,9 @@ function createModels(connection) {
     firstName: { type: String, default: '' }, lastName: { type: String, default: '' }, email: { type: String, default: '' },
     role: { type: String, enum: ['passenger', 'driver'], default: 'passenger' },
     plate: String, toda: String, capacity: { type: Number, default: 4 },
+    // The one test driver who may switch TODAs from the profile, to check each
+    // TODA's zone. Set only by scripts/create-toda-tester.js, never by the API.
+    todaTester: { type: Boolean, default: false },
     available: { type: Boolean, default: false }, location: Schema.Types.Mixed,
     locationAvailable: { type: Boolean, default: false },
     // Running totals of the ratings this user has received; see utils/rating.js.

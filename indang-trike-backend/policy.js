@@ -1,7 +1,7 @@
 const { normalizePhilippinePhone, sanitizeName } = require('../utils/registration');
 const { SERVICE_AREA_EITHER, getMunicipalityAt, isInIndangServiceArea } = require('../data/indangMap');
 const { getRoadGraph } = require('../data/roadNetwork');
-const { findToda } = require('../data/todaZones');
+const { findToda, TODA_NAMES } = require('../data/todaZones');
 const { fareDetails, quoteTrip } = require('../data/fares');
 const { resolveBookingRoute, createBookingPayload } = require('../utils/bookingRoute');
 const { ratingSummary } = require('../utils/rating');
@@ -11,7 +11,8 @@ class HttpError extends Error {
 }
 function requireValue(condition, status, message) { if (!condition) throw new HttpError(status, message); }
 function cleanText(value, max = 80) { return typeof value === 'string' ? value.trim().slice(0, max) : ''; }
-function profileFields(body, role) {
+// current is the stored user when a profile is edited, absent at sign-up.
+function profileFields(body, role, current) {
   const firstName = cleanText(body.firstName), lastName = cleanText(body.lastName), email = cleanText(body.email, 254).toLowerCase();
   requireValue(firstName && lastName, 400, 'First and last names are required.');
   requireValue(sanitizeName(firstName) === firstName && sanitizeName(lastName) === lastName, 400, 'Names can only contain letters and spaces.');
@@ -21,6 +22,10 @@ function profileFields(body, role) {
     // An Indang TODA is stored under its official name, which ties the driver to its barangays.
     fields.plate = cleanText(body.plate, 24).toUpperCase(); fields.toda = cleanText(body.toda, 80); fields.capacity = body.capacity;
     fields.toda = findToda(fields.toda)?.name ?? fields.toda;
+    // A driver keeps the TODA it signed up with; only the TODA tester may
+    // switch, and only between Indang's TODAs.
+    if (current?.todaTester) requireValue(findToda(fields.toda), 400, "Choose one of Indang's TODAs.");
+    else if (current?.toda) fields.toda = current.toda;
     requireValue(fields.plate && fields.toda && Number.isInteger(fields.capacity) && fields.capacity >= 1 && fields.capacity <= 4, 400, 'Enter your plate, TODA, and capacity (1–4).');
   }
   return fields;
@@ -32,6 +37,8 @@ function publicUser(user) {
     email: user.email || '', role: user.role || 'passenger', plate: user.plate, toda: user.toda, capacity: user.capacity,
     available: Boolean(user.available), createdAt: user.createdAt, rating: ratingSummary(user),
     profileComplete: Boolean(user.firstName && user.lastName && user.email && (user.role !== 'driver' || (user.plate && user.toda && user.capacity))),
+    // Only the TODA tester may pick another TODA in the profile.
+    ...(user.role === 'driver' && user.todaTester ? { todaChoices: TODA_NAMES } : {}),
   };
 }
 // The fare is set here from the taripa (data/fares.js) and the server's own

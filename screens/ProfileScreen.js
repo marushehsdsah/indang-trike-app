@@ -76,7 +76,11 @@ export default function ProfileScreen({ navigation }) {
           <Field label={t('field.email')} {...field('email')} autoCapitalize="none" keyboardType="email-address" />
           {driver && <>
             <Field label={t('field.plate')} {...field('plate')} autoCapitalize="characters" maxLength={24} />
-            <TodaPicker value={form.toda || ''} onChange={(value) => setForm((previous) => ({ ...previous, toda: value }))} />
+            {/* A driver keeps the TODA it signed up with; only the TODA tester picks another. */}
+            {user.toda && !user.todaChoices ? <View style={styles.todaLocked}>
+              <Text style={[TYPE.label, styles.todaLabel]}>TODA</Text>
+              <Text style={TYPE.body}>{user.toda}</Text>
+            </View> : <TodaPicker value={form.toda || ''} onChange={(value) => setForm((previous) => ({ ...previous, toda: value }))} />}
             <Field label={t('field.capacity')} {...field('capacity')} keyboardType="number-pad" maxLength={1} />
           </>}
           <Button label={t('profile.save')} variant="brand" loading={busy} onPress={save} />
@@ -120,5 +124,6 @@ const styles = StyleSheet.create({
   incomplete: { marginBottom: SPACE.lg },
   vehicle: { flexDirection: 'row', alignItems: 'center', gap: SPACE.md, marginTop: SPACE.md },
   below: { marginTop: SPACE.md },
+  todaLocked: { marginBottom: SPACE.lg }, todaLabel: { marginBottom: SPACE.xs },
   privacy: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACE.sm, marginVertical: SPACE.xl },
 });
