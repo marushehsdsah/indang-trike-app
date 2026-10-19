@@ -9,7 +9,8 @@ const { haversineDistance } = require('../utils/pathfinding');
 // passenger, with the student/senior/PWD discount). Every fare is [day, night].
 // The app shows the quote; the server recomputes it with its own clock.
 
-// The fare for a trip the taripa does not list (a stop with no listed area).
+// A stop the taripa does not list, or a pickup outside Indang: a flat fare
+// per trip.
 const FLAT_FARE = 45;
 const MANILA_OFFSET_MINUTES = 8 * 60;
 const { night: NIGHT, special: SPECIAL, poblacion: POBLACION, terminals: TERMINALS, cvsuOrigin: CVSU } = fareData;

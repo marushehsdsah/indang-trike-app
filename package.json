@@ -4,6 +4,7 @@
   "main": "index.js",
   "scripts": {
     "start": "expo start",
+    "dev": "node scripts/dev.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",

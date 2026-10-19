@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { OfflineManager } from '@maplibre/maplibre-react-native';
+import { fetch } from 'expo/fetch';
 import { INDANG_BOUNDS, SERVICE_AREA_NAME } from '../data/indangMap';
 import { MAP_TILE_SOURCE_URL, OFFLINE_MAP_STYLES } from '../components/mapStyles';
 import { OFFLINE_MAP_TAG, getWantedPacks, hasOfflineMap, planOfflineMap, summarizeProgress } from '../utils/offlineMapPlan';

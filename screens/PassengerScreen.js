@@ -35,7 +35,7 @@ const ROUTE_CALCULATION_DELAY_MS = 30;
 const NOTICE_MS = 6000;
 
 // Tapping one opens search already filled in, so the rider never types a whole
-// place name. Each town has its own; search lists the rider's town first.
+// place name. Keyed by town name (see MUNICIPALITIES).
 const SHORTCUTS = {
   Indang: [
     { label: 'shortcut.cvsuMain', icon: 'school-outline', query: 'Cavite State University' },
@@ -437,7 +437,7 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
                 <View style={styles.fareLine}>
                   <MaterialCommunityIcons name="rickshaw" size={20} color={COLORS.brand} />
                   <Text style={[TYPE.caption, styles.fareLineText]} numberOfLines={2}>
-                    {town === 'Indang' ? t('home.fareLineIndang', { max: MAX_PASSENGERS })
+                    {(town ?? MUNICIPALITIES[0].name) === 'Indang' ? t('home.fareLineIndang', { max: MAX_PASSENGERS })
                       : config ? t('home.fareLine', { fare: formatPeso(config.fare), max: MAX_PASSENGERS }) : t('home.fareLineNoFare', { max: MAX_PASSENGERS })}
                   </Text>
                 </View>

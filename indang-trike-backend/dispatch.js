@@ -1,7 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const { ASSIGNED_STATUSES, GPS_MAX_AGE_MS, isFreshFix, rankDrivers, validateFix, nextRideStatus } = require('../utils/rideState');
 const { getMunicipalityAt } = require('../data/indangMap');
-const { findToda, todaServes } = require('../data/todaZones');
+const { findToda, todaName, todaServes } = require('../data/todaZones');
 const { HttpError, requireValue, publicUser, bookingFields, cleanText } = require('./policy');
 const { ratingSummary, validateRating } = require('../utils/rating');
 
@@ -27,7 +27,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     const contact = (user, allowPhone) => user ? {
       id: String(user._id), firstName: user.firstName || '', lastName: user.lastName || '', rating: ratingSummary(user),
       ...(allowPhone ? { phone: user.phone } : {}),
-      ...(user.role === 'driver' ? { plate: user.plate, toda: user.toda, capacity: user.capacity } : {}),
+      ...(user.role === 'driver' ? { plate: user.plate, toda: todaName(user.toda), capacity: user.capacity } : {}),
     } : null;
     const assigned = ASSIGNED_STATUSES.includes(result.status);
     // Only a fix that was still fresh when the driver accepted belongs to this ride,

@@ -15,6 +15,8 @@ export default function Field({
   secure = false,
   style,
   inputStyle,
+  onFocus,
+  onBlur,
   ...inputProps
 }) {
   const { t } = useI18n();
@@ -36,8 +38,8 @@ export default function Field({
           style={[TYPE.body, styles.input, inputStyle]}
           placeholderTextColor={COLORS.inkMuted}
           secureTextEntry={secure && !revealed}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onFocus={(event) => { setFocused(true); onFocus?.(event); }}
+          onBlur={(event) => { setFocused(false); onBlur?.(event); }}
           {...inputProps}
         />
         {secure && (

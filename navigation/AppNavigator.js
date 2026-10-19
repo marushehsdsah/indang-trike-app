@@ -14,6 +14,7 @@ import NavigationScreen from '../screens/NavigationScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import DriverScreen from '../screens/DriverScreen';
+import AdminNavigator from './AdminNavigator';
 import { useApp } from '../context/AppContext';
 import { ACTIVE_STATUSES } from '../utils/rideState';
 import { preloadRoadGraph } from '../data/roadNetwork';
@@ -40,6 +41,7 @@ export default function AppNavigator() {
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Register" component={RegisterScreen} />
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+      <Stack.Screen name="Admin" component={AdminNavigator} />
       </> : <>
       {driver ? <Stack.Screen name="Driver" component={DriverScreen} /> : <>
       <Stack.Screen name="Passenger" component={PassengerScreen} />

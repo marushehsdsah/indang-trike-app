@@ -7,7 +7,7 @@ import { API_BASE_URL, requestApi } from '../services/api';
 import { clearSessionCache, readSessionCache, writeSessionCache } from '../services/sessionCache';
 import useLiveLocation from '../hooks/useLiveLocation';
 import { canOpenOffline, getSessionExpiry } from '../utils/offlineSession';
-import { ACTIVE_STATUSES, ASSIGNED_STATUSES, isFreshFix, mergeRide } from '../utils/rideState';
+import { ACTIVE_STATUSES, ASSIGNED_STATUSES, isFreshFix, mergeRide, toServerClock } from '../utils/rideState';
 
 const Context = createContext(null);
 const TOKEN_KEY = 'indanggo.session';
@@ -29,7 +29,7 @@ export function AppProvider({ children }) {
   // Pilot admins can locate connected users while their app is open. Driver
   // availability remains a separate choice controlling ride requests.
   const gps = useLiveLocation(Boolean(user) && foreground);
-  current.current = { user, ride, token, foreground, gps, connected };
+  current.current = { user, ride, token, foreground, gps, connected, serverOffset };
 
   const clearSession = useCallback(async () => {
     sessionGeneration.current += 1; tokenRef.current = null; configRef.current = null; expiresAtRef.current = null; persistedRef.current = null;
@@ -163,8 +163,8 @@ export function AppProvider({ children }) {
     if (gps.fix.timestamp <= lastPublish.current.timestamp || Date.now() - lastPublish.current.wall < interval) return;
     lastPublish.current = { timestamp: gps.fix.timestamp, wall: Date.now() };
     const generation = sessionGeneration.current;
-    request(driver ? '/driver/location' : '/passenger/location', gps.fix).catch((failure) => { if (generation === sessionGeneration.current) setError(failure.message); });
-  }, [gps.fix, gps.status, publishing, driver, activeRide, request]);
+    request(driver ? '/driver/location' : '/passenger/location', toServerClock(gps.fix, serverOffset)).catch((failure) => { if (generation === sessionGeneration.current) setError(failure.message); });
+  }, [gps.fix, gps.status, publishing, driver, activeRide, request, serverOffset]);
 
   useEffect(() => {
     if (!user || !foreground || !connected || !['inaccurate', 'stale', 'denied', 'approximate', 'disabled', 'unavailable'].includes(gps.status)) return;
@@ -181,7 +181,7 @@ export function AppProvider({ children }) {
       const fix = await current.current.gps.getCurrentFix();
       if (generation !== sessionGeneration.current) return;
       if (!current.current.foreground) throw new Error('Keep the app open to go online.');
-      await request('/driver/location', fix);
+      await request('/driver/location', toServerClock(fix, current.current.serverOffset));
     }
     if (generation !== sessionGeneration.current) return;
     const state = await request('/driver/availability', { available });

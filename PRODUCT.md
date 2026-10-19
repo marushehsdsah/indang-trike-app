@@ -21,9 +21,8 @@ in barangays with weak or no mobile data.
 
 ## Product Purpose
 
-IndangGO books a tricycle between two points in Indang, matches
-the passenger with a nearby driver of the right town (and, in Indang, the right
-TODA), and guides the trip along real roads. Success is a passenger getting a
+IndangGO books a tricycle between two points in Indang, matches the passenger
+with a nearby driver of the right TODA, and guides the trip along real roads. Success is a passenger getting a
 real driver quickly and both sides always knowing where the other is and what
 happens next.
 
@@ -31,14 +30,15 @@ happens next.
 
 Routing, place search, maps and the turn-by-turn route guide run on the phone
 from an offline OpenStreetMap road graph and map; no routing or geocoding API is
-called. Matching follows how tricycles actually operate locally: separate town
-networks and, in Indang, TODA barangay zones.
+called. Matching follows how tricycles actually operate locally: TODA barangay
+zones.
 
 ## Operating Context
 
-- Flat fare (₱45), paid in cash to the driver; up to 4 passengers per trike.
+- Fares follow Indang's municipal taripa (₱45 flat for a stop it does not
+  list), paid in cash to the driver; up to 4 passengers per trike.
 - Passenger flow: set pickup (GPS or map pin) and destination (offline search,
-  map pick, shortcuts by town), see the road route and fare, book, wait for a
+  map pick, shortcuts), see the road route and fare, book, wait for a
   driver, follow the driver, ride, arrive.
 - Driver flow: go online with fresh GPS, receive a timed offer (20 s), accept or
   decline, navigate to pickup with the route guide, arrive, start, complete.

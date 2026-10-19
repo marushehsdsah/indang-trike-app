@@ -7,8 +7,8 @@ const MIN_PASSENGERS = 1;
 const MAX_PASSENGERS = 4;
 const ENDPOINT_LABELS = { pickup: 'Pickup', destination: 'Destination' };
 const CALCULATING_MESSAGE = 'Finding the fastest road route…';
-// The towns' road networks do not connect, and each town's trikes serve it.
-const DIFFERENT_TOWNS_MESSAGE = `Pickup and destination must be in the same town. Trikes do not travel between ${SERVICE_AREA_NAME}.`;
+// Each town's trikes serve only that town (see MUNICIPALITIES).
+const DIFFERENT_TOWNS_MESSAGE = 'Pickup and destination must be in the same town. Trikes do not travel between towns.';
 
 function blocked(message) {
   return { canConfirm: false, message, distanceLabel: NO_METRIC, durationLabel: NO_METRIC };

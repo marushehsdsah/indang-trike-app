@@ -13,7 +13,8 @@ async function apiRequest(path, { baseUrl, token, body, method = body === undefi
     });
     try { data = await response.json(); } catch { data = {}; }
   } catch (cause) {
-    const error = new Error(cause.name === 'AbortError' ? 'IndangGO did not answer in time. If the server was asleep it can take a minute to start, so retry shortly.' : 'Could not connect to IndangGO. Check your connection and backend address.');
+    // expo/fetch reports an abort as a plain error, so ask the signal.
+    const error = new Error(controller.signal.aborted ? 'IndangGO did not answer in time. If the server was asleep it can take a minute to start, so retry shortly.' : 'Could not connect to IndangGO. Check your connection and backend address.');
     error.cause = cause; throw error;
   } finally { clearTimeout(timer); }
   if (!response.ok) {

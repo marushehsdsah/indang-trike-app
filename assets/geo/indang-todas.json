@@ -1,9 +1,7 @@
 {
   "source": "TODAs_coordinates.xlsx (COORDINATES and Notes sheets); barangay boundaries: assets/geo/indang-barangays.json",
   "rule": "A TODA serves the barangays the sheet names and those containing one of its \"Matched\" pins. \"review\" lists barangays only an approximate (\"Verify\") pin points to; they are not part of the zone until moved into \"barangays\".",
-  "uncovered": [
-    "Mahabangkahoy Lejos"
-  ],
+  "uncovered": [],
   "todas": [
     {
       "id": "bitoda",
@@ -150,38 +148,75 @@
       ]
     },
     {
-      "id": "itoda-pitoda",
-      "name": "ITODA PITODA",
+      "id": "itoda",
+      "name": "ITODA",
       "aliases": [
-        "ITODA",
-        "PITODA"
+        "ITODA PITODA"
       ],
       "barangays": [
-        "Tambo Ilaya",
-        "Tambo Malaki",
-        "Mataas na Lupa",
-        "Mahabangkahoy Cerca",
+        "Agus-us",
+        "Alulod",
+        "Banaba Cerca",
+        "Banaba Lejos",
+        "Bancod",
         "Barangay 1",
         "Barangay 2",
         "Barangay 3",
         "Barangay 4",
-        "Buna Cerca"
+        "Buna Cerca",
+        "Buna Lejos I",
+        "Buna Lejos II",
+        "Calumpang Cerca",
+        "Calumpang Lejos I",
+        "Carasuchi",
+        "Daine I",
+        "Daine II",
+        "Guyam Malaki",
+        "Guyam Munti",
+        "Harasan",
+        "Kayquit I",
+        "Kayquit II",
+        "Kayquit III",
+        "Kaytambog",
+        "Kaytapos",
+        "Limbon",
+        "Lumampong Balagbag",
+        "Lumampong Halayhay",
+        "Mahabangkahoy Cerca",
+        "Mahabangkahoy Lejos",
+        "Mataas na Lupa",
+        "Pulo",
+        "Tambo Balagbag",
+        "Tambo Ilaya",
+        "Tambo Kulit",
+        "Tambo Malaki"
       ],
-      "review": [
-        {
-          "barangay": "Mahabangkahoy Lejos",
-          "because": "BALAGBAG MAHABANG KAHOY (Verify pin)"
-        }
-      ],
+      "review": [],
       "places": [
         "TAMBO ILAYA",
         "TAMBO MALAKI",
         "MATAAS NA LUPA",
         "MAHABANG KAHOY CERCA",
         "BALAGBAG MAHABANG KAHOY",
-        "POBLACION 1, 2, 3, 4",
         "BUNA CERCA"
-      ]
+      ],
+      "note": "Serves all of Indang. Split from the sheet's \"ITODA PITODA\" on 2026-10-19; drivers saved under that name are ITODA."
+    },
+    {
+      "id": "pitoda",
+      "name": "PITODA",
+      "aliases": [],
+      "barangays": [
+        "Barangay 1",
+        "Barangay 2",
+        "Barangay 3",
+        "Barangay 4"
+      ],
+      "review": [],
+      "places": [
+        "POBLACION 1, 2, 3, 4"
+      ],
+      "note": "Serves only the Poblacion (Barangay 1-4). Split from the sheet's \"ITODA PITODA\" on 2026-10-19."
     },
     {
       "id": "biptoda",

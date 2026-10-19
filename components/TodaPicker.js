@@ -24,7 +24,8 @@ export default function TodaPicker({ value, onChange }) {
         ))}
         <Chip label={t('toda.other')} selected={other} onPress={() => { setOther(true); onChange(''); }} />
       </View>
-      {!other && matched && <Text style={[TYPE.caption, styles.hint]}>{t('toda.serves', { toda: matched.name, barangays: matched.barangays.join(', ') })}</Text>}
+      {!other && matched && <Text style={[TYPE.caption, styles.hint]}>{matched.wholeTown ? t('toda.servesAll', { toda: matched.name })
+        : t('toda.serves', { toda: matched.name, barangays: matched.barangays.join(', ') })}</Text>}
       {other && <Field label={t('toda.nameLabel')} placeholder={t('toda.namePlaceholder')} value={value} onChangeText={onChange} maxLength={80} style={styles.other} />}
     </View>
   );

@@ -14,7 +14,8 @@ const MUNICIPALITIES = [
   {
     name: 'Indang',
     polygons: createMapPolygons(indangBoundary),
-    // Indang is about 13 km across.
+    // Drivers within this straight-line distance of a pickup can be offered
+    // the ride. Indang is about 13 km across.
     matchRadiusMeters: 5000,
     defaultTrip: {
       pickup: {
@@ -40,7 +41,7 @@ const INDANG_BOUNDS = [southWest.longitude, southWest.latitude, northEast.longit
 // levels are one lower than Google's for the same scale (512 px tiles). The
 // camera can still pan past it, so a live location outside it can be shown.
 const INDANG_MIN_ZOOM = 10;
-// Map shapes as GeoJSON: everything outside Indang, greyed out, and its
+// Map shapes as GeoJSON: everything outside Indang, greyed out, and the town
 // boundary, outlined.
 const INDANG_MASK_SHAPE = toPolygonFeature(createOutsideMask(INDANG_POLYGONS, 1));
 const INDANG_BOUNDARY_SHAPE = { type: 'FeatureCollection', features: INDANG_POLYGONS.map(toPolygonFeature) };

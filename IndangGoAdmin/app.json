@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "Indang Go Admin",
+    "slug": "indang-go-admin",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#FFC229"
+    },
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {},
+    "web": {}
+  }
+}

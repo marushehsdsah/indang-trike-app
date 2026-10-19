@@ -13,7 +13,7 @@ const BANCOD_SCHOOL = at(14.21077, 120.87758);
 const CVSU = at(14.19782, 120.88149); // Kaytapos
 const PULO = at(14.16990, 120.87269);
 const BUNA_CERCA_JUNCTION = at(14.18569, 120.88727);
-const GENTRI_CITY_HALL = at(14.386264, 120.880802);
+const OUTSIDE_INDANG = at(14.386264, 120.880802); // General Trias City Hall
 // 2026-10-02 in Philippine time (UTC+8).
 const manila = (hours, minutes) => Date.UTC(2026, 9, 2, hours - 8, minutes);
 const DAY = manila(10, 0), NIGHT = manila(22, 0);
@@ -85,8 +85,8 @@ test('from the Buna Cerca junction to the Plaza is ₱25', () => {
   assert.equal(quoteTrip({ pickup: BUNA_CERCA_JUNCTION, dropoff: PLAZA, at: DAY }).special.fare, 25);
 });
 
-test('General Trias keeps its flat fare', () => {
-  const quote = quoteTrip({ pickup: GENTRI_CITY_HALL, dropoff: at(14.3852, 120.8806), at: DAY });
+test('a pickup outside Indang gets the flat fare, not a taripa fare', () => {
+  const quote = quoteTrip({ pickup: OUTSIDE_INDANG, dropoff: at(14.3852, 120.8806), at: DAY });
   assert.equal(quote.flat, FLAT_FARE);
   assert.equal(fareTotal(quote, { passengers: 4 }), FLAT_FARE);
 });

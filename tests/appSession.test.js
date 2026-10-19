@@ -54,6 +54,13 @@ test('booking sends only endpoints and booking fields, not route geometry', asyn
   } finally { await app.close(); }
 });
 
+// Published fixes are restamped on the server clock, which in the harness is a
+// few milliseconds off the phone's; otherwise they are the fix as measured.
+const asMeasured = (published, fix) => published.map(({ path, body }) => {
+  assert.ok(Math.abs(body.timestamp - fix.timestamp) < 1000, 'restamped only by the clock offset');
+  return { path, body: { ...body, timestamp: fix.timestamp } };
+});
+
 test('a passenger publishes foreground GPS before booking for the admin overview', async () => {
   const published = [];
   const fix = { latitude: 14.1978, longitude: 120.8816, accuracy: 8, timestamp: Date.now(), heading: null, speed: null };
@@ -64,11 +71,11 @@ test('a passenger publishes foreground GPS before booking for the admin overview
     app.snapshot.ride = { id: 'ride-one', version: 1, status: 'searching' };
     await renderer.act(async () => { await app.value.signIn('09170000000', 'password'); });
     await flush();
-    assert.deepEqual(published, [{ path: '/passenger/location', body: fix }], 'pilot admins can locate a waiting passenger');
+    assert.deepEqual(asMeasured(published, fix), [{ path: '/passenger/location', body: fix }], 'pilot admins can locate a waiting passenger');
     app.snapshot.ride = { id: 'ride-one', version: 2, status: 'accepted' };
     await renderer.act(async () => { await app.value.refresh(); });
     await flush();
-    assert.deepEqual(published, [{ path: '/passenger/location', body: fix }]);
+    assert.deepEqual(asMeasured(published, fix), [{ path: '/passenger/location', body: fix }]);
   } finally { await app.close(); }
 });
 
@@ -81,7 +88,7 @@ test('an unavailable driver publishes foreground GPS without going available', a
   try {
     await renderer.act(async () => { await app.value.signIn('09170000000', 'password'); });
     await flush();
-    assert.deepEqual(published, [{ path: '/driver/location', body: fix }]);
+    assert.deepEqual(asMeasured(published, fix), [{ path: '/driver/location', body: fix }]);
     assert.equal(app.value.user.available, false);
     await renderer.act(async () => { app.stateEvents.emit('change', 'background'); });
     app.location.current = { fix: { ...fix, timestamp: Date.now() + 1000 }, status: 'ready' };

@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { parseAdminPhones, buildOverview } = require('../indang-trike-backend/admin');
+const { profileFields, publicUser } = require('../indang-trike-backend/policy');
 const { DEFAULT_TRIP } = require('../data/indangMap');
 
 const now = 1800000000000;
@@ -108,4 +109,16 @@ test('the driver\'s route to the pickup follows real roads', () => {
   assert.ok(route.approach.coordinates.length > 2, 'more than a straight line');
   assert.ok(route.approach.distanceMeters > 100 && route.approach.distanceMeters < 1000, `${route.approach.distanceMeters} m`);
   assert.equal(route.trip, null, 'a ride without a stored route draws only the approach');
+});
+
+test('a driver saved under the former "ITODA PITODA" is shown and saved as ITODA', () => {
+  const legacy = user('legacy', { role: 'driver', location: fix, plate: 'OLD-1', toda: 'ITODA PITODA' });
+  const other = user('other', { role: 'driver', location: fix, plate: 'OTHER-1', toda: 'Pilot TODA' });
+  const result = buildOverview([legacy, other], [], new Set(['legacy', 'other']), now);
+  assert.deepEqual(result.users.map(item => item.toda), ['ITODA', 'Pilot TODA']);
+  assert.equal(publicUser(legacy).toda, 'ITODA');
+  assert.equal(publicUser(other).toda, 'Pilot TODA');
+  const profile = { firstName: 'Pilot', lastName: 'Driver', email: 'pilot@example.com', plate: 'abc 1', capacity: 4 };
+  assert.equal(profileFields({ ...profile, toda: 'itoda pitoda' }, 'driver').toda, 'ITODA');
+  assert.equal(profileFields({ ...profile, toda: ' pitoda ' }, 'driver').toda, 'PITODA');
 });

@@ -6,7 +6,8 @@ const { createMapPolygons, isCoordinateInPolygons, toPolygonFeature } = require(
 // barangays each may serve (assets/geo/indang-todas.json, from
 // TODAs_coordinates.xlsx). A driver registered with one of these TODAs is
 // offered only trips whose pickup and destination are both inside its
-// barangays; drivers of other TODAs keep the town-wide rules.
+// barangays; drivers of other TODAs keep the town-wide rules, and so do those
+// of a TODA that serves every barangay (ITODA).
 
 const BARANGAYS = barangayBoundaries.features.map((feature) => ({
   name: feature.properties.name,
@@ -49,6 +50,7 @@ const TODAS = todaData.todas.map((toda) => ({
   id: toda.id,
   name: toda.name,
   barangays: toda.barangays,
+  wholeTown: BARANGAYS.every(({ name }) => toda.barangays.includes(name)),
   keys: new Set([toda.name, ...toda.aliases].map(normalize)),
 }));
 
@@ -58,9 +60,16 @@ function findToda(name) {
   return (key && TODAS.find((toda) => toda.keys.has(key))) || null;
 }
 
-// Whether a driver of this TODA may serve a trip touching these points.
+// The name a driver's saved TODA goes by now ("ITODA PITODA" is ITODA), or
+// the saved text for any other TODA.
+function todaName(name) {
+  return findToda(name)?.name ?? name;
+}
+
+// Whether a driver of this TODA may serve a trip touching these points. Trips
+// already stay inside Indang, so a whole-town TODA serves them all.
 function todaServes(toda, ...coordinates) {
-  return coordinates.every((coordinate) => toda.barangays.includes(getBarangayAt(coordinate)));
+  return toda.wholeTown || coordinates.every((coordinate) => toda.barangays.includes(getBarangayAt(coordinate)));
 }
 
 // The TODA's barangays as GeoJSON polygons for the driver's map, each named.
@@ -79,5 +88,6 @@ module.exports = {
   findToda,
   getBarangayAt,
   getTodaZoneShape,
+  todaName,
   todaServes,
 };

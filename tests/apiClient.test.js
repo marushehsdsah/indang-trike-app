@@ -22,3 +22,10 @@ test('a request that times out suggests waiting for a sleeping server', async ()
   });
   await assert.rejects(apiRequest('/state', { baseUrl: 'https://api.example', fetchImpl, timeoutMs: 10 }), /asleep.*retry/i);
 });
+
+test('a timeout is recognised even when fetch reports the abort as a plain error', () => {
+  const fetchImpl = (url, { signal }) => new Promise((resolve, reject) => {
+    signal.addEventListener('abort', () => reject(new Error('fetch failed: The operation was aborted.')));
+  });
+  return assert.rejects(apiRequest('/state', { baseUrl: 'https://api.example', fetchImpl, timeoutMs: 10 }), /asleep.*retry/i);
+});

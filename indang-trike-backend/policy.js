@@ -1,7 +1,7 @@
 const { normalizePhilippinePhone, sanitizeName } = require('../utils/registration');
 const { SERVICE_AREA_EITHER, getMunicipalityAt, isInIndangServiceArea } = require('../data/indangMap');
 const { getRoadGraph } = require('../data/roadNetwork');
-const { findToda, TODA_NAMES } = require('../data/todaZones');
+const { findToda, todaName, TODA_NAMES } = require('../data/todaZones');
 const { fareDetails, quoteTrip } = require('../data/fares');
 const { resolveBookingRoute, createBookingPayload } = require('../utils/bookingRoute');
 const { ratingSummary } = require('../utils/rating');
@@ -21,20 +21,21 @@ function profileFields(body, role, current) {
   if (role === 'driver') {
     // An Indang TODA is stored under its official name, which ties the driver to its barangays.
     fields.plate = cleanText(body.plate, 24).toUpperCase(); fields.toda = cleanText(body.toda, 80); fields.capacity = body.capacity;
-    fields.toda = findToda(fields.toda)?.name ?? fields.toda;
-    // A driver keeps the TODA it signed up with; only the TODA tester may
-    // switch, and only between Indang's TODAs.
+    fields.toda = todaName(fields.toda);
+    // A driver keeps the TODA it signed up with (under its current name); only
+    // the TODA tester may switch, and only between Indang's TODAs.
     if (current?.todaTester) requireValue(findToda(fields.toda), 400, "Choose one of Indang's TODAs.");
-    else if (current?.toda) fields.toda = current.toda;
+    else if (current?.toda) fields.toda = todaName(current.toda);
     requireValue(fields.plate && fields.toda && Number.isInteger(fields.capacity) && fields.capacity >= 1 && fields.capacity <= 4, 400, 'Enter your plate, TODA, and capacity (1–4).');
   }
   return fields;
 }
+// A TODA saved under a former name ("ITODA PITODA") is shown by its current one.
 function publicUser(user) {
   if (!user) return null;
   return {
     id: String(user._id), phone: user.phone, firstName: user.firstName || '', lastName: user.lastName || '',
-    email: user.email || '', role: user.role || 'passenger', plate: user.plate, toda: user.toda, capacity: user.capacity,
+    email: user.email || '', role: user.role || 'passenger', plate: user.plate, toda: todaName(user.toda), capacity: user.capacity,
     available: Boolean(user.available), createdAt: user.createdAt, rating: ratingSummary(user),
     profileComplete: Boolean(user.firstName && user.lastName && user.email && (user.role !== 'driver' || (user.plate && user.toda && user.capacity))),
     // Only the TODA tester may pick another TODA in the profile.

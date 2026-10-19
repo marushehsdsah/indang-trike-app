@@ -64,6 +64,21 @@ function getDriverAction(status) {
 function formatFare(fare) { return `₱${Number(fare ?? 0).toFixed(2)}`; }
 // A fare as people say it: "₱45", or "₱45.50" when it has centavos.
 function formatPeso(fare) { const value = Number(fare ?? 0); return `₱${Number.isInteger(value) ? value : value.toFixed(2)}`; }
+// A fix restamped on the server's clock before it is sent. The server accepts
+// fixes at most 5 s ahead of its own clock, so a phone running a few seconds
+// fast would otherwise never share its location. offset = server − phone time.
+function toServerClock(fix, offset = 0) {
+  return Number.isFinite(offset) && offset ? { ...fix, timestamp: fix.timestamp + Math.round(offset) } : fix;
+}
+// How long ago a GPS fix was taken, as a short label: "45s", "12 min", "3 h",
+// "2 d". A trip left open for days would otherwise read "261185s".
+function formatAge(fix, now = Date.now()) {
+  const seconds = Math.max(0, Math.floor((now - fix.timestamp) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} h`;
+  return `${Math.floor(seconds / 86400)} d`;
+}
 function userName(user) { return [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.phone || 'Your account'; }
 
-module.exports = { ACTIVE_STATUSES, ASSIGNED_STATUSES, GPS_MAX_AGE_MS, STATUS_LABELS, isFreshFix, validateFix, rankDrivers, nextRideStatus, mergeRide, getDriverAction, formatFare, formatPeso, userName };
+module.exports = { ACTIVE_STATUSES, ASSIGNED_STATUSES, GPS_MAX_AGE_MS, STATUS_LABELS, isFreshFix, validateFix, rankDrivers, nextRideStatus, mergeRide, getDriverAction, formatAge, formatFare, formatPeso, toServerClock, userName };

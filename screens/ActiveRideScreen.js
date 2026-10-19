@@ -23,14 +23,12 @@ import { isInIndangServiceArea } from '../data/indangMap';
 import { resolveBookingRoute } from '../utils/bookingRoute';
 import { formatDistance } from '../utils/routeDirections';
 import { advanceLeg, distanceToStop, hasReachedStop } from '../utils/tripProgress';
-import { ACTIVE_STATUSES, getDriverAction, isFreshFix } from '../utils/rideState';
+import { ACTIVE_STATUSES, formatAge, getDriverAction, isFreshFix } from '../utils/rideState';
 import { tapFeedback } from '../utils/feedback';
 import { COLORS, ELEVATION, RADIUS, SPACE, TYPE } from '../theme';
 
-const secondsSince = (fix, now) => Math.max(0, Math.floor((now - fix.timestamp) / 1000));
-
 export default function ActiveRideScreen({ navigation }) {
-  const { user, ride, gps, rideAction, connected, dismissRide } = useApp();
+  const { user, ride, gps, rideAction, connected, dismissRide, serverOffset } = useApp();
   const { t } = useI18n();
   const { height } = useWindowDimensions();
   const connection = useConnectionStatus();
@@ -42,13 +40,17 @@ export default function ActiveRideScreen({ navigation }) {
   const mapRef = useRef(null);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const driver = user.role === 'driver', home = driver ? 'Driver' : 'Passenger';
-  const position = driver ? gps.fix : ride?.driverLocation;
-  const fresh = isFreshFix(position, now) && (driver ? connected && gps.status === 'ready' : connected && ride?.driverConnected && ride?.driverLocationAvailable !== false);
+  // This phone's own fixes carry its clock; the other side's come through the
+  // server stamped on the server's clock.
+  const serverNow = now + serverOffset;
+  const position = driver ? gps.fix : ride?.driverLocation, positionNow = driver ? now : serverNow;
+  const fresh = isFreshFix(position, positionNow) && (driver ? connected && gps.status === 'ready' : connected && ride?.driverConnected && ride?.driverLocationAvailable !== false);
   const toPickup = ride && ['accepted', 'arrived'].includes(ride.status);
   // Each side also sees the passenger: the driver on the way to pickup (from the
   // passenger's shared GPS), the passenger themselves from their own device.
   const passengerPosition = driver ? (toPickup ? ride?.passengerLocation : null) : (gps.status === 'ready' ? gps.fix : null);
-  const passengerFresh = isFreshFix(passengerPosition, now);
+  const passengerNow = driver ? serverNow : now;
+  const passengerFresh = isFreshFix(passengerPosition, passengerNow);
   const riding = ride?.status === 'in_progress';
   // Where the trike is: the driver's live GPS or, for a passenger riding in
   // it, their own.
@@ -107,14 +109,14 @@ export default function ActiveRideScreen({ navigation }) {
   // The pill says whether the position the user is watching is live: the
   // driver's own GPS, or for a passenger, the driver's.
   const driverLocationStatus = fresh ? { tone: 'live', icon: 'rickshaw', label: t('active.driverLive') }
-    : position ? { tone: 'wait', icon: 'rickshaw', label: t('active.driverPaused', { seconds: secondsSince(position, now) }) }
+    : position ? { tone: 'wait', icon: 'rickshaw', label: t('active.driverPaused', { age: formatAge(position, positionNow) }) }
     : { tone: 'wait', icon: 'rickshaw', label: t('active.driverWaiting') };
   const status = connection ?? (driver ? ownGps : driverLocationStatus);
   // The other side's GPS, when it matters: the passenger's while the driver
   // heads to pickup, or the passenger's own when it is not live.
   const sideNote = terminal ? null : driver
     ? (toPickup ? (passengerFresh ? t('active.passengerLive')
-      : passengerPosition ? t('active.passengerPaused', { seconds: secondsSince(passengerPosition, now) }) : t('active.passengerWaiting')) : null)
+      : passengerPosition ? t('active.passengerPaused', { age: formatAge(passengerPosition, passengerNow) }) : t('active.passengerWaiting')) : null)
     : (!passengerFresh ? t('active.yourGps', { message: t(`gps.${gps.status}`) }) : null);
   // No countdown once the driver is waiting at the pickup.
   const eta = ride?.status === 'arrived' ? null : leg?.route?.durationLabel ?? null;

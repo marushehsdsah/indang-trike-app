@@ -64,13 +64,14 @@ export default function DriverScreen({ navigation }) {
   // Location is still shared outside the service area; requests stay inside it.
   const outside = fresh && gps.inServiceArea === false;
   // An Indang TODA's drivers get requests only inside its barangays, which
-  // their map shows; drivers of other TODAs keep the town-wide area.
+  // their map shows; drivers of other TODAs keep the town-wide area, and so do
+  // those of a TODA serving all of Indang, whose map needs no zone.
   const toda = findToda(user.toda);
-  const todaZone = useMemo(() => (toda ? getTodaZoneShape(toda) : null), [toda?.name]);
+  const todaZone = useMemo(() => (toda && !toda.wholeTown ? getTodaZoneShape(toda) : null), [toda?.name]);
   const fixLatitude = fresh ? gps.fix.latitude : undefined, fixLongitude = fresh ? gps.fix.longitude : undefined;
   const barangay = useMemo(() => (Number.isFinite(fixLatitude) ? getBarangayAt({ latitude: fixLatitude, longitude: fixLongitude }) : null), [fixLatitude, fixLongitude]);
   const town = useMemo(() => (Number.isFinite(fixLatitude) ? getMunicipalityAt({ latitude: fixLatitude, longitude: fixLongitude })?.name : null), [fixLatitude, fixLongitude]);
-  const outsideToda = Boolean(toda && fresh && !outside && !toda.barangays.includes(barangay));
+  const outsideToda = Boolean(toda && !toda.wholeTown && fresh && !outside && !toda.barangays.includes(barangay));
   const perform = async (fn) => {
     if (busy) return;
     setBusy(true);
@@ -168,11 +169,13 @@ export default function DriverScreen({ navigation }) {
               {toda && !active && <>
                 <Pressable onPress={() => { tapFeedback(); setZoneOpen((value) => !value); }} accessibilityRole="button" accessibilityState={{ expanded: zoneOpen }}
                   style={({ pressed }) => [styles.zone, pressed && styles.pressed]}>
-                  <View style={styles.zoneSwatch} />
-                  <Text style={[TYPE.label, styles.flex]} numberOfLines={1}>{t('driver.zone', { toda: toda.name, count: toda.barangays.length })}</Text>
+                  {!toda.wholeTown && <View style={styles.zoneSwatch} />}
+                  <Text style={[TYPE.label, styles.flex]} numberOfLines={1}>{toda.wholeTown ? t('driver.zoneAll', { toda: toda.name })
+                    : t('driver.zone', { toda: toda.name, count: toda.barangays.length })}</Text>
                   <MaterialCommunityIcons name={zoneOpen ? 'chevron-up' : 'chevron-down'} size={22} color={COLORS.inkSecondary} />
                 </Pressable>
-                {zoneOpen && <Text style={[TYPE.caption, styles.zoneList]}>{t('driver.zoneList', { barangays: toda.barangays.join(', ') })}</Text>}
+                {zoneOpen && <Text style={[TYPE.caption, styles.zoneList]}>{toda.wholeTown ? t('driver.zoneListAll')
+                  : t('driver.zoneList', { barangays: toda.barangays.join(', ') })}</Text>}
               </>}
               {active ? <Button label={t('driver.returnToTrip')} variant="brand" onPress={() => navigation.navigate('ActiveRide')} style={styles.mainAction} />
                 : <View style={styles.homeActions}>

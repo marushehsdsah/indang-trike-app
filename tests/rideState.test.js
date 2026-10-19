@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateFix, isFreshFix, rankDrivers, nextRideStatus, mergeRide, getDriverAction } = require('../utils/rideState');
+const { validateFix, isFreshFix, rankDrivers, nextRideStatus, mergeRide, getDriverAction, formatAge, toServerClock } = require('../utils/rideState');
 
 const now = 1800000000000;
 const fix = { latitude: 14.197805, longitude: 120.881639, accuracy: 12, timestamp: now, heading: 90, speed: 0 };
@@ -57,4 +57,26 @@ test('driver action labels reflect the actual trip stage', () => {
   assert.equal(getDriverAction('arrived').action, 'start');
   assert.equal(getDriverAction('in_progress').action, 'complete');
   assert.equal(getDriverAction('completed'), null);
+});
+
+test('a paused location says how old it is in the largest whole unit', () => {
+  const ago = (seconds) => formatAge({ timestamp: now - seconds * 1000 }, now);
+  assert.equal(ago(0), '0s');
+  assert.equal(ago(59), '59s');
+  assert.equal(ago(60), '1 min');
+  assert.equal(ago(3599), '59 min');
+  assert.equal(ago(3600), '1 h');
+  assert.equal(ago(261185), '3 d');
+  assert.equal(formatAge({ timestamp: now + 5000 }, now), '0s');
+});
+
+test('a fix from a phone with a fast clock is restamped on the server clock and accepted', () => {
+  const phoneAhead = 7000, phoneFix = { ...fix, timestamp: now + phoneAhead };
+  assert.throws(() => validateFix(phoneFix, now));
+  const sent = toServerClock(phoneFix, -phoneAhead);
+  assert.equal(sent.timestamp, now);
+  assert.equal(sent.latitude, fix.latitude);
+  assert.doesNotThrow(() => validateFix(sent, now));
+  assert.equal(toServerClock(fix, 0), fix);
+  assert.equal(toServerClock(fix, NaN), fix);
 });

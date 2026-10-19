@@ -3,6 +3,7 @@ const { ASSIGNED_STATUSES, isFreshFix } = require('../utils/rideState');
 const { calculateRoute } = require('../utils/roadGraph');
 const { SERVICE_AREA_NAME, INDANG_BOUNDS, isInIndangServiceArea } = require('../data/indangMap');
 const { getRoadGraph } = require('../data/roadNetwork');
+const { todaName } = require('../data/todaZones');
 const { requireValue } = require('./policy');
 const { ratingSummary } = require('../utils/rating');
 
@@ -68,7 +69,7 @@ function buildOverview(users, rides, connectedIds, now, findRoute = roadRoute, r
       id, name: [user.firstName, user.lastName].filter(Boolean).join(' ') || (driver ? 'Driver' : 'Passenger'),
       role: driver ? 'driver' : 'passenger', status,
       available: Boolean(driver && user.available && !active && locationStatus === 'live' && inServiceArea),
-      ...(driver ? { plate: user.plate || '', toda: user.toda || '' } : {}),
+      ...(driver ? { plate: user.plate || '', toda: todaName(user.toda) || '' } : {}),
       rating: ratingSummary(user), safetyReports: reports.get(id) || 0,
       location, locationStatus, inServiceArea,
       ride: active ? { id: String(active._id), status: active.status, pickup: active.trip?.pickup?.name || '', destination: active.trip?.dropoff?.name || '' } : null,

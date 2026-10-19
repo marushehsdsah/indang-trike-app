@@ -31,7 +31,7 @@ in such a gap in the nearest barangay within 300 m.
 
 ## Indang TODA zones
 
-`indang-todas.json` lists Indang's 12 TODAs and the barangays each may serve,
+`indang-todas.json` lists Indang's 13 TODAs and the barangays each may serve,
 from `TODAs_coordinates.xlsx` at the repository root (COORDINATES and Notes
 sheets). A TODA serves:
 
@@ -42,9 +42,15 @@ sheets). A TODA serves:
 
 Places marked only "Verify" (approximate pins) do not add a barangay; those
 barangays are listed under each TODA's `review` for confirmation. Move one into
-`barangays` to add it. Mahabangkahoy Lejos is the only barangay no TODA serves
-(`uncovered`). Edit this file directly when a TODA's area changes; the app and
-backend read it as is.
+`barangays` to add it. Edit this file directly when a TODA's area changes; the
+app and backend read it as is.
+
+The sheet's "ITODA PITODA" column is two TODAs since 2026-10-19: PITODA serves
+only the Poblacion (Barangay 1–4) and ITODA all 36 barangays, so no barangay is
+left without a TODA (`uncovered` is empty). A TODA listing every barangay serves
+all of Indang: its drivers keep the town-wide rules and their map draws no zone.
+"ITODA PITODA" is an alias of ITODA, so drivers saved under that name are
+ITODA, and the backend shows them as ITODA.
 
 A driver whose TODA field names one of these TODAs (any spelling of its name or
 an alias) is offered only trips whose pickup and destination are both inside its

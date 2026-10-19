@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { fetch } from 'expo/fetch';
 import Screen from '../components/ui/Screen';
 import AppHeader from '../components/ui/AppHeader';
 import Button from '../components/ui/Button';
@@ -72,7 +73,7 @@ export default function RegisterScreen({ navigation }) {
 
     setSubmitting(true);
     try {
-      const result = await requestRegistrationCode(form, { apiBaseUrl: API_BASE_URL });
+      const result = await requestRegistrationCode(form, { apiBaseUrl: API_BASE_URL, fetchImpl: fetch });
       const sentTo = result.email || email.trim().toLowerCase();
       setCodeSentTo(sentTo); setSentEmail(sentTo);
       setCode(''); setResendAt(Date.now() + 60000); setNow(Date.now());
@@ -89,7 +90,7 @@ export default function RegisterScreen({ navigation }) {
 
     setSubmitting(true);
     try {
-      const result = await submitRegistration({ ...form, code }, { apiBaseUrl: API_BASE_URL });
+      const result = await submitRegistration({ ...form, code }, { apiBaseUrl: API_BASE_URL, fetchImpl: fetch });
 
       successFeedback();
       Alert.alert(t('register.createdTitle'), result.message || t('register.createdMessage'), [
