@@ -14,7 +14,7 @@ import { SegmentedControl } from '../components/ui/Surfaces';
 import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
 import { useI18n } from '../i18n';
 import { successFeedback, warningFeedback } from '../utils/feedback';
-import { getApiBaseUrl, requestRegistrationCode, sanitizeName, submitRegistration, validateRegistration } from '../utils/registration';
+import { cleanLocalPhone, getApiBaseUrl, requestRegistrationCode, sanitizeName, submitRegistration, validateRegistration } from '../utils/registration';
 
 const API_BASE_URL = getApiBaseUrl({
   configuredUrl: process.env.EXPO_PUBLIC_API_URL,
@@ -190,7 +190,8 @@ export default function RegisterScreen({ navigation }) {
           keyboardType="phone-pad"
           textContentType="telephoneNumber"
           value={phone}
-          onChangeText={setPhone}
+          maxLength={10}
+          onChangeText={(text) => setPhone(cleanLocalPhone(text))}
         />
 
         <Field

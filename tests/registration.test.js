@@ -150,3 +150,11 @@ test('derives the backend address from Metro and honors an explicit override', (
   );
   assert.equal(getApiBaseUrl?.({ platform: 'android' }), 'http://10.0.2.2:3000');
 });
+
+test('the register phone field keeps at most 10 digits after +63', () => {
+  const { cleanLocalPhone } = loadRegistrationModule();
+  assert.equal(cleanLocalPhone('9123456789123'), '9123456789');
+  assert.equal(cleanLocalPhone('912-345 6789'), '9123456789');
+  assert.equal(cleanLocalPhone('09123456789'), '9123456789', 'a typed leading 0 is dropped');
+  assert.equal(cleanLocalPhone('+63 912 345 6789'), '9123456789', 'a pasted +63 number keeps its last 10 digits');
+});

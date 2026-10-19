@@ -16,6 +16,12 @@ function normalizePhilippinePhone(phone) {
   return null;
 }
 
+// What the register phone field keeps after its "+63" prefix: digits only, at
+// most 10. A typed or pasted 09… or 639… number keeps just its last 10 digits.
+function cleanLocalPhone(text) {
+  return String(text ?? '').replace(/\D/g, '').replace(/^(?:63|0)(?=9)/, '').slice(0, 10);
+}
+
 function validateRegistration(form) {
   if (!form.firstName?.trim()) return 'First name is required.';
   if (!form.lastName?.trim()) return 'Last name is required.';
@@ -111,6 +117,7 @@ async function submitRegistration(form, options) {
 module.exports = {
   getApiBaseUrl,
   normalizePhilippinePhone,
+  cleanLocalPhone,
   requestRegistrationCode,
   sanitizeName,
   submitRegistration,
