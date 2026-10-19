@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Screen from '../components/ui/Screen';
 import AppHeader from '../components/ui/AppHeader';
 import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
+import KeyboardAwareScrollView from '../components/ui/KeyboardAwareScrollView';
 import { COLORS, SPACE, TYPE } from '../theme';
 import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n';
@@ -28,51 +29,50 @@ export default function LoginScreen({ navigation }) {
   return (
     <Screen background={COLORS.surface}>
       <AppHeader title={t('login.title')} subtitle={t('login.subtitle')} onBack={() => navigation.replace('Splash')} />
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + SPACE.xxl }]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Field
-            label={t('field.phone')}
-            icon="phone-outline"
-            placeholder="0912 345 6789"
-            keyboardType="phone-pad"
-            autoCapitalize="none"
-            autoCorrect={false}
-            textContentType="telephoneNumber"
-            value={account}
-            onChangeText={setAccount}
-          />
-          <Field
-            label={t('field.password')}
-            icon="lock-outline"
-            placeholder={t('field.passwordPlaceholder')}
-            secure
-            textContentType="password"
-            value={password}
-            onChangeText={setPassword}
-          />
-          <Pressable onPress={() => navigation.replace('ForgotPassword')} accessibilityRole="button" hitSlop={{ top: 12, bottom: 12 }}
-            style={({ pressed }) => [styles.forgot, pressed && styles.pressed]}>
-            <Text style={[TYPE.bodyStrong, styles.link]}>{t('login.forgotPassword')}</Text>
+      <KeyboardAwareScrollView style={styles.flex}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + SPACE.xxl }]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Field
+          label={t('field.phone')}
+          icon="phone-outline"
+          placeholder="09123456789"
+          keyboardType="number-pad"
+          autoCapitalize="none"
+          autoCorrect={false}
+          textContentType="telephoneNumber"
+          maxLength={11}
+          value={account}
+          onChangeText={(text) => setAccount(text.replace(/\D/g, '').slice(0, 11))}
+        />
+        <Field
+          label={t('field.password')}
+          icon="lock-outline"
+          placeholder={t('field.passwordPlaceholder')}
+          secure
+          textContentType="password"
+          value={password}
+          onChangeText={setPassword}
+        />
+        <Pressable onPress={() => navigation.replace('ForgotPassword')} accessibilityRole="button" hitSlop={{ top: 12, bottom: 12 }}
+          style={({ pressed }) => [styles.forgot, pressed && styles.pressed]}>
+          <Text style={[TYPE.bodyStrong, styles.link]}>{t('login.forgotPassword')}</Text>
+        </Pressable>
+
+        {(error || sessionError) && <Text accessibilityRole="alert" style={[TYPE.body, styles.error]}>{error || sessionError}</Text>}
+        {!online && <Text style={[TYPE.caption, styles.note]}>{t('login.offline')}</Text>}
+        {sessionError && <Button label={t('login.retrySession')} variant="text" size="sm" onPress={restore} style={styles.note} />}
+        <Button label={t('login.submit')} variant="hire" trailingIcon="arrow-right" loading={submitting} onPress={login} />
+
+        <View style={styles.footer}>
+          <Text style={TYPE.body}>{t('login.newHere')} </Text>
+          <Pressable onPress={() => navigation.replace('Register')} accessibilityRole="button" hitSlop={{ top: 12, bottom: 12 }}
+            style={({ pressed }) => pressed && styles.pressed}>
+            <Text style={[TYPE.bodyStrong, styles.link]}>{t('login.createAccount')}</Text>
           </Pressable>
-
-          {(error || sessionError) && <Text accessibilityRole="alert" style={[TYPE.body, styles.error]}>{error || sessionError}</Text>}
-          {!online && <Text style={[TYPE.caption, styles.note]}>{t('login.offline')}</Text>}
-          {sessionError && <Button label={t('login.retrySession')} variant="text" size="sm" onPress={restore} style={styles.note} />}
-          <Button label={t('login.submit')} variant="hire" trailingIcon="arrow-right" loading={submitting} onPress={login} />
-
-          <View style={styles.footer}>
-            <Text style={TYPE.body}>{t('login.newHere')} </Text>
-            <Pressable onPress={() => navigation.replace('Register')} accessibilityRole="button" hitSlop={{ top: 12, bottom: 12 }}
-              style={({ pressed }) => pressed && styles.pressed}>
-              <Text style={[TYPE.bodyStrong, styles.link]}>{t('login.createAccount')}</Text>
-            </Pressable>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </View>
+      </KeyboardAwareScrollView>
     </Screen>
   );
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert, KeyboardAvoidingView, NativeModules, Platform, Pressable, ScrollView, StyleSheet, Text, View,
+  Alert, NativeModules, Platform, Pressable, StyleSheet, Text, View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,12 +8,13 @@ import Screen from '../components/ui/Screen';
 import AppHeader from '../components/ui/AppHeader';
 import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
+import KeyboardAwareScrollView from '../components/ui/KeyboardAwareScrollView';
 import TodaPicker from '../components/TodaPicker';
 import { SegmentedControl } from '../components/ui/Surfaces';
 import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
 import { useI18n } from '../i18n';
 import { successFeedback, warningFeedback } from '../utils/feedback';
-import { getApiBaseUrl, requestRegistrationCode, submitRegistration } from '../utils/registration';
+import { getApiBaseUrl, requestRegistrationCode, sanitizeName, submitRegistration, validateRegistration } from '../utils/registration';
 
 const API_BASE_URL = getApiBaseUrl({
   configuredUrl: process.env.EXPO_PUBLIC_API_URL,
@@ -39,6 +40,8 @@ export default function RegisterScreen({ navigation }) {
   // After the form is sent, the email the code went to; the screen then asks
   // for the code. resendAt is when another code may be asked for.
   const [codeSentTo, setCodeSentTo] = useState(null);
+  // The email of the last code sent; it stays set after "Change my details".
+  const [sentEmail, setSentEmail] = useState(null);
   const [code, setCode] = useState('');
   const [resendAt, setResendAt] = useState(0);
   const [now, setNow] = useState(Date.now());
@@ -57,10 +60,21 @@ export default function RegisterScreen({ navigation }) {
   const sendCode = async () => {
     if (isSubmitting) return;
 
+    // Back from "Change my details" within the minute, with the same email: the
+    // code already sent still works (the server would refuse a new one yet),
+    // so return to it. Changed details are checked again on submit.
+    if (email.trim().toLowerCase() === sentEmail && Date.now() < resendAt) {
+      const invalid = validateRegistration(form);
+      if (invalid) { warningFeedback(); Alert.alert(t('register.unable'), invalid); return; }
+      setCodeSentTo(sentEmail); setNow(Date.now());
+      return;
+    }
+
     setSubmitting(true);
     try {
       const result = await requestRegistrationCode(form, { apiBaseUrl: API_BASE_URL });
-      setCodeSentTo(result.email || email.trim().toLowerCase());
+      const sentTo = result.email || email.trim().toLowerCase();
+      setCodeSentTo(sentTo); setSentEmail(sentTo);
       setCode(''); setResendAt(Date.now() + 60000); setNow(Date.now());
     } catch (error) {
       warningFeedback();
@@ -96,151 +110,149 @@ export default function RegisterScreen({ navigation }) {
         onBack={() => (codeSentTo ? setCodeSentTo(null) : navigation.canGoBack() ? navigation.goBack() : navigation.replace('Splash'))}
       />
 
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + SPACE.xxl }]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {codeSentTo ? <>
-            <Text style={[TYPE.body, styles.subtitle]}>{t('register.codeSent', { email: codeSentTo })}</Text>
-            <Field
-              label={t('field.code')}
-              icon="email-check-outline"
-              placeholder="123456"
-              keyboardType="number-pad"
-              textContentType="oneTimeCode"
-              autoComplete="one-time-code"
-              maxLength={6}
-              value={code}
-              onChangeText={(value) => setCode(value.replace(/\D/g, ''))}
-              autoFocus
-            />
-            <Button
-              label={t('register.submit')}
-              variant="hire"
-              trailingIcon="arrow-right"
-              onPress={handleSignUp}
-              loading={isSubmitting}
-            />
-            <Button
-              label={resendWait ? t('register.resendIn', { seconds: resendWait }) : t('register.resend')}
-              variant="text"
-              size="sm"
-              disabled={resendWait > 0 || isSubmitting}
-              onPress={sendCode}
-              style={styles.codeAction}
-            />
-            <Button label={t('register.editDetails')} variant="text" size="sm" onPress={() => setCodeSentTo(null)} />
-          </> : <>
-          <SegmentedControl value={role} onChange={setRole} options={[{ value: 'passenger', label: t('register.passenger') }, { value: 'driver', label: t('register.driver') }]} />
-          <Text style={[TYPE.bodyMuted, styles.subtitle]}>{t(role === 'driver' ? 'register.driverPitch' : 'register.passengerPitch')}</Text>
-
-          <View style={styles.nameRow}>
-            <Field
-              label={t('field.firstName')}
-              placeholder="Juan"
-              autoCapitalize="words"
-              textContentType="givenName"
-              value={firstName}
-              onChangeText={setFirstName}
-              style={styles.nameField}
-            />
-            <Field
-              label={t('field.lastName')}
-              placeholder="Dela Cruz"
-              autoCapitalize="words"
-              textContentType="familyName"
-              value={lastName}
-              onChangeText={setLastName}
-              style={[styles.nameField, styles.nameFieldLast]}
-            />
-          </View>
-
+      <KeyboardAwareScrollView style={styles.flex}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + SPACE.xxl }]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {codeSentTo ? <>
+          <Text style={[TYPE.body, styles.subtitle]}>{t('register.codeSent', { email: codeSentTo })}</Text>
           <Field
-            label={t('field.email')}
-            icon="email-outline"
-            placeholder="name@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            textContentType="emailAddress"
-            value={email}
-            onChangeText={setEmail}
+            label={t('field.code')}
+            icon="email-check-outline"
+            placeholder="123456"
+            keyboardType="number-pad"
+            textContentType="oneTimeCode"
+            autoComplete="one-time-code"
+            maxLength={6}
+            value={code}
+            onChangeText={(value) => setCode(value.replace(/\D/g, ''))}
+            autoFocus
           />
-
-          <Field
-            label={t('field.phone')}
-            icon="phone-outline"
-            prefix="+63"
-            placeholder="912 345 6789"
-            keyboardType="phone-pad"
-            textContentType="telephoneNumber"
-            value={phone}
-            onChangeText={setPhone}
-          />
-
-          <Field
-            label={t('field.password')}
-            icon="lock-outline"
-            placeholder={t('field.newPasswordPlaceholder')}
-            secure
-            textContentType="newPassword"
-            value={password}
-            onChangeText={setPassword}
-          />
-
-          {role === 'driver' && <>
-            <Field label={t('field.plate')} placeholder={t('field.platePlaceholder')} value={plate} onChangeText={setPlate} autoCapitalize="characters" maxLength={24} />
-            <TodaPicker value={toda} onChange={setToda} />
-            <Field label={t('field.capacity')} value={capacity} onChangeText={setCapacity} keyboardType="number-pad" maxLength={1} />
-          </>}
-
-          <Field
-            label={t('field.confirmPassword')}
-            icon="lock-outline"
-            placeholder={t('field.confirmPasswordPlaceholder')}
-            secure
-            textContentType="newPassword"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-          />
-
-          <Pressable
-            style={styles.terms}
-            onPress={() => setChecked((value) => !value)}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: isChecked }}
-            accessibilityLabel={t('register.termsA11y')}
-          >
-            <View style={[styles.checkbox, isChecked && styles.checkboxChecked]}>
-              {isChecked && <MaterialCommunityIcons name="check-bold" size={16} color={COLORS.onBrand} />}
-            </View>
-            <Text style={[TYPE.body, styles.termsText]}>{t('register.terms')}</Text>
-          </Pressable>
-
           <Button
-            label={t('register.sendCode')}
+            label={t('register.submit')}
             variant="hire"
             trailingIcon="arrow-right"
-            onPress={sendCode}
+            onPress={handleSignUp}
             loading={isSubmitting}
           />
-          </>}
+          <Button
+            label={resendWait ? t('register.resendIn', { seconds: resendWait }) : t('register.resend')}
+            variant="text"
+            size="sm"
+            disabled={resendWait > 0 || isSubmitting}
+            onPress={sendCode}
+            style={styles.codeAction}
+          />
+          <Button label={t('register.editDetails')} variant="text" size="sm" onPress={() => setCodeSentTo(null)} />
+        </> : <>
+        <SegmentedControl value={role} onChange={setRole} options={[{ value: 'passenger', label: t('register.passenger') }, { value: 'driver', label: t('register.driver') }]} />
+        <Text style={[TYPE.bodyMuted, styles.subtitle]}>{t(role === 'driver' ? 'register.driverPitch' : 'register.passengerPitch')}</Text>
 
-          <View style={styles.footer}>
-            <Text style={TYPE.body}>{t('register.haveAccount')} </Text>
-            <Pressable
-              onPress={() => navigation.replace('Login')}
-              accessibilityRole="button"
-              hitSlop={{ top: 12, bottom: 12 }}
-              style={({ pressed }) => pressed && styles.pressed}
-            >
-              <Text style={[TYPE.bodyStrong, styles.footerLink]}>{t('register.logIn')}</Text>
-            </Pressable>
+        <View style={styles.nameRow}>
+          <Field
+            label={t('field.firstName')}
+            placeholder="Juan"
+            autoCapitalize="words"
+            textContentType="givenName"
+            value={firstName}
+            onChangeText={(text) => setFirstName(sanitizeName(text))}
+            style={styles.nameField}
+          />
+          <Field
+            label={t('field.lastName')}
+            placeholder="Dela Cruz"
+            autoCapitalize="words"
+            textContentType="familyName"
+            value={lastName}
+            onChangeText={(text) => setLastName(sanitizeName(text))}
+            style={[styles.nameField, styles.nameFieldLast]}
+          />
+        </View>
+
+        <Field
+          label={t('field.email')}
+          icon="email-outline"
+          placeholder="name@example.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          textContentType="emailAddress"
+          value={email}
+          onChangeText={setEmail}
+        />
+
+        <Field
+          label={t('field.phone')}
+          icon="phone-outline"
+          prefix="+63"
+          placeholder="912 345 6789"
+          keyboardType="phone-pad"
+          textContentType="telephoneNumber"
+          value={phone}
+          onChangeText={setPhone}
+        />
+
+        <Field
+          label={t('field.password')}
+          icon="lock-outline"
+          placeholder={t('field.newPasswordPlaceholder')}
+          secure
+          textContentType="newPassword"
+          value={password}
+          onChangeText={setPassword}
+        />
+
+        {role === 'driver' && <>
+          <Field label={t('field.plate')} placeholder={t('field.platePlaceholder')} value={plate} onChangeText={setPlate} autoCapitalize="characters" maxLength={24} />
+          <TodaPicker value={toda} onChange={setToda} />
+          <Field label={t('field.capacity')} value={capacity} onChangeText={setCapacity} keyboardType="number-pad" maxLength={1} />
+        </>}
+
+        <Field
+          label={t('field.confirmPassword')}
+          icon="lock-outline"
+          placeholder={t('field.confirmPasswordPlaceholder')}
+          secure
+          textContentType="newPassword"
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+        />
+
+        <Pressable
+          style={styles.terms}
+          onPress={() => setChecked((value) => !value)}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: isChecked }}
+          accessibilityLabel={t('register.termsA11y')}
+        >
+          <View style={[styles.checkbox, isChecked && styles.checkboxChecked]}>
+            {isChecked && <MaterialCommunityIcons name="check-bold" size={16} color={COLORS.onBrand} />}
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+          <Text style={[TYPE.body, styles.termsText]}>{t('register.terms')}</Text>
+        </Pressable>
+
+        <Button
+          label={t('register.sendCode')}
+          variant="hire"
+          trailingIcon="arrow-right"
+          onPress={sendCode}
+          loading={isSubmitting}
+        />
+        </>}
+
+        <View style={styles.footer}>
+          <Text style={TYPE.body}>{t('register.haveAccount')} </Text>
+          <Pressable
+            onPress={() => navigation.replace('Login')}
+            accessibilityRole="button"
+            hitSlop={{ top: 12, bottom: 12 }}
+            style={({ pressed }) => pressed && styles.pressed}
+          >
+            <Text style={[TYPE.bodyStrong, styles.footerLink]}>{t('register.logIn')}</Text>
+          </Pressable>
+        </View>
+      </KeyboardAwareScrollView>
     </Screen>
   );
 }

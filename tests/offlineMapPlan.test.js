@@ -42,7 +42,7 @@ test('keeps an old tile version until its replacement is complete, then deletes 
 });
 
 test('replaces packs for another service area and leaves packs it does not own alone', () => {
-  const indang = pack('indang', { ...wanted[0].metadata, area: 'Indang' });
+  const indang = pack('indang', { ...wanted[0].metadata, area: 'Indang and General Trias' });
   const foreign = pack('foreign', { tag: 'someone-else' });
   const plan = planOfflineMap([indang, foreign, pack('l', wanted[0].metadata), pack('p', wanted[1].metadata)], wanted);
   assert.deepEqual(plan.remove, ['indang']);
@@ -55,7 +55,7 @@ test('offline, any complete pack of every style for the area is usable', () => {
   assert.equal(hasOfflineMap([pack('l', olderTiles(wanted[0].metadata)), pack('p', olderTiles(wanted[1].metadata))], area), true);
   assert.equal(hasOfflineMap([pack('l', wanted[0].metadata)], area), false, 'the navigation map is missing');
   assert.equal(hasOfflineMap([pack('l', wanted[0].metadata), pack('p', wanted[1].metadata, 'active')], area), false);
-  assert.equal(hasOfflineMap([pack('l', { ...wanted[0].metadata, area: 'Indang' }), pack('p', wanted[1].metadata)], area), false);
+  assert.equal(hasOfflineMap([pack('l', { ...wanted[0].metadata, area: 'Indang and General Trias' }), pack('p', wanted[1].metadata)], area), false);
   assert.equal(wanted[0].metadata.tag, OFFLINE_MAP_TAG);
 });
 

@@ -14,7 +14,6 @@ const { getRoadSpeedKph, getWayDirection, isRoutableWay } = require('../utils/ro
 const { CATEGORY_COLORS, categorizePlace, placeRank } = require('../utils/placeCategories');
 
 const DEFAULT_MUNICIPALITY_PATHS = [
-  path.join(__dirname, '../assets/geo/general-trias-municipality.json'),
   path.join(__dirname, '../assets/geo/indang-municipality.json'),
 ];
 const USAGE = 'Usage: node scripts/build-road-graph.js --input <overpass.json> --output <graph.json> ' +

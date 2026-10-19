@@ -7,6 +7,9 @@ import StatusPill from '../components/StatusPill';
 import Plate from '../components/Plate';
 import LiveLocationMarker from '../components/LiveLocationMarker';
 import { PersonRow, TripFacts } from '../components/RideDetails';
+import RatingPrompt from '../components/RatingPrompt';
+import KeyboardAwareScrollView from '../components/ui/KeyboardAwareScrollView';
+import useKeyboardHeight from '../hooks/useKeyboardHeight';
 import { FloatingCard, MapBottom, MapTop } from '../components/map/MapChrome';
 import { BleedScreen } from '../components/ui/Screen';
 import Button from '../components/ui/Button';
@@ -34,6 +37,8 @@ export default function ActiveRideScreen({ navigation }) {
   const ownGps = useGpsStatus();
   const [bottomHeight, setBottomHeight] = useState(0), [busy, setBusy] = useState(false), [now, setNow] = useState(Date.now());
   const [expanded, setExpanded] = useState(false), [reachedStage, setReachedStage] = useState(null);
+  const [ratingSkipped, setRatingSkipped] = useState(false);
+  const keyboardHeight = useKeyboardHeight();
   const mapRef = useRef(null);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const driver = user.role === 'driver', home = driver ? 'Driver' : 'Passenger';
@@ -151,19 +156,21 @@ export default function ActiveRideScreen({ navigation }) {
           onPress={() => navigation.navigate('Navigation', { ...guideLeg, rideId: ride.id })} style={styles.navigate} />}
       </>}
     >
-      <FloatingCard style={{ maxHeight: height * 0.72 }}>
-        {terminal ? <>
+      {/* Above the keyboard (MapBottom lifts it) the card still fits under the status bar. */}
+      <FloatingCard style={{ maxHeight: keyboardHeight ? height - keyboardHeight - 96 : height * 0.72 }}>
+        {terminal ? <KeyboardAwareScrollView padForKeyboard={false} showsVerticalScrollIndicator={false}>
           <Text style={TYPE.heading} accessibilityLiveRegion="polite">{t(`ride.status.${ride?.status ?? 'none'}`)}</Text>
           {ride?.status === 'completed' && <View style={styles.paid}>
             <Money amount={ride.fare} size={34} color={COLORS.brand} />
             <Text style={[TYPE.body, styles.paidText]}>{t(driver ? 'active.collected' : 'active.paid')}</Text>
           </View>}
+          {ride?.status === 'completed' && !ratingSkipped && <RatingPrompt ride={ride} asDriver={driver} onSkip={() => setRatingSkipped(true)} style={styles.rating} />}
           {ride?.cancellationReason ? <Text style={[TYPE.caption, styles.reason]}>{ride.cancellationReason}</Text> : null}
           <View style={styles.actions}>
             <Button label={t('active.history')} variant="outline" size="md" onPress={() => finish('History')} style={styles.action} />
             <Button label={t('common.done')} variant="brand" size="md" onPress={() => finish(home)} style={styles.action} />
           </View>
-        </> : <>
+        </KeyboardAwareScrollView> : <>
           <View style={styles.header}>
             <Text style={[TYPE.heading, styles.title]} accessibilityLiveRegion="polite">{t(driver ? `active.driverStatus.${ride.status}` : `ride.status.${ride.status}`)}</Text>
             {eta && <View style={styles.eta}>
@@ -216,6 +223,7 @@ export default function ActiveRideScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  rating: { marginTop: SPACE.md },
   topRow: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACE.sm },
   topStatus: { flexShrink: 1 },
   markerFrame: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },

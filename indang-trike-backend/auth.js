@@ -27,16 +27,26 @@ function createAuth(models, clock, { sendEmail } = {}) {
       throw new HttpError(503, 'Could not send the code. Check the email address and try again.');
     }
   }
-  // Returns the stored code entry when `code` matches; a wrong code uses up a try.
+  // Returns the stored code entry when `code` matches. Every check takes one of
+  // the code's tries in the same database step that reads it, so guesses sent
+  // in parallel cannot all slip under the limit.
   async function checkCode(Codes, email, code) {
-    const entry = await Codes.findOne({ email, expiresAt: { $gt: new Date(clock()) } });
-    requireValue(entry, 400, 'The code expired. Ask for a new one.');
-    requireValue(entry.attempts < CODE_ATTEMPTS, 429, 'Too many wrong codes. Ask for a new one.');
+    const live = { email, expiresAt: { $gt: new Date(clock()) } };
+    const entry = await Codes.findOneAndUpdate({ ...live, attempts: { $lt: CODE_ATTEMPTS } }, { $inc: { attempts: 1 } }, { returnDocument: 'after' });
+    if (!entry) {
+      requireValue(!await Codes.exists(live), 429, 'Too many wrong codes. Ask for a new one.');
+      throw new HttpError(400, 'The code expired. Ask for a new one.');
+    }
     if (typeof code !== 'string' || !/^\d{6}$/.test(code) || hashCode(email, code) !== entry.codeHash) {
-      await Codes.updateOne({ _id: entry._id }, { $inc: { attempts: 1 } });
       throw new HttpError(400, 'Incorrect code. Check your email and try again.');
     }
     return entry;
+  }
+  // Uses up a checked code. Only one request can delete it, so two requests
+  // racing with the same code cannot both go ahead.
+  async function useCode(Codes, entry) {
+    const { deletedCount } = await Codes.deleteOne({ _id: entry._id });
+    requireValue(deletedCount === 1, 400, 'The code expired. Ask for a new one.');
   }
   // Everything about a signup except the email code, checked before a code is
   // sent so a mistake shows up before the person waits for an email.
@@ -61,8 +71,7 @@ function createAuth(models, clock, { sendEmail } = {}) {
   }
   async function register(body) {
     const { phone, role, fields } = await checkSignup(body);
-    const entry = await checkCode(EmailCode, fields.email, body.code);
-    await EmailCode.deleteOne({ _id: entry._id });
+    await useCode(EmailCode, await checkCode(EmailCode, fields.email, body.code));
     try {
       return publicUser(await User.create({ phone, password: await bcrypt.hash(body.password, 10), role, ...fields }));
     } catch (error) {
@@ -90,8 +99,15 @@ function createAuth(models, clock, { sendEmail } = {}) {
   };
   async function sendResetCode(body) {
     const email = resetEmail(body);
+    requireValue(sendEmail, 503, 'Email verification is not set up on this server.');
     const user = await User.findOne({ email });
-    if (user) await issueCode(ResetCode, email, 'reset', { userId: user._id });
+    // A resend within the minute or a failed email gets the same answer too:
+    // a 429 or 503 only for real accounts would reveal that one exists. The
+    // person sees no new email and can ask again; a failure is logged.
+    if (user) {
+      try { await issueCode(ResetCode, email, 'reset', { userId: user._id }); }
+      catch (error) { if (error.status !== 429 && error.status !== 503) throw error; }
+    }
     return { email, message: 'If an account uses this email, we sent it a 6-digit code.' };
   }
   async function checkResetCode(body) {
@@ -104,8 +120,9 @@ function createAuth(models, clock, { sendEmail } = {}) {
     const entry = await checkCode(ResetCode, email, body.code);
     const user = await User.findById(entry.userId);
     requireValue(user, 400, 'The code expired. Ask for a new one.');
-    await User.updateOne({ _id: user._id }, { $set: { password: await bcrypt.hash(body.password, 10) } });
-    await ResetCode.deleteOne({ _id: entry._id });
+    const password = await bcrypt.hash(body.password, 10);
+    await useCode(ResetCode, entry);
+    await User.updateOne({ _id: user._id }, { $set: { password } });
     // Whoever knew the old password is logged out everywhere.
     await Session.deleteMany({ userId: user._id });
     return { message: 'Your password was changed. Log in with your new password.' };

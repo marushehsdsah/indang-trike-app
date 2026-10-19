@@ -1,5 +1,5 @@
 import { API_BASE_URL } from './config.mjs';
-import { filterUsers, isLive, locationLabel, mapPeople, routeSummary, statusLabel, snapshotTiming, tripOf } from './model.mjs';
+import { filterUsers, isLive, locationLabel, mapPeople, ratingLabel, routeSummary, safetyReportLabel, statusLabel, snapshotTiming, tripOf } from './model.mjs';
 
 const $ = id => document.getElementById(id);
 const tokenKey = 'indanggo.god-view.session';
@@ -99,6 +99,8 @@ function renderTripDetails(panel, { route, driver, passenger }) {
     const member = document.createElement('div'); member.className = 'detail-member';
     member.append(text('span', label, `eyebrow ${className}`), text('strong', person.name));
     if (person.plate || person.toda) member.append(text('p', [person.plate, person.toda].filter(Boolean).join(' · '), 'muted small'));
+    member.append(text('p', ratingLabel(person), 'muted small'));
+    if (safetyReportLabel(person)) member.append(text('p', safetyReportLabel(person), 'outside-label'));
     member.append(text('p', locationLabel(person, now(), connected), 'detail-gps'));
     panel.append(member);
   }
@@ -116,6 +118,8 @@ function renderDetails() {
   panel.append(close, text('span', user.role === 'driver' ? 'DRIVER' : 'PASSENGER', `eyebrow ${user.role}-text`), text('h2', user.name));
   panel.append(text('p', statusLabel(user), 'detail-status'));
   if (user.plate || user.toda) panel.append(text('p', [user.plate, user.toda].filter(Boolean).join(' · '), 'muted small'));
+  panel.append(text('p', ratingLabel(user), 'muted small'));
+  if (safetyReportLabel(user)) panel.append(text('p', safetyReportLabel(user), 'outside-label'));
   panel.append(text('p', locationLabel(user, now(), connected), 'detail-gps'));
   if (user.location) {
     panel.append(text('p', `${user.location.latitude.toFixed(5)}, ${user.location.longitude.toFixed(5)} · ±${Math.round(user.location.accuracy)} m`, 'small muted'));

@@ -8,8 +8,13 @@ function fakeModels() {
   const matches = (doc, query) => Object.entries(query).every(([key, value]) => {
     if (value?.$in) return value.$in.includes(doc[key]);
     if (value?.$gt) return doc[key] > value.$gt;
+    if (value?.$lt !== undefined) return doc[key] < value.$lt;
     return doc[key] === value;
   });
+  const apply = (doc, update) => {
+    for (const [key, by] of Object.entries(update.$inc ?? {})) doc[key] += by;
+    Object.assign(doc, update.$set);
+  };
   const collection = () => {
     const docs = [];
     return {
@@ -18,13 +23,21 @@ function fakeModels() {
       findById: async (id) => docs.find((doc) => doc._id === id) ?? null,
       exists: async (query) => docs.some((doc) => matches(doc, query)),
       create: async (doc) => { const created = { _id: `id${docs.length + 1}-${Math.random()}`, attempts: 0, ...doc }; docs.push(created); return created; },
-      deleteOne: async (query) => { const index = docs.findIndex((doc) => matches(doc, query)); if (index >= 0) docs.splice(index, 1); },
+      deleteOne: async (query) => {
+        const index = docs.findIndex((doc) => matches(doc, query));
+        if (index >= 0) docs.splice(index, 1);
+        return { deletedCount: index >= 0 ? 1 : 0 };
+      },
+      // Reads and updates in one step, like MongoDB: no await in between.
+      findOneAndUpdate: async (query, update) => {
+        const doc = docs.find((item) => matches(item, query));
+        if (doc) apply(doc, update);
+        return doc ?? null;
+      },
       deleteMany: async (query) => { for (let i = docs.length - 1; i >= 0; i -= 1) if (matches(docs[i], query)) docs.splice(i, 1); },
       updateOne: async (query, update) => {
         const doc = docs.find((item) => matches(item, query));
-        if (!doc) return;
-        for (const [key, by] of Object.entries(update.$inc ?? {})) doc[key] += by;
-        Object.assign(doc, update.$set);
+        if (doc) apply(doc, update);
       },
     };
   };
@@ -150,7 +163,9 @@ test('an unknown email gets the same answer and no email; reset codes have the s
   await assert.rejects(auth.sendResetCode({ email: 'not-an-email' }), { status: 400 });
 
   await auth.sendResetCode({ email: 'juan@gmail.com' });
-  await assert.rejects(auth.sendResetCode({ email: 'juan@gmail.com' }), { status: 429 });
+  // Within the minute: the same answer as any email, and no second email.
+  assert.equal((await auth.sendResetCode({ email: 'juan@gmail.com' })).message, 'If an account uses this email, we sent it a 6-digit code.');
+  assert.equal(sent.length, 1);
   const wrong = sent[0].code === '000000' ? '111111' : '000000';
   for (let i = 0; i < 5; i += 1) await assert.rejects(auth.checkResetCode({ email: 'juan@gmail.com', code: wrong }), { status: 400 });
   await assert.rejects(auth.resetPassword({ email: 'juan@gmail.com', code: sent[0].code, password: 'brand-new-password' }), { status: 429 });
@@ -173,4 +188,44 @@ test('the reset email says it is for a password reset', async () => {
   await send({ to: 'juan@gmail.com', code: '123456', purpose: 'reset' });
   assert.equal(body.subject, '123456 is your IndangGO password reset code');
   assert.match(body.textContent, /did not ask to reset your password/);
+});
+
+test('guesses sent in parallel still get only five tries between them', async () => {
+  const { auth, sent } = await signedUp();
+  await auth.sendResetCode({ email: 'juan@gmail.com' });
+  const wrong = sent[0].code === '000000' ? '111111' : '000000';
+  const results = await Promise.allSettled(Array.from({ length: 20 }, () => auth.checkResetCode({ email: 'juan@gmail.com', code: wrong })));
+  assert.equal(results.filter(({ reason }) => reason?.status === 400).length, 5, 'five are compared');
+  assert.equal(results.filter(({ reason }) => reason?.status === 429).length, 15, 'the rest are refused');
+  await assert.rejects(auth.checkResetCode({ email: 'juan@gmail.com', code: sent[0].code }), { status: 429 });
+});
+
+test('a reset email that fails to send is answered like an unknown email', async () => {
+  const models = fakeModels();
+  models.User.docs.push({ _id: 'u1', email: 'juan@gmail.com', phone: '+639171234567', password: 'x' });
+  const failing = createAuth(models, Date.now, { sendEmail: async () => { throw new Error('Brevo answered 500'); } });
+  const quiet = console.error; console.error = () => {};
+  try {
+    assert.equal((await failing.sendResetCode({ email: 'juan@gmail.com' })).message, 'If an account uses this email, we sent it a 6-digit code.');
+  } finally { console.error = quiet; }
+  assert.equal(models.ResetCode.docs.length, 0, 'no usable code is left behind');
+});
+
+test('one sign-up code creates one account, even when two requests use it at once', async () => {
+  const { auth, models, sent } = setup();
+  await auth.sendSignupCode(form);
+  const [first, second] = await Promise.allSettled([
+    auth.register({ ...form, code: sent[0].code }),
+    auth.register({ ...form, phone: '09181234567', code: sent[0].code }),
+  ]);
+  assert.deepEqual([first.status, second.status].sort(), ['fulfilled', 'rejected']);
+  assert.equal(models.User.docs.filter((user) => user.email === 'juan@gmail.com').length, 1);
+});
+
+test('a reset code changes the password once, even when two requests use it at once', async () => {
+  const { auth, sent } = await signedUp();
+  await auth.sendResetCode({ email: 'juan@gmail.com' });
+  const results = await Promise.allSettled(['first-new-password', 'second-new-password']
+    .map((password) => auth.resetPassword({ email: 'juan@gmail.com', code: sent[0].code, password })));
+  assert.deepEqual(results.map(({ status }) => status).sort(), ['fulfilled', 'rejected']);
 });

@@ -1,7 +1,7 @@
 # Service area boundaries
 
-The app serves Indang and General Trias. Both polygons are loaded together
-(`data/indangMap.js`); each town is its own network of roads and drivers.
+The app serves Indang only (`data/indangMap.js`). General Trias was removed
+on 2026-10-19; its boundary file is in git history if it is ever needed again.
 
 ## Indang
 
@@ -15,20 +15,6 @@ The app uses this polygon as an approximate service-area overlay and containment
 check. It is not a cadastral or turn-by-turn routing dataset. Confirm the source
 service's current terms and the boundary version before redistributing a
 production dataset.
-
-## General Trias
-
-`general-trias-municipality.json` is the boundary of General Trias, Cavite
-(PSGC `0402108000`). The GeoRiskPH
-service above now requires a token, so this polygon comes from the
-OpenStreetMap administrative boundary instead, relation
-[1489187](https://www.openstreetmap.org/relation/1489187), snapshot
-`2026-10-01T06:31:34Z`, retrieved on 2026-10-01 with Overpass
-(`relation(1489187);out geom;`). Its 126 outer ways were joined into one ring
-(3,314 points, counter-clockwise, six decimal places).
-
-Map data © OpenStreetMap contributors, available under the Open Database
-License (ODbL) 1.0.
 
 ## Indang barangays
 
@@ -62,5 +48,5 @@ backend read it as is.
 
 A driver whose TODA field names one of these TODAs (any spelling of its name or
 an alias) is offered only trips whose pickup and destination are both inside its
-barangays, and their map shows that area. Drivers of other TODAs (e.g. in General
-Trias) keep the town-wide rules. Passengers see no TODA areas.
+barangays, and their map shows that area. Drivers of other TODAs keep the
+town-wide rules. Passengers see no TODA areas.

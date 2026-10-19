@@ -30,7 +30,7 @@ async function main() {
       const result = await response.json(); assert.ok(response.ok, JSON.stringify(result)); return result;
     }
     async function account(phone, role, firstName) {
-      const form = { phone, role, firstName, lastName: 'Pilot', email: `${phone}@example.com`, password: 'pilot-test-password', ...(role === 'driver' ? { plate: 'TEST-101', toda: 'General Trias', capacity: 4 } : {}) };
+      const form = { phone, role, firstName, lastName: 'Pilot', email: `${phone}@example.com`, password: 'pilot-test-password', ...(role === 'driver' ? { plate: 'TEST-101', toda: 'Test TODA', capacity: 4 } : {}) };
       await request('/register/code', form);
       await request('/register', { ...form, code: emailedCodes.get(form.email) });
       return request('/login', { phone, password: 'pilot-test-password' });
@@ -43,7 +43,10 @@ async function main() {
     await account('09179999991', 'passenger', 'Admin');
     const driver = await account('09179999992', 'driver', 'Alex');
     const passenger = await account('09179999993', 'passenger', 'Bea');
-    const missing = await account('09179999994', 'passenger', '<img src=x onerror=alert(1)>');
+    const missing = await account('09179999994', 'passenger', 'Missing');
+    // Registration rejects symbols in names, so plant the unsafe name directly to
+    // keep checking that God view escapes names saved before that rule existed.
+    await backend.models.User.updateOne({ phone: '+639179999994' }, { firstName: '<img src=x onerror=alert(1)>' });
     await connect(driver); await connect(passenger); const missingSocket = await connect(missing);
     const fix = { ...DEFAULT_TRIP.pickup.coordinate, timestamp: Date.now(), accuracy: 5 };
     await request('/driver/location', fix, driver.token);
@@ -77,7 +80,7 @@ async function main() {
     await page.locator('[data-role=driver]').click();
     assert.equal(await page.locator('.user-row').count(), 1);
     await page.locator('.user-row').click();
-    await page.locator('#person-details').getByText('TEST-101 · General Trias').waitFor();
+    await page.locator('#person-details').getByText('TEST-101 · Test TODA').waitFor();
     await page.locator('[data-role=all]').click();
     await page.locator('#search').fill('Bea');
     assert.equal(await page.locator('.user-row').count(), 1);
@@ -119,16 +122,16 @@ async function main() {
     await request('/rides', { trip: DEFAULT_TRIP, passengers: 1, note: '', idempotencyKey: `god-view-${randomUUID()}` }, passenger.token);
     await page.locator('#refresh').click();
     await page.locator('.user-row', { hasText: 'Bea' }).click();
-    await page.locator('#person-details').getByText('Requested trip: 8.0 km · 16 min', { exact: true }).waitFor();
+    await page.locator('#person-details').getByText('Requested trip: 9.0 km · 23 min', { exact: true }).waitFor();
     await page.locator('#person-details').getByText('Waiting for a driver', { exact: true }).waitFor();
-    await request('/driver/location', { ...fix, latitude: 14.395984, longitude: 120.864839, timestamp: Date.now() }, driver.token);
+    await request('/driver/location', { ...fix, latitude: 14.205, longitude: 120.885, timestamp: Date.now() }, driver.token);
     await request('/driver/availability', { available: true }, driver.token);
     const { offer } = await request('/state', null, driver.token);
     await request(`/rides/${offer.id}/accept`, { offerId: offer.offerId }, driver.token);
     await page.locator('#refresh').click();
     await page.locator('.user-row', { hasText: 'Alex' }).click();
     await page.locator('#person-details').getByText(/^Driver to passenger: [\d.]+ k?m · \d+ min$/).waitFor();
-    await page.locator('#person-details').getByText('Then trip: 8.0 km · 16 min', { exact: true }).waitFor();
+    await page.locator('#person-details').getByText('Then trip: 9.0 km · 23 min', { exact: true }).waitFor();
     await page.waitForTimeout(800);
     await page.screenshot({ path: '/tmp/indang-god-view-to-passenger.png', fullPage: true });
     for (const step of ['arrive', 'start']) await request(`/rides/${offer.id}/${step}`, {}, driver.token);
@@ -138,7 +141,7 @@ async function main() {
     await page.locator('.person-marker.trip').click();
     await page.locator('#person-details').getByText('ON A TRIP', { exact: true }).waitFor();
     await page.locator('#person-details').getByText('Alex Pilot & Bea Pilot', { exact: true }).waitFor();
-    await page.locator('#person-details').getByText('To destination: 8.0 km · 16 min', { exact: true }).waitFor();
+    await page.locator('#person-details').getByText('To destination: 9.0 km · 23 min', { exact: true }).waitFor();
     assert.equal(await page.locator('.user-row.selected').count(), 2, 'both people are highlighted');
     await page.waitForTimeout(1200);
     await page.screenshot({ path: '/tmp/indang-god-view-desktop.png', fullPage: true });

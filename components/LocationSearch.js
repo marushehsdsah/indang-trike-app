@@ -7,6 +7,7 @@ import { Divider } from './ui/Surfaces';
 import { COLORS, HIT_SLOP, RADIUS, SPACE, TYPE } from '../theme';
 import { tapFeedback } from '../utils/feedback';
 import { useI18n } from '../i18n';
+import useKeyboardHeight from '../hooks/useKeyboardHeight';
 
 // One icon per map category (utils/placeCategories.js), so a result looks like
 // its dot on the map.
@@ -102,6 +103,7 @@ export default function LocationSearch({
   onChooseOnMap,
 }) {
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
   const { t } = useI18n();
   const hasQuery = query.trim() !== '';
   const actions = hasQuery ? [] : [
@@ -126,7 +128,8 @@ export default function LocationSearch({
         data={hasQuery ? results : []}
         keyExtractor={(place) => place.id ?? place.name}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: insets.bottom + SPACE.xl }}
+        // The keyboard covers the list's end; its height keeps the last results reachable.
+        contentContainerStyle={{ paddingBottom: (keyboardHeight || insets.bottom) + SPACE.xl }}
         ItemSeparatorComponent={() => <Divider inset={SPACE.lg + 40} />}
         ListHeaderComponent={<>
           {actions.map((action) => (

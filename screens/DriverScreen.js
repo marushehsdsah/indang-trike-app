@@ -17,6 +17,7 @@ import useReducedMotion from '../hooks/useReducedMotion';
 import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n';
 import { fareSummary } from '../i18n/messages';
+import { RatingBadge } from '../components/RatingPrompt';
 import useAccountHistory from '../hooks/useAccountHistory';
 import { ACTIVE_STATUSES, formatPeso, isFreshFix } from '../utils/rideState';
 import { getMunicipalityAt } from '../data/indangMap';
@@ -125,6 +126,11 @@ export default function DriverScreen({ navigation }) {
                 <Text style={[TYPE.heading, styles.flex]}>{t('driver.newRequest')}</Text>
                 <Text style={[TYPE.metric, styles.seconds]} accessibilityLabel={t('driver.secondsLeft', { seconds })}>{seconds}s</Text>
               </View>
+              {/* The passenger's average, before the driver decides. */}
+              {offer.passenger && <View style={styles.offerRider}>
+                <Text style={[TYPE.bodyStrong, styles.flexShrink]} numberOfLines={1}>{offer.passenger.firstName || t('rating.your.passenger')}</Text>
+                <RatingBadge rating={offer.passenger.rating} />
+              </View>}
               <TripStops pickup={offer.trip.pickup.name} dropoff={offer.trip.dropoff.name} lines={2} style={styles.offerStops} />
               {offer.note ? <View style={styles.offerNote}>
                 <MaterialCommunityIcons name="message-reply-text-outline" size={18} color={COLORS.inkSecondary} />
@@ -185,6 +191,8 @@ export default function DriverScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  offerRider: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, marginTop: SPACE.sm },
+  flexShrink: { flexShrink: 1 },
   mapArea: { flex: 1 },
   flex: { flex: 1 },
   pressed: { opacity: 0.7 },

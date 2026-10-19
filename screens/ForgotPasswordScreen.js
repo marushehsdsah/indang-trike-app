@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from 'react-native';
+import { Alert, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Screen from '../components/ui/Screen';
 import AppHeader from '../components/ui/AppHeader';
 import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
+import KeyboardAwareScrollView from '../components/ui/KeyboardAwareScrollView';
 import { COLORS, SPACE, TYPE } from '../theme';
 import { useI18n } from '../i18n';
 import { requestApi } from '../services/api';
@@ -76,84 +77,82 @@ export default function ForgotPasswordScreen({ navigation }) {
   return (
     <Screen background={COLORS.surface}>
       <AppHeader title={t(step === 'password' ? 'forgot.newPasswordTitle' : 'forgot.title')} onBack={back} />
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + SPACE.xxl }]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {step === 'email' && <>
-            <Text style={[TYPE.bodyMuted, styles.intro]}>{t('forgot.emailIntro')}</Text>
-            <Field
-              label={t('field.email')}
-              icon="email-outline"
-              placeholder="name@example.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              textContentType="emailAddress"
-              value={email}
-              onChangeText={setEmail}
-              autoFocus
-            />
-          </>}
+      <KeyboardAwareScrollView style={styles.flex}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + SPACE.xxl }]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {step === 'email' && <>
+          <Text style={[TYPE.bodyMuted, styles.intro]}>{t('forgot.emailIntro')}</Text>
+          <Field
+            label={t('field.email')}
+            icon="email-outline"
+            placeholder="name@example.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            textContentType="emailAddress"
+            value={email}
+            onChangeText={setEmail}
+            autoFocus
+          />
+        </>}
 
-          {step === 'code' && <>
-            <Text style={[TYPE.body, styles.intro]}>{t('forgot.codeSent', { email: cleanEmail })}</Text>
-            <Field
-              label={t('field.code')}
-              icon="email-check-outline"
-              placeholder="123456"
-              keyboardType="number-pad"
-              textContentType="oneTimeCode"
-              autoComplete="one-time-code"
-              maxLength={6}
-              value={code}
-              onChangeText={(value) => setCode(value.replace(/\D/g, ''))}
-              autoFocus
-            />
-          </>}
+        {step === 'code' && <>
+          <Text style={[TYPE.body, styles.intro]}>{t('forgot.codeSent', { email: cleanEmail })}</Text>
+          <Field
+            label={t('field.code')}
+            icon="email-check-outline"
+            placeholder="123456"
+            keyboardType="number-pad"
+            textContentType="oneTimeCode"
+            autoComplete="one-time-code"
+            maxLength={6}
+            value={code}
+            onChangeText={(value) => setCode(value.replace(/\D/g, ''))}
+            autoFocus
+          />
+        </>}
 
-          {step === 'password' && <>
-            <Text style={[TYPE.bodyMuted, styles.intro]}>{t('forgot.passwordIntro')}</Text>
-            <Field
-              label={t('field.newPassword')}
-              icon="lock-outline"
-              placeholder={t('field.newPasswordPlaceholder')}
-              secure
-              textContentType="newPassword"
-              value={password}
-              onChangeText={setPassword}
-              autoFocus
-            />
-            <Field
-              label={t('field.confirmPassword')}
-              icon="lock-outline"
-              placeholder={t('field.confirmPasswordPlaceholder')}
-              secure
-              textContentType="newPassword"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-            />
-          </>}
+        {step === 'password' && <>
+          <Text style={[TYPE.bodyMuted, styles.intro]}>{t('forgot.passwordIntro')}</Text>
+          <Field
+            label={t('field.newPassword')}
+            icon="lock-outline"
+            placeholder={t('field.newPasswordPlaceholder')}
+            secure
+            textContentType="newPassword"
+            value={password}
+            onChangeText={setPassword}
+            autoFocus
+          />
+          <Field
+            label={t('field.confirmPassword')}
+            icon="lock-outline"
+            placeholder={t('field.confirmPasswordPlaceholder')}
+            secure
+            textContentType="newPassword"
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+          />
+        </>}
 
-          {error && <Text accessibilityRole="alert" style={[TYPE.body, styles.error]}>{error}</Text>}
+        {error && <Text accessibilityRole="alert" style={[TYPE.body, styles.error]}>{error}</Text>}
 
-          {step === 'email' && <Button label={t('forgot.sendCode')} variant="hire" trailingIcon="arrow-right" loading={busy} onPress={sendCode} />}
-          {step === 'code' && <>
-            <Button label={t('forgot.verify')} variant="hire" trailingIcon="arrow-right" loading={busy} onPress={checkCode} />
-            <Button
-              label={resendWait ? t('register.resendIn', { seconds: resendWait }) : t('register.resend')}
-              variant="text"
-              size="sm"
-              disabled={resendWait > 0 || busy}
-              onPress={sendCode}
-              style={styles.secondary}
-            />
-          </>}
-          {step === 'password' && <Button label={t('forgot.save')} variant="hire" trailingIcon="check" loading={busy} onPress={changePassword} />}
-        </ScrollView>
-      </KeyboardAvoidingView>
+        {step === 'email' && <Button label={t('forgot.sendCode')} variant="hire" trailingIcon="arrow-right" loading={busy} onPress={sendCode} />}
+        {step === 'code' && <>
+          <Button label={t('forgot.verify')} variant="hire" trailingIcon="arrow-right" loading={busy} onPress={checkCode} />
+          <Button
+            label={resendWait ? t('register.resendIn', { seconds: resendWait }) : t('register.resend')}
+            variant="text"
+            size="sm"
+            disabled={resendWait > 0 || busy}
+            onPress={sendCode}
+            style={styles.secondary}
+          />
+        </>}
+        {step === 'password' && <Button label={t('forgot.save')} variant="hire" trailingIcon="check" loading={busy} onPress={changePassword} />}
+      </KeyboardAwareScrollView>
     </Screen>
   );
 }

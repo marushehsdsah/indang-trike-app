@@ -4,6 +4,7 @@ const { calculateRoute } = require('../utils/roadGraph');
 const { SERVICE_AREA_NAME, INDANG_BOUNDS, isInIndangServiceArea } = require('../data/indangMap');
 const { getRoadGraph } = require('../data/roadNetwork');
 const { requireValue } = require('./policy');
+const { ratingSummary } = require('../utils/rating');
 
 function parseAdminPhones(value = '') {
   return new Set(String(value).split(',').map(phone => normalizePhilippinePhone(phone.trim())).filter(Boolean));
@@ -50,7 +51,8 @@ function buildRideRoutes(rides, people, findRoute) {
   });
 }
 
-function buildOverview(users, rides, connectedIds, now, findRoute = roadRoute) {
+// reports: user id -> number of flagged (safety) ratings they received.
+function buildOverview(users, rides, connectedIds, now, findRoute = roadRoute, reports = new Map()) {
   const activeByUser = new Map();
   for (const ride of rides) {
     activeByUser.set(String(ride.passengerId), ride);
@@ -67,6 +69,7 @@ function buildOverview(users, rides, connectedIds, now, findRoute = roadRoute) {
       role: driver ? 'driver' : 'passenger', status,
       available: Boolean(driver && user.available && !active && locationStatus === 'live' && inServiceArea),
       ...(driver ? { plate: user.plate || '', toda: user.toda || '' } : {}),
+      rating: ratingSummary(user), safetyReports: reports.get(id) || 0,
       location, locationStatus, inServiceArea,
       ride: active ? { id: String(active._id), status: active.status, pickup: active.trip?.pickup?.name || '', destination: active.trip?.dropoff?.name || '' } : null,
     };
@@ -104,12 +107,13 @@ function createAdmin({ models, presence, clock, adminPhones }) {
   }
   async function overview() {
     const ids = [...presence.keys()];
-    const [users, rides] = await Promise.all([
-      models.User.find({ _id: { $in: ids } }).select('firstName lastName role plate toda available location locationAvailable').lean(),
+    const [users, rides, reports] = await Promise.all([
+      models.User.find({ _id: { $in: ids } }).select('firstName lastName role plate toda available location locationAvailable ratingSum ratingCount').lean(),
       models.Ride.find({ active: true, $or: [{ passengerId: { $in: ids } }, { driverSlot: { $in: ids } }] }).select('passengerId driverId driverSlot status trip route').lean(),
-    ]);
+      models.Rating.aggregate([{ $match: { flagged: true, rateeId: { $in: ids } } }, { $group: { _id: '$rateeId', count: { $sum: 1 } } }]),
+    ]).then(([found, active, flagged]) => [found, active, new Map(flagged.map(({ _id, count }) => [String(_id), count]))]);
     // A phone can disconnect while the database reads are in flight.
-    return buildOverview(users, rides, new Set([...presence].filter(([, sockets]) => sockets.size).map(([id]) => id)), clock(), cachedRoute);
+    return buildOverview(users, rides, new Set([...presence].filter(([, sockets]) => sockets.size).map(([id]) => id)), clock(), cachedRoute, reports);
   }
   return { middleware, overview };
 }

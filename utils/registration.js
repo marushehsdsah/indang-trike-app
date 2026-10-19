@@ -1,4 +1,10 @@
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Names allow letters (including Ñ and accented letters) and spaces only.
+const NAME_DISALLOWED = /[^A-Za-zÀ-ÖØ-öø-ÿ ]/g;
+
+function sanitizeName(text) {
+  return String(text ?? '').replace(NAME_DISALLOWED, '');
+}
 
 function normalizePhilippinePhone(phone) {
   const digits = String(phone ?? '').replace(/\D/g, '');
@@ -13,6 +19,9 @@ function normalizePhilippinePhone(phone) {
 function validateRegistration(form) {
   if (!form.firstName?.trim()) return 'First name is required.';
   if (!form.lastName?.trim()) return 'Last name is required.';
+  if (sanitizeName(form.firstName) !== form.firstName || sanitizeName(form.lastName) !== form.lastName) {
+    return 'Names can only contain letters and spaces.';
+  }
   if (!EMAIL_PATTERN.test(form.email?.trim() ?? '')) return 'Enter a valid email address.';
   if (!normalizePhilippinePhone(form.phone)) return 'Enter a valid Philippine mobile number.';
   if ((form.password ?? '').length < 8) return 'Password must be at least 8 characters.';
@@ -103,6 +112,7 @@ module.exports = {
   getApiBaseUrl,
   normalizePhilippinePhone,
   requestRegistrationCode,
+  sanitizeName,
   submitRegistration,
   validateRegistration,
 };

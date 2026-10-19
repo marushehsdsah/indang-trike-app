@@ -27,15 +27,15 @@ function measureFiveRuns(run) {
   return { medianMs: median(samples), result: lastResult, samples };
 }
 
-test('ships a bounded non-empty road graph for both towns', () => {
-  // Indang and General Trias together are about 8.5 MB.
-  assert.ok(fs.statSync(GRAPH_PATH).size < 10 * 1024 * 1024);
+test('ships a bounded non-empty road graph for Indang', () => {
+  // Indang alone is about 2.5 MB.
+  assert.ok(fs.statSync(GRAPH_PATH).size < 4 * 1024 * 1024);
   assert.equal(GRAPH.metadata.source, 'OpenStreetMap');
   assert.ok(Object.keys(GRAPH.nodes).length > 100);
   assert.ok(Object.values(GRAPH.edges).flat().length > 100);
   assert.ok(GRAPH.places.length > 0);
   const towns = new Set(GRAPH.places.map(({ town }) => town));
-  assert.deepEqual([...towns].sort(), ['General Trias', 'Indang'], 'every place is tagged with its town');
+  assert.deepEqual([...towns], ['Indang'], 'every place is tagged with its town');
   assert.match(GRAPH.metadata.sourceTimestamp, /^\d{4}-\d{2}-\d{2}T/);
 });
 
@@ -50,16 +50,15 @@ test('keeps graph initialization, routing, and local search within their budgets
     DEFAULT_TRIP.dropoff.coordinate,
   ));
 
-  // The northern and southern tips of General Trias' road network, about
-  // 26 km apart by road. Its bounding-box corners are too far from any road.
+  // The northern and southern tips of Indang's road network.
   const farRoute = measureFiveRuns(() => calculateRoute(
     validatedGraph,
-    { latitude: 14.417526, longitude: 120.882255 },
-    { latitude: 14.220886, longitude: 120.905448 },
+    { latitude: 14.244846, longitude: 120.86191 },
+    { latitude: 14.121075, longitude: 120.927235 },
   ));
 
   const representativeQueries = [
-    'General Trias', 'Cavite', 'University', 'Market', 'Barangay',
+    'Bancod', 'Cavite', 'University', 'Market', 'Barangay',
     'School', 'Church', 'Health', 'Dental', 'Farm',
     'Street', 'Road', 'Jollibee', 'Alfamart', '7 eleven',
     'Manggahan', 'Pasong Kawayan', 'Biclatan', 'Tapia', 'Santiago',

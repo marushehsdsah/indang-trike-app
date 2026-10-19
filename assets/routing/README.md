@@ -1,4 +1,4 @@
-# Offline road graph: Indang and General Trias
+# Offline road graph: Indang
 
 `service-area-road-graph.json` is the road network the app routes on. Booking,
 search, snapping, and A* routing read only this file; the app never calls a
@@ -16,42 +16,41 @@ to that page, on every map that draws this data.
 | --- | --- |
 | Source | OpenStreetMap via the Overpass API (`https://overpass-api.de/api/interpreter`) |
 | Snapshot timestamp (`osm3s.timestamp_osm_base`) | `2026-10-02T04:43:06Z` |
-| General Trias bounding box (south, west, north, east) | `14.220186, 120.859841, 14.417857, 120.932959` |
-| Indang bounding box | `14.120982, 120.810720, 14.246597, 120.929805` |
-| Clip polygons | `assets/geo/general-trias-municipality.json` (PSGC `0402108000`), `assets/geo/indang-municipality.json` (PSGC `0402110000`) |
+| Indang bounding box (south, west, north, east) | `14.120982, 120.810720, 14.246597, 120.929805` |
+| Clip polygon | `assets/geo/indang-municipality.json` (PSGC `0402110000`) |
 | Raw snapshot SHA-256 | `b934c866d34f6a15893c3b04bba29acb6b983f1cca4de93f9ab2f6512cbf87f7` |
 
-Each bounding box is the extent of that town's polygon. The raw Overpass
+The bounding box is the extent of Indang's polygon. The snapshot was taken
+with General Trias too; on 2026-10-19 its road network and places were removed
+from the generated files (the towns' roads never connected, so nothing in
+Indang changed). The raw Overpass
 response is a build input and is not committed; the generated graph is.
 
 ## Graph statistics
 
 | Nodes | Directed edges | Places | Bytes |
 | ---: | ---: | ---: | ---: |
-| 39,360 | 81,338 | 3,330 | 8,664,456 |
+| 11,380 | 23,222 | 604 | 2,449,735 |
 
-Every place carries its `town` (2,726 in General Trias, 604 in Indang) and a
+Every place carries its `town` (Indang) and a
 map `category` (food, shopping, education, health, worship, government,
 transport, leisure, lodging, landmark, services, area, or road; see
-`utils/placeCategories.js`). 1,106 places are named streets; the rest are
+`utils/placeCategories.js`). 69 places are named streets; the rest are
 establishments, landmarks, named buildings, and named areas such as
 subdivisions and business parks.
 
 ## Places layer
 
 `--places assets/places/service-area-places.json` also writes the map's places
-layer: 2,043 points, every non-street place except barangay and other place
-names (the base map labels those), each with its `name`, `category`, map
-`color`, and `rank`: 423 landmarks (rank 1, drawn from zoom 14), 1,447 other
-establishments (rank 2, from zoom 16), and 173 named areas (rank 0, labels
-only). The app (`components/PlacesLayer.js`) and the God view draw it over the
+layer: 496 points inside Indang, every non-street place except barangay and
+other place names (the base map labels those), each with its `name`,
+`category`, map `color`, and `rank`: 149 landmarks (rank 1, drawn from zoom
+14), 333 other establishments (rank 2, from zoom 16), and 14 named areas
+(rank 0, labels only). The app (`components/PlacesLayer.js`) and the God view draw it over the
 same base map.
 
-The two towns do not touch (their boundaries are about 425 m apart at the
-closest), so the graph is two road networks: General Trias (27,896 nodes) and
-Indang (11,230 nodes). No route joins them, and the app and backend require a
-trip's pickup and destination to be in the same town. The other 234 nodes are
-25 small fragments, mostly service roads whose connections lie outside the
+Indang's road network has 11,230 nodes. The other 150 nodes are 12 small
+fragments, mostly service roads whose connections lie outside the
 towns or are unmapped. A point that snaps to one of those fragments gets the
 "No drivable route found" state.
 

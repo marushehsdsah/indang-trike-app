@@ -2,7 +2,7 @@ import React from 'react';
 import { GeoJSONSource, Layer } from '@maplibre/maplibre-react-native';
 
 // Every named establishment, landmark and named area (subdivisions, business
-// parks) in Indang and General Trias, from the same OpenStreetMap snapshot as
+// parks) in Indang, from the same OpenStreetMap snapshot as
 // search (scripts/build-road-graph.js --places). Landmarks show from zoom 14
 // (named from 14.5, where the maps first open on a location), other
 // establishments from zoom 16, each as a dot in its category's colour with its

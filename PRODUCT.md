@@ -9,7 +9,7 @@ android
 ## Users
 
 - **Passengers:** mostly Cavite State University students and local residents of
-  Indang and General Trias, booking short tricycle trips within their town.
+  Indang, booking short tricycle trips within the town.
 - **Drivers:** TODA (tricycle operators and drivers association) members on
   low- to mid-range, often older Android phones.
 - **Pilot admins:** watch connected drivers and passengers on the separate God
@@ -21,7 +21,7 @@ in barangays with weak or no mobile data.
 
 ## Product Purpose
 
-IndangGO books a tricycle between two points in Indang or General Trias, matches
+IndangGO books a tricycle between two points in Indang, matches
 the passenger with a nearby driver of the right town (and, in Indang, the right
 TODA), and guides the trip along real roads. Success is a passenger getting a
 real driver quickly and both sides always knowing where the other is and what
@@ -67,7 +67,7 @@ networks and, in Indang, TODA barangay zones.
 
 ## Evidence on Hand
 
-- Real map, road and place data for Indang and General Trias
+- Real map, road and place data for Indang
   (`assets/routing`, `assets/places`, `assets/geo`).
 - TODA list and zones from `TODAs_coordinates.xlsx`.
 - No real ratings, reviews, ride counts, driver photos or testimonials exist;

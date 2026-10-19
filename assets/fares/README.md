@@ -26,7 +26,7 @@ How a trip is priced:
 - Night is 9:00 PM to 4:00 AM, Philippine time.
 - When a barangay has several listed areas (Alulod's Bukana, School, Dulo…),
   the rider picks one; the booking is refused until they do.
-- General Trias has no taripa in the file yet: ₱45 flat (`FLAT_FARE`).
+- A stop the taripa lists no area for is priced ₱45 flat (`FLAT_FARE`).
 
 `review` in the JSON lists every place where the sheets disagree or a point had
 to be placed by judgment. Confirm those with the TODAs and update the file.

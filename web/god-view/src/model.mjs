@@ -51,6 +51,20 @@ export function routeSummary(route) {
   return [route.trip ? `To destination: ${leg(route.trip)}` : 'To destination'];
 }
 
+// "Rated 4.8 from 12 trips", or "No ratings yet". Ratings come from the
+// people they rode with (utils/rating.js).
+export function ratingLabel(user) {
+  const rating = user.rating;
+  if (!rating || rating.average === null || rating.average === undefined) return 'No ratings yet';
+  return `Rated ${rating.average.toFixed(1)} from ${rating.count} trip${rating.count === 1 ? '' : 's'}`;
+}
+
+// "2 safety reports to review", or null when there are none.
+export function safetyReportLabel(user) {
+  const count = user.safetyReports || 0;
+  return count ? `${count} safety report${count === 1 ? '' : 's'} to review` : null;
+}
+
 export function statusLabel(user) {
   return { idle: 'Browsing', available: user.available ? 'Ready for requests' : 'Unavailable for matching', unavailable: 'Not accepting rides',
     offered: 'Ride request offered', searching: 'Finding a driver', accepted: 'Heading to pickup', arrived: 'At pickup', in_progress: 'On a trip' }[user.status] || 'Connected';

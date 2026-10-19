@@ -79,3 +79,14 @@ test('a driver and passenger on a trip share one marker at the trike', async () 
   assert.equal(tripOf('d3', routes), null, 'on the way to pickup is not a shared trip');
   assert.deepEqual(mapPeople(users.filter((user) => user.id !== 'p1'), routes).map((item) => item.id).includes('d1'), true, 'a trip whose passenger is filtered out shows the driver alone');
 });
+
+test('person details show the rating average and any safety reports', async () => {
+  const { ratingLabel, safetyReportLabel } = await model();
+  assert.equal(ratingLabel({ rating: { average: 4.75, count: 12 } }), 'Rated 4.8 from 12 trips');
+  assert.equal(ratingLabel({ rating: { average: 5, count: 1 } }), 'Rated 5.0 from 1 trip');
+  assert.equal(ratingLabel({ rating: { average: null, count: 0 } }), 'No ratings yet');
+  assert.equal(ratingLabel({}), 'No ratings yet');
+  assert.equal(safetyReportLabel({ safetyReports: 2 }), '2 safety reports to review');
+  assert.equal(safetyReportLabel({ safetyReports: 1 }), '1 safety report to review');
+  assert.equal(safetyReportLabel({ safetyReports: 0 }), null);
+});

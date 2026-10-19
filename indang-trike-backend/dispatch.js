@@ -3,9 +3,10 @@ const { ASSIGNED_STATUSES, GPS_MAX_AGE_MS, isFreshFix, rankDrivers, validateFix,
 const { getMunicipalityAt } = require('../data/indangMap');
 const { findToda, todaServes } = require('../data/todaZones');
 const { HttpError, requireValue, publicUser, bookingFields, cleanText } = require('./policy');
+const { ratingSummary, validateRating } = require('../utils/rating');
 
 function createDispatch({ models, io, clock, presence, options = {} }) {
-  const { User, Ride } = models;
+  const { User, Ride, Rating } = models;
   const offerMs = options.offerMs ?? 20000, searchMs = options.searchMs ?? 120000;
   let tail = Promise.resolve();
   // Ordered writes plus database uniqueness protect the single-server deployment.
@@ -13,12 +14,18 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
   const connected = (id) => Boolean(presence.get(String(id))?.size);
   function notify(...ids) { for (const id of new Set(ids.filter(Boolean).map(String))) io.to(`user:${id}`).emit('state:changed'); }
   function notifyRide(ride) { notify(ride.passengerId, ride.driverId, ride.driverSlot); }
-  async function view(ride, viewerId, offered = false) {
+  // `ratings`, when given, holds the viewer's ratings by ride id, looked up
+  // once for a whole list (see history) instead of once per ride.
+  async function view(ride, viewerId, offered = false, ratings) {
     if (!ride) return null;
     const result = ride.toObject ? ride.toObject() : { ...ride };
-    const [driver, passenger] = await Promise.all([result.driverId ? User.findById(result.driverId) : null, User.findById(result.passengerId)]);
+    const rated = result.status === 'completed' && viewerId;
+    const [driver, passenger, myRating] = await Promise.all([result.driverId ? User.findById(result.driverId) : null, User.findById(result.passengerId),
+      !rated ? null : ratings ? ratings.get(String(result._id)) ?? null : Rating.findOne({ rideId: String(result._id), raterId: String(viewerId) })]);
+    // Each side sees the other's average rating: the driver on the offer, the
+    // passenger once a driver is assigned.
     const contact = (user, allowPhone) => user ? {
-      id: String(user._id), firstName: user.firstName || '', lastName: user.lastName || '',
+      id: String(user._id), firstName: user.firstName || '', lastName: user.lastName || '', rating: ratingSummary(user),
       ...(allowPhone ? { phone: user.phone } : {}),
       ...(user.role === 'driver' ? { plate: user.plate, toda: user.toda, capacity: user.capacity } : {}),
     } : null;
@@ -35,6 +42,8 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
       driverConnected: assigned && driver ? connected(driver._id) : false,
       driverLocationAvailable: Boolean(assigned && driver?.locationAvailable && isFreshFix(driver.location, clock())),
       passengerLocation,
+      // The viewer's own rating of the other participant, once given.
+      myRating: myRating ? { stars: myRating.stars, tags: myRating.tags, comment: myRating.comment } : null,
       createdAt: result.createdAt, completedAt: result.completedAt, cancelledAt: result.cancelledAt,
       cancellationReason: result.cancellationReason, searchExpiresAt: result.searchExpiresAt,
       ...(offered && result.driverSlot === String(viewerId) ? { offerId: result.offerId, offerExpiresAt: result.offerExpiresAt } : {}),
@@ -143,6 +152,27 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     notifyRide(ride); notifyRide(updated); await tickUnsafe();
     return { ride: await view(updated, userId) };
   }
+  // A participant rates the other one, once, after the ride is completed.
+  async function rate(user, id, body = {}) {
+    requireValue(/^[a-f0-9]{24}$/.test(id), 404, 'Ride not found.');
+    const ride = await Ride.findById(id), userId = String(user._id);
+    requireValue(ride, 404, 'Ride not found.');
+    const asPassenger = ride.passengerId === userId, asDriver = ride.driverId === userId;
+    requireValue(asPassenger || asDriver, 403, 'You are not a participant in this ride.');
+    requireValue(ride.status === 'completed', 409, 'You can rate a ride once it is completed.');
+    let fields;
+    try { fields = validateRating(body, asPassenger ? 'driver' : 'passenger'); } catch (error) { throw new HttpError(400, error.message); }
+    const rateeId = asPassenger ? ride.driverId : ride.passengerId;
+    try {
+      await Rating.create({ ...fields, rideId: String(ride._id), raterId: userId, rateeId, raterRole: asPassenger ? 'passenger' : 'driver', comment: cleanText(fields.comment, 200) });
+    } catch (error) { if (error.code === 11000) throw new HttpError(409, 'You already rated this ride.'); throw error; }
+    // The average comes from these running totals. If they cannot be updated,
+    // the rating is taken back so the rater can simply try again.
+    try { await User.updateOne({ _id: rateeId }, { $inc: { ratingSum: fields.stars, ratingCount: 1 } }); }
+    catch (error) { await Rating.deleteOne({ rideId: String(ride._id), raterId: userId }).catch(() => {}); throw error; }
+    notify(userId);
+    return { ride: await view(ride, userId) };
+  }
   async function location(user, body) {
     requireValue(user.role === 'driver', 403, 'Driver account required.');
     let fix;
@@ -199,7 +229,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     if (ride) notifyRide(ride);
     await tickUnsafe(); notify(user._id); return { ok: true };
   }
-  return { run, view, snapshot, book, action, location, passengerLocation, passengerLocationUnavailable, locationUnavailable, availability, disconnect, notify, tick: () => run(tickUnsafe), connected };
+  return { run, view, snapshot, book, action, rate, location, passengerLocation, passengerLocationUnavailable, locationUnavailable, availability, disconnect, notify, tick: () => run(tickUnsafe), connected };
 }
 
 module.exports = { createDispatch };

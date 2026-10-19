@@ -17,6 +17,7 @@ function loadRegistrationModule() {
 const {
   getApiBaseUrl,
   requestRegistrationCode,
+  sanitizeName,
   submitRegistration,
   validateRegistration,
 } = loadRegistrationModule();
@@ -105,6 +106,14 @@ test('rejects an invalid form before contacting the backend', async () => {
     { message: 'Passwords do not match.' },
   );
   assert.equal(requestCount, 0);
+});
+
+test('names accept letters and spaces only', () => {
+  assert.equal(sanitizeName('Juan123!@#'), 'Juan');
+  assert.equal(sanitizeName('Dela Cruz'), 'Dela Cruz');
+  assert.equal(sanitizeName('Peñafrancia'), 'Peñafrancia');
+  assert.equal(validateRegistration({ ...validForm, firstName: 'Juan$' }), 'Names can only contain letters and spaces.');
+  assert.equal(validateRegistration({ ...validForm, lastName: 'Dela_Cruz' }), 'Names can only contain letters and spaces.');
 });
 
 test('requires every displayed field and acceptance of the terms', () => {

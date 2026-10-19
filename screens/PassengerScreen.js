@@ -37,11 +37,6 @@ const NOTICE_MS = 6000;
 // Tapping one opens search already filled in, so the rider never types a whole
 // place name. Each town has its own; search lists the rider's town first.
 const SHORTCUTS = {
-  'General Trias': [
-    { label: 'shortcut.cvsuGentri', icon: 'school-outline', query: 'Cavite State University' },
-    { label: 'shortcut.market', icon: 'storefront-outline', query: 'Market' },
-    { label: 'shortcut.cityHall', icon: 'office-building-outline', query: 'City Hall' },
-  ],
   Indang: [
     { label: 'shortcut.cvsuMain', icon: 'school-outline', query: 'Cavite State University' },
     { label: 'shortcut.market', icon: 'storefront-outline', query: 'Indang Public Market' },

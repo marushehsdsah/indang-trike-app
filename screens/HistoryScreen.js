@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, StyleSheet, Text, View } from 'react-native';
 import Screen from '../components/ui/Screen';
 import AppHeader from '../components/ui/AppHeader';
 import Button from '../components/ui/Button';
@@ -7,6 +7,8 @@ import { Card, EmptyState, Money, SegmentedControl } from '../components/ui/Surf
 import BottomNav from '../components/BottomNav';
 import ConnectionBanner from '../components/ConnectionBanner';
 import TripStops from '../components/TripStops';
+import RatingPrompt, { Stars } from '../components/RatingPrompt';
+import KeyboardAwareScrollView from '../components/ui/KeyboardAwareScrollView';
 import useAccountHistory from '../hooks/useAccountHistory';
 import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n';
@@ -15,13 +17,14 @@ import { COLORS, SPACE, TYPE } from '../theme';
 export default function HistoryScreen({ navigation }) {
   const { user } = useApp(), { rides, loading, error, fromCache, reload } = useAccountHistory();
   const { t, language } = useI18n();
-  const [filter, setFilter] = useState('all');
+  // rating: the id of the ride whose rating card is open.
+  const [filter, setFilter] = useState('all'), [rating, setRating] = useState(null);
   const driver = user.role === 'driver';
   const visible = rides.filter((ride) => filter === 'all' || ride.status === filter);
   const locale = language === 'fil' ? 'fil-PH' : 'en-PH';
   return <Screen>
     <AppHeader title={t(driver ? 'history.driverTitle' : 'history.title')} subtitle={fromCache ? t('history.fromCache') : null} />
-    <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={reload} colors={[COLORS.brand]} />}>
+    <KeyboardAwareScrollView style={styles.flex} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={reload} colors={[COLORS.brand]} />}>
       <ConnectionBanner />
       <SegmentedControl value={filter} onChange={setFilter} options={[
         { value: 'all', label: t('history.all') }, { value: 'completed', label: t('history.completed') }, { value: 'cancelled', label: t('history.cancelled') },
@@ -43,17 +46,22 @@ export default function HistoryScreen({ navigation }) {
               <View style={styles.flex}>
                 {completed ? <Money amount={ride.fare} size={22} /> : <Text style={TYPE.caption}>{t('history.noFare')}</Text>}
               </View>
+              {completed && (ride.myRating ? <Stars value={ride.myRating.stars} size={16} />
+                : rating !== ride.id && <Button label={t('rating.rate')} icon="star-outline" size="sm" full={false} variant="outline" onPress={() => setRating(ride.id)} />)}
               {!driver && ride.trip.dropoff.coordinate && <Button label={t('history.rebook')} icon="replay" size="sm" full={false} variant="tonal"
                 onPress={() => navigation.navigate('Passenger', { destination: ride.trip.dropoff })} />}
             </View>
+            {rating === ride.id && !ride.myRating && <RatingPrompt ride={ride} asDriver={driver} style={styles.ratingCard}
+              onSkip={() => setRating(null)} onRated={() => { setRating(null); reload(); }} />}
           </Card>;
         })}
-    </ScrollView>
+    </KeyboardAwareScrollView>
     <BottomNav active="history" navigation={navigation} />
   </Screen>;
 }
 
 const styles = StyleSheet.create({
+  ratingCard: { marginTop: SPACE.md, marginBottom: 0 },
   content: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.xxl },
   flex: { flex: 1 },
   card: { marginTop: SPACE.md },

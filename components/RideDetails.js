@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Avatar, Money } from './ui/Surfaces';
 import IconButton from './ui/IconButton';
 import TripStops from './TripStops';
+import { RatingBadge } from './RatingPrompt';
 import { COLORS, SPACE, TYPE } from '../theme';
 import { userName } from '../utils/rideState';
 import { useI18n } from '../i18n';
@@ -20,7 +21,11 @@ export function PersonRow({ person, subtitle, style }) {
     <View style={[styles.person, style]}>
       <Avatar name={userName(person)} size={44} />
       <View style={styles.personText}>
-        <Text style={TYPE.subheading} numberOfLines={1}>{userName(person)}</Text>
+        <View style={styles.nameRow}>
+          <Text style={[TYPE.subheading, styles.name]} numberOfLines={1}>{userName(person)}</Text>
+          {/* Their average, so each side knows who they are about to ride with. */}
+          {person.rating && <RatingBadge rating={person.rating} />}
+        </View>
         {subtitle ? <Text style={TYPE.caption} numberOfLines={1}>{subtitle}</Text> : null}
       </View>
       {person.phone && <>
@@ -59,6 +64,8 @@ export function TripFacts({ ride, style }) {
 }
 
 const styles = StyleSheet.create({
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
+  name: { flexShrink: 1 },
   person: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
   personText: { flex: 1, marginLeft: SPACE.xs },
   note: { flexDirection: 'row', alignItems: 'flex-start', marginTop: SPACE.md, gap: SPACE.sm },

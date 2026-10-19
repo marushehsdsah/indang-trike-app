@@ -81,11 +81,16 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
     const result = await dispatch.run(() => dispatch.book(req.user, req.body));
     res.status(result.reused ? 200 : 201).json(result);
   });
+  // Before the generic action route, which would otherwise take "rating".
+  app.post('/api/rides/:id/rating', async (req, res) => res.json(await dispatch.run(() => dispatch.rate(req.user, req.params.id, req.body))));
   app.post('/api/rides/:id/:action', async (req, res) => res.json(await dispatch.run(() => dispatch.action(req.user, req.params.id, req.params.action, req.body))));
   app.get('/api/history', async (req, res) => {
     const filter = req.user.role === 'driver' ? { driverId: String(req.user._id) } : { passengerId: String(req.user._id) };
     const rides = await models.Ride.find({ ...filter, active: false }).sort({ createdAt: -1 }).limit(100);
-    res.json({ rides: await Promise.all(rides.map((ride) => dispatch.view(ride, req.user._id))) });
+    // The viewer's ratings for the whole list in one query.
+    const given = await models.Rating.find({ rideId: { $in: rides.map((ride) => String(ride._id)) }, raterId: String(req.user._id) });
+    const ratings = new Map(given.map((rating) => [rating.rideId, rating]));
+    res.json({ rides: await Promise.all(rides.map((ride) => dispatch.view(ride, req.user._id, false, ratings))) });
   });
   app.get('/api/stats', async (req, res) => {
     const identity = req.user.role === 'driver' ? { driverId: String(req.user._id) } : { passengerId: String(req.user._id) };

@@ -208,9 +208,15 @@ export function AppProvider({ children }) {
       await refresh(); return result;
     } catch (failure) { if (generation === sessionGeneration.current) await refresh(); throw failure; }
   }, [request, refresh]);
+  // Rates the other participant of a completed ride; returns the updated ride.
+  const rateRide = useCallback(async (id, rating) => {
+    const result = await request(`/rides/${id}/rating`, rating);
+    if (result.ride) setRide((previous) => previous?.id === result.ride.id ? mergeRide(previous, result.ride) : previous);
+    return result.ride;
+  }, [request]);
   const dismissRide = useCallback(() => setRide((previous) => previous && ACTIVE_STATUSES.includes(previous.status) ? previous : null), []);
 
   return <Context.Provider value={{ user, ride, offer, token, loading, error, connected, online, syncing, config, gps, foreground, serverOffset,
-    request, refresh, restore, signIn, signOut, setAvailable, bookRide, rideAction, dismissRide, clearError: () => setError(null) }}>{children}</Context.Provider>;
+    request, refresh, restore, signIn, signOut, setAvailable, bookRide, rideAction, rateRide, dismissRide, clearError: () => setError(null) }}>{children}</Context.Provider>;
 }
 export const useApp = () => useContext(Context);

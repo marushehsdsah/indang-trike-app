@@ -44,7 +44,7 @@ Everything below runs on the device with no network call.
   driver, and the yellow Book button. Indang fares follow the municipal taripa
   (`assets/fares/README.md`): the rider chooses a special trip (whole trike) or,
   on the Bancod routes, a regular per-passenger fare with the student/senior/PWD
-  discount; the server recomputes every fare. General Trias stays ₱45 flat.
+  discount; the server recomputes every fare.
 - The backend computes the authoritative road route from the selected stops.
   Persisted booking state drives searching and active-ride screens.
 

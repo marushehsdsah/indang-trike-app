@@ -5,6 +5,7 @@ const path = require('node:path');
 const { STRINGS, translate } = require('../i18n/translate');
 const { STATUS_LABELS } = require('../utils/rideState');
 const { CATEGORY_COLORS } = require('../utils/placeCategories');
+const { RATING_TAGS } = require('../utils/rating');
 
 const ROOT = path.join(__dirname, '..');
 const SOURCE_DIRS = ['screens', 'components', 'hooks', 'i18n', 'navigation'];
@@ -52,6 +53,10 @@ test('keys built at runtime exist for every value they are built from', () => {
     ...['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'].map((point) => `compass.${point}`),
     ...['outside', 'off-route', 'follow-route', 'no-route'].map((status) => `guide.status.${status}`),
     ...['arrive', 'complete'].flatMap((action) => [`active.${action}Hint`, `active.${action}NoGps`]),
+    ...[1, 2, 3, 4, 5].map((stars) => `rating.star.${stars}`),
+    ...['driver', 'passenger'].flatMap((role) => [`rating.title.${role}`, `rating.your.${role}`]),
+    // components/RatingPrompt.js ratingTagKey: the tag's letters.
+    ...Object.values(RATING_TAGS).flatMap(({ praise, concern }) => [...praise, ...concern]).map((tag) => `rating.tag.${tag.replace(/[^A-Za-z]/g, '')}`),
   ];
   assert.deepEqual(keys.filter((key) => !(key in STRINGS.en)), []);
 });

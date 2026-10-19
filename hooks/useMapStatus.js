@@ -34,6 +34,8 @@ export function useGpsStatus({ town } = {}) {
     };
   }
   if (gps.inServiceArea === false) return { tone: 'alert', icon: 'map-marker-alert-outline', label: t('status.outside') };
+  // Testing from outside Indang: the fix is CvSU's, not the phone's (utils/testLocation.js).
+  if (gps.fix?.simulated) return { tone: 'wait', icon: 'test-tube', label: t('status.testLocation') };
   return { tone: 'live', icon: 'crosshairs-gps', label: town ? t('status.liveIn', { town }) : t('status.live') };
 }
 

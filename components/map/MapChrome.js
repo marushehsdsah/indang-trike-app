@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapAttribution from '../MapAttribution';
 import { COLORS, ELEVATION, RADIUS, SPACE } from '../../theme';
+import useKeyboardHeight from '../../hooks/useKeyboardHeight';
 
 // The pieces every map screen is built from. Nothing here drags or scrolls
 // with the map: a card floats 12 dp off the screen edges, the map buttons
@@ -34,9 +35,14 @@ export function MapTop({ children, edge = true, onHeight, style }) {
 // the map uses to keep the route clear of it.
 export function MapBottom({ rail, children, edge = true, onHeight, style }) {
   const insets = useSafeAreaInsets();
+  // Rides above the on-screen keyboard while one of its fields (the driver
+  // note) is typed in; the app draws edge to edge, so Android does not move it.
+  const keyboardHeight = useKeyboardHeight();
   return (
     <View
-      style={[styles.bottom, { paddingBottom: (edge ? insets.bottom : 0) + SPACE.md }, style]}
+      style={[styles.bottom, keyboardHeight
+        ? { bottom: keyboardHeight, paddingBottom: SPACE.md }
+        : { paddingBottom: (edge ? insets.bottom : 0) + SPACE.md }, style]}
       pointerEvents="box-none"
       onLayout={onHeight ? ({ nativeEvent }) => onHeight(Math.round(nativeEvent.layout.height)) : undefined}
     >

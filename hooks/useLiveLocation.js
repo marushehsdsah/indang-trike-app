@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Location from 'expo-location';
 import { isFreshFix } from '../utils/rideState';
 import { isInIndangServiceArea } from '../data/indangMap';
+import { testingFix } from '../utils/testLocation';
 
+// testingFix only changes a fix while testing from outside Indang (see utils/testLocation.js).
 function measuredFix(position) {
-  return { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy,
-    timestamp: position.timestamp, heading: position.coords.heading, speed: position.coords.speed };
+  return testingFix({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy,
+    timestamp: position.timestamp, heading: position.coords.heading, speed: position.coords.speed });
 }
 const MESSAGES = {
   idle: 'GPS is off while you are offline.', locating: 'Waiting for GPS…', denied: 'Location permission is off. Enable it in Settings.',
