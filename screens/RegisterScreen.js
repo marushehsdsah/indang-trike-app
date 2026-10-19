@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert, KeyboardAvoidingView, NativeModules, Platform, Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
@@ -13,7 +13,7 @@ import { SegmentedControl } from '../components/ui/Surfaces';
 import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
 import { useI18n } from '../i18n';
 import { successFeedback, warningFeedback } from '../utils/feedback';
-import { getApiBaseUrl, submitRegistration } from '../utils/registration';
+import { getApiBaseUrl, requestRegistrationCode, submitRegistration } from '../utils/registration';
 
 const API_BASE_URL = getApiBaseUrl({
   configuredUrl: process.env.EXPO_PUBLIC_API_URL,
@@ -36,25 +36,46 @@ export default function RegisterScreen({ navigation }) {
   const [plate, setPlate] = useState('');
   const [toda, setToda] = useState('');
   const [capacity, setCapacity] = useState('4');
+  // After the form is sent, the email the code went to; the screen then asks
+  // for the code. resendAt is when another code may be asked for.
+  const [codeSentTo, setCodeSentTo] = useState(null);
+  const [code, setCode] = useState('');
+  const [resendAt, setResendAt] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  const resendWait = Math.max(0, Math.ceil((resendAt - now) / 1000));
+  useEffect(() => {
+    if (!codeSentTo || resendWait === 0) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [codeSentTo, resendWait === 0]);
+
+  const form = {
+    firstName, lastName, email, phone, password, confirmPassword, acceptedTerms: isChecked,
+    role, plate, toda, capacity: Number(capacity),
+  };
+
+  const sendCode = async () => {
+    if (isSubmitting) return;
+
+    setSubmitting(true);
+    try {
+      const result = await requestRegistrationCode(form, { apiBaseUrl: API_BASE_URL });
+      setCodeSentTo(result.email || email.trim().toLowerCase());
+      setCode(''); setResendAt(Date.now() + 60000); setNow(Date.now());
+    } catch (error) {
+      warningFeedback();
+      Alert.alert(t('register.unable'), error.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleSignUp = async () => {
     if (isSubmitting) return;
 
     setSubmitting(true);
     try {
-      const result = await submitRegistration(
-        {
-          firstName,
-          lastName,
-          email,
-          phone,
-          password,
-          confirmPassword,
-          acceptedTerms: isChecked,
-          role, plate, toda, capacity: Number(capacity),
-        },
-        { apiBaseUrl: API_BASE_URL },
-      );
+      const result = await submitRegistration({ ...form, code }, { apiBaseUrl: API_BASE_URL });
 
       successFeedback();
       Alert.alert(t('register.createdTitle'), result.message || t('register.createdMessage'), [
@@ -70,7 +91,10 @@ export default function RegisterScreen({ navigation }) {
 
   return (
     <Screen background={COLORS.surface}>
-      <AppHeader title={t('register.title')} onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('Splash'))} />
+      <AppHeader
+        title={t(codeSentTo ? 'register.codeTitle' : 'register.title')}
+        onBack={() => (codeSentTo ? setCodeSentTo(null) : navigation.canGoBack() ? navigation.goBack() : navigation.replace('Splash'))}
+      />
 
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
@@ -78,6 +102,37 @@ export default function RegisterScreen({ navigation }) {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          {codeSentTo ? <>
+            <Text style={[TYPE.body, styles.subtitle]}>{t('register.codeSent', { email: codeSentTo })}</Text>
+            <Field
+              label={t('field.code')}
+              icon="email-check-outline"
+              placeholder="123456"
+              keyboardType="number-pad"
+              textContentType="oneTimeCode"
+              autoComplete="one-time-code"
+              maxLength={6}
+              value={code}
+              onChangeText={(value) => setCode(value.replace(/\D/g, ''))}
+              autoFocus
+            />
+            <Button
+              label={t('register.submit')}
+              variant="hire"
+              trailingIcon="arrow-right"
+              onPress={handleSignUp}
+              loading={isSubmitting}
+            />
+            <Button
+              label={resendWait ? t('register.resendIn', { seconds: resendWait }) : t('register.resend')}
+              variant="text"
+              size="sm"
+              disabled={resendWait > 0 || isSubmitting}
+              onPress={sendCode}
+              style={styles.codeAction}
+            />
+            <Button label={t('register.editDetails')} variant="text" size="sm" onPress={() => setCodeSentTo(null)} />
+          </> : <>
           <SegmentedControl value={role} onChange={setRole} options={[{ value: 'passenger', label: t('register.passenger') }, { value: 'driver', label: t('register.driver') }]} />
           <Text style={[TYPE.bodyMuted, styles.subtitle]}>{t(role === 'driver' ? 'register.driverPitch' : 'register.passengerPitch')}</Text>
 
@@ -165,12 +220,13 @@ export default function RegisterScreen({ navigation }) {
           </Pressable>
 
           <Button
-            label={t('register.submit')}
+            label={t('register.sendCode')}
             variant="hire"
             trailingIcon="arrow-right"
-            onPress={handleSignUp}
+            onPress={sendCode}
             loading={isSubmitting}
           />
+          </>}
 
           <View style={styles.footer}>
             <Text style={TYPE.body}>{t('register.haveAccount')} </Text>
@@ -206,6 +262,8 @@ const styles = StyleSheet.create({
   },
   checkboxChecked: { backgroundColor: COLORS.brand, borderColor: COLORS.brand },
   termsText: { flex: 1 },
+
+  codeAction: { marginTop: SPACE.md },
 
   footer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', marginTop: SPACE.xl },
   footerLink: { color: COLORS.brand },

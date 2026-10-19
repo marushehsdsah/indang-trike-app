@@ -12,8 +12,9 @@ const { createBackend } = require('../indang-trike-backend/app');
 const { DEFAULT_TRIP } = require('../data/indangMap');
 
 async function main() {
-  const dbName = `indang_test_browser_${randomUUID().replaceAll('-', '')}`;
-  const backend = await createBackend({ mongoUri: `${process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017'}/${dbName}`, adminPhones: '09179999991' });
+  const dbName = `indang_test_browser_${randomUUID().replaceAll('-', '').slice(0, 16)}`; // Atlas: at most 38 bytes
+  const emailedCodes = new Map(); // stands in for Brevo
+  const backend = await createBackend({ mongoUri: `${process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017'}/${dbName}`, adminPhones: '09179999991', sendEmail: async ({ to, code }) => { emailedCodes.set(to, code); } });
   const sockets = []; let browser, site, siteDir;
   try {
     await new Promise(resolve => backend.server.listen(0, '127.0.0.1', resolve));
@@ -29,7 +30,9 @@ async function main() {
       const result = await response.json(); assert.ok(response.ok, JSON.stringify(result)); return result;
     }
     async function account(phone, role, firstName) {
-      await request('/register', { phone, role, firstName, lastName: 'Pilot', email: `${phone}@example.com`, password: 'pilot-test-password', ...(role === 'driver' ? { plate: 'TEST-101', toda: 'General Trias', capacity: 4 } : {}) });
+      const form = { phone, role, firstName, lastName: 'Pilot', email: `${phone}@example.com`, password: 'pilot-test-password', ...(role === 'driver' ? { plate: 'TEST-101', toda: 'General Trias', capacity: 4 } : {}) };
+      await request('/register/code', form);
+      await request('/register', { ...form, code: emailedCodes.get(form.email) });
       return request('/login', { phone, password: 'pilot-test-password' });
     }
     async function connect(account) {

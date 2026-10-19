@@ -16,6 +16,11 @@ services:
       # MongoDB Atlas connection string, entered in the Render dashboard.
       - key: MONGO_URL
         sync: false
+      # Brevo emails the sign-up codes; the sender address must be verified in Brevo.
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        sync: false
 
   # The God view admin dashboard: a separate static website (web/god-view)
   # that reads the API above. Free static sites do not sleep.

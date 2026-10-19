@@ -7,19 +7,23 @@ const { createModels } = require('./models');
 const { createAuth } = require('./auth');
 const { createDispatch } = require('./dispatch');
 const { createAdmin } = require('./admin');
+const { createBrevoMailer } = require('./mailer');
 const { requireValue, profileFields, publicUser } = require('./policy');
 const { SERVICE_AREA_NAME, INDANG_BOUNDARY_SHAPE } = require('../data/indangMap');
 const { FLAT_FARE } = require('../data/fares');
 const SERVICE_AREA_PLACES = require('../assets/places/service-area-places.json');
 
-async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://127.0.0.1:27017/indang_trike_db', clock = Date.now, dispatchOptions, adminPhones = process.env.GOD_VIEW_ADMIN_PHONES || '' } = {}) {
+async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://127.0.0.1:27017/indang_trike_db', clock = Date.now, dispatchOptions, adminPhones = process.env.GOD_VIEW_ADMIN_PHONES || '', sendEmail = createBrevoMailer() } = {}) {
   const connection = await mongoose.createConnection(mongoUri, { serverSelectionTimeoutMS: 5000 }).asPromise();
   const models = createModels(connection);
   await Promise.all(Object.values(models).map((model) => model.init()));
+  // Drops the code collections' earlier cleanup index on expiresAt, which let a
+  // server clock running behind the database's lose fresh codes.
+  await Promise.all([models.EmailCode.syncIndexes(), models.ResetCode.syncIndexes()]);
   await models.User.updateMany({ role: 'driver' }, { $set: { available: false, locationAvailable: false } });
   const app = express(), server = createServer(app);
   const io = new Server(server, { cors: { origin: process.env.CORS_ORIGIN || '*' }, maxHttpBufferSize: 20000 });
-  const presence = new Map(), auth = createAuth(models, clock);
+  const presence = new Map(), auth = createAuth(models, clock, { sendEmail });
   const dispatch = createDispatch({ models, io, clock, presence, options: dispatchOptions });
   const admin = createAdmin({ models, presence, clock, adminPhones });
   app.disable('x-powered-by');
@@ -28,7 +32,7 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
   app.use(express.json({ limit: '32kb' }));
   const attempts = new Map();
-  app.use(['/api/register', '/api/login'], (req, res, next) => {
+  app.use(['/api/register', '/api/login', '/api/password'], (req, res, next) => {
     const key = `${req.ip}:${req.baseUrl}:${String(req.body?.phone).slice(0, 30)}`;
     const previous = attempts.get(key), entry = previous && previous.until > clock() ? previous : { count: 0, until: clock() + 300000 };
     entry.count += 1; attempts.set(key, entry);
@@ -38,8 +42,15 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   });
   // serviceArea shows which municipality a deployed server accepts bookings in.
   app.get('/api/health', (req, res) => res.status(connection.readyState === 1 ? 200 : 503).json({ ok: connection.readyState === 1, serviceArea: SERVICE_AREA_NAME }));
+  // Signing up takes two calls: the form gets an emailed code, then the form
+  // with that code creates the account.
+  app.post('/api/register/code', async (req, res) => res.json(await auth.sendSignupCode(req.body)));
   app.post('/api/register', async (req, res) => res.status(201).json({ user: await auth.register(req.body), message: 'Account created successfully.' }));
   app.post('/api/login', async (req, res) => res.json(await auth.login(req.body)));
+  // Forgot password: email a code, check it, then set the new password with it.
+  app.post('/api/password/code', async (req, res) => res.json(await auth.sendResetCode(req.body)));
+  app.post('/api/password/verify', async (req, res) => res.json(await auth.checkResetCode(req.body)));
+  app.post('/api/password/reset', async (req, res) => res.json(await auth.resetPassword(req.body)));
   app.use('/api', auth.middleware);
   app.use('/api/admin', admin.middleware);
   app.get('/api/admin/overview', async (req, res) => res.json(await admin.overview()));

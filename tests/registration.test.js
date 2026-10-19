@@ -16,6 +16,7 @@ function loadRegistrationModule() {
 
 const {
   getApiBaseUrl,
+  requestRegistrationCode,
   submitRegistration,
   validateRegistration,
 } = loadRegistrationModule();
@@ -28,6 +29,7 @@ const validForm = {
   password: 'secret123',
   confirmPassword: 'secret123',
   acceptedTerms: true,
+  code: ' 123 456 ',
 };
 
 test('submits a valid registration with a normalized Philippine phone number', async () => {
@@ -51,8 +53,27 @@ test('submits a valid registration with a normalized Philippine phone number', a
   assert.deepEqual(requests[0][1], {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone: '+639123456789', password: 'secret123', firstName: 'Juan', lastName: 'Dela Cruz', email: 'juan@example.com', role: 'passenger' }),
+    body: JSON.stringify({ phone: '+639123456789', password: 'secret123', firstName: 'Juan', lastName: 'Dela Cruz', email: 'juan@example.com', role: 'passenger', code: '123456' }),
   });
+});
+
+test('asks the backend to email a code for the checked form, without a code', async () => {
+  const requests = [];
+  const result = await requestRegistrationCode(validForm, { apiBaseUrl: 'http://192.168.1.20:3000', fetchImpl: async (...args) => {
+    requests.push(args); return { ok: true, json: async () => ({ email: 'juan@example.com' }) };
+  } });
+  assert.equal(result.email, 'juan@example.com');
+  assert.equal(requests[0][0], 'http://192.168.1.20:3000/api/register/code');
+  assert.equal(JSON.parse(requests[0][1].body).code, undefined);
+  await assert.rejects(requestRegistrationCode({ ...validForm, acceptedTerms: false }, { apiBaseUrl: 'http://localhost', fetchImpl: async () => assert.fail() }),
+    { message: 'You must accept the Terms of Service and Privacy Policy.' });
+});
+
+test('creating the account needs the 6-digit code from the email', async () => {
+  for (const code of ['', '12345', 'abcdef']) {
+    await assert.rejects(submitRegistration({ ...validForm, code }, { apiBaseUrl: 'http://localhost', fetchImpl: async () => assert.fail() }),
+      { message: 'Enter the 6-digit code from your email.' });
+  }
 });
 
 test('driver registration requires and submits vehicle details', async () => {

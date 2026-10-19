@@ -54,14 +54,14 @@ async function readResponseBody(response) {
   }
 }
 
-async function submitRegistration(form, { apiBaseUrl, fetchImpl = fetch } = {}) {
+async function postRegistration(path, form, extra, { apiBaseUrl, fetchImpl = fetch } = {}) {
   const validationError = validateRegistration(form);
   if (validationError) throw new Error(validationError);
   if (!apiBaseUrl) throw new Error('The registration service address is not configured.');
 
   let response;
   try {
-    response = await fetchImpl(`${apiBaseUrl.replace(/\/$/, '')}/api/register`, {
+    response = await fetchImpl(`${apiBaseUrl.replace(/\/$/, '')}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -72,6 +72,7 @@ async function submitRegistration(form, { apiBaseUrl, fetchImpl = fetch } = {}) 
         email: form.email.trim().toLowerCase(),
         role: form.role || 'passenger',
         ...(form.role === 'driver' ? { plate: form.plate.trim().toUpperCase(), toda: form.toda.trim(), capacity: form.capacity } : {}),
+        ...extra,
       }),
     });
   } catch {
@@ -86,9 +87,22 @@ async function submitRegistration(form, { apiBaseUrl, fetchImpl = fetch } = {}) 
   return body;
 }
 
+// Step one of signing up: the server checks the form and emails a 6-digit code.
+function requestRegistrationCode(form, options) {
+  return postRegistration('/api/register/code', form, {}, options);
+}
+
+// Step two: the same form with the emailed code creates the account.
+async function submitRegistration(form, options) {
+  const code = String(form.code ?? '').replace(/\s/g, '');
+  if (!/^\d{6}$/.test(code)) throw new Error('Enter the 6-digit code from your email.');
+  return postRegistration('/api/register', form, { code }, options);
+}
+
 module.exports = {
   getApiBaseUrl,
   normalizePhilippinePhone,
+  requestRegistrationCode,
   submitRegistration,
   validateRegistration,
 };

@@ -54,6 +54,10 @@ export default function LoginScreen({ navigation }) {
             value={password}
             onChangeText={setPassword}
           />
+          <Pressable onPress={() => navigation.replace('ForgotPassword')} accessibilityRole="button" hitSlop={{ top: 12, bottom: 12 }}
+            style={({ pressed }) => [styles.forgot, pressed && styles.pressed]}>
+            <Text style={[TYPE.bodyStrong, styles.link]}>{t('login.forgotPassword')}</Text>
+          </Pressable>
 
           {(error || sessionError) && <Text accessibilityRole="alert" style={[TYPE.body, styles.error]}>{error || sessionError}</Text>}
           {!online && <Text style={[TYPE.caption, styles.note]}>{t('login.offline')}</Text>}
@@ -80,5 +84,6 @@ const styles = StyleSheet.create({
   note: { marginBottom: SPACE.md },
   footer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', marginTop: SPACE.xxl },
   link: { color: COLORS.brand },
+  forgot: { alignSelf: 'flex-end', marginTop: -SPACE.sm, marginBottom: SPACE.lg },
   pressed: { opacity: 0.6 },
 });

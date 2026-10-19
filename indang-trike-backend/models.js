@@ -15,6 +15,23 @@ function createModels(connection) {
     userId: { type: Schema.Types.ObjectId, required: true, index: true },
     expiresAt: { type: Date, required: true, expires: 0 },
   }, { timestamps: true, bufferCommands: false });
+  // The server checks expiresAt with its own clock; the database only clears
+  // codes out a day after sending, so a server clock that runs behind the
+  // database's cannot delete a fresh code.
+  const CODE_CLEANUP_SECONDS = 24 * 60 * 60;
+  // The code emailed to someone signing up; the account is created only with it.
+  const emailCodeSchema = new Schema({
+    email: { type: String, required: true, unique: true }, codeHash: { type: String, required: true },
+    attempts: { type: Number, default: 0 }, sentAt: { type: Date, required: true, expires: CODE_CLEANUP_SECONDS },
+    expiresAt: { type: Date, required: true },
+  }, { timestamps: true, bufferCommands: false });
+  // The code emailed for a forgotten password, tied to the account it resets.
+  const resetCodeSchema = new Schema({
+    email: { type: String, required: true, unique: true }, codeHash: { type: String, required: true },
+    userId: { type: Schema.Types.ObjectId, required: true },
+    attempts: { type: Number, default: 0 }, sentAt: { type: Date, required: true, expires: CODE_CLEANUP_SECONDS },
+    expiresAt: { type: Date, required: true },
+  }, { timestamps: true, bufferCommands: false });
   const rideSchema = new Schema({
     passengerId: { type: String, required: true }, driverId: String, driverSlot: String,
     idempotencyKey: { type: String, required: true },
@@ -33,7 +50,9 @@ function createModels(connection) {
   const User = connection.model('User', userSchema);
   const Session = connection.model('Session', sessionSchema);
   const Ride = connection.model('Ride', rideSchema);
-  return { User, Session, Ride };
+  const EmailCode = connection.model('EmailCode', emailCodeSchema);
+  const ResetCode = connection.model('ResetCode', resetCodeSchema);
+  return { User, Session, Ride, EmailCode, ResetCode };
 }
 
 module.exports = { createModels };

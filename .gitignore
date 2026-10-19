@@ -47,3 +47,10 @@ yarn-error.*
 
 # God view website build output
 web/god-view/dist/
+
+# Google OAuth client files downloaded from Google Cloud (they hold the client secret)
+client_secret_*.json
+
+# EAS signing credentials downloaded with `eas credentials` (keystore passwords)
+credentials.json
+credentials/

@@ -8,13 +8,17 @@ const { DEFAULT_TRIP } = require('../data/indangMap');
 let backend, base, sequence = 1000000;
 let now = Date.now();
 const sockets = [];
-const dbName = `indang_test_${randomUUID().replaceAll('-', '')}`;
+// Atlas allows database names of at most 38 bytes.
+const dbName = `indang_test_${randomUUID().replaceAll('-', '').slice(0, 24)}`;
 const adminPhone = '09179999999';
+// Stands in for Brevo: the last code emailed to each address.
+const emailedCodes = new Map();
+const sendEmail = async ({ to, code }) => { emailedCodes.set(to, code); };
 const fix = (latitude = 14.385026) => ({ latitude, longitude: 120.880477, accuracy: 5, timestamp: now, speed: 0, heading: 0 });
 
 before(async () => {
   const mongoRoot = process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017';
-  backend = await createBackend({ mongoUri: `${mongoRoot}/${dbName}`, clock: () => now, adminPhones: adminPhone });
+  backend = await createBackend({ mongoUri: `${mongoRoot}/${dbName}`, clock: () => now, adminPhones: adminPhone, sendEmail });
   await new Promise((resolve) => backend.server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${backend.server.address().port}`;
 });
@@ -35,10 +39,16 @@ async function request(path, token, body, method = body ? 'POST' : 'GET') {
   });
   return { status: response.status, body: await response.json() };
 }
+// Signs up the way the app does: the form gets an emailed code, then the form with the code.
+async function signup(body) {
+  const sent = await request('/register/code', null, body);
+  if (sent.status !== 200) return sent;
+  return request('/register', null, { ...body, code: emailedCodes.get(body.email) });
+}
 async function account(role = 'passenger', phoneOverride) {
   const phone = phoneOverride || `0917${sequence++}`;
-  const result = await request('/register', null, {
-    phone, password: 'strong-password', firstName: 'Test', lastName: role, email: `${sequence}@example.com`, role,
+  const result = await signup({
+    phone, password: 'strong-password', firstName: 'Test', lastName: role, email: `${phone}@example.com`, role,
     ...(role === 'driver' ? { plate: `TEST-${sequence}`, toda: 'Test TODA', capacity: 4 } : {}),
   });
   assert.equal(result.status, 201, JSON.stringify(result.body));
@@ -215,8 +225,8 @@ test('an Indang TODA driver is offered only trips inside its TODA\'s barangays',
   const pulo = place('Pulo Barangay Hall', 14.16990, 120.87269), harasan = place('Barangay Harasan', 14.16053, 120.87006);
   const poblacion = place('Poblacion', 14.19558, 120.87956);
   const phone = `0917${sequence++}`;
-  const registered = await request('/register', null, { phone, password: 'strong-password', firstName: 'Pulo', lastName: 'Driver',
-    email: `${sequence}@example.com`, role: 'driver', plate: 'PCH-1', toda: 'pchti toda', capacity: 4 });
+  const registered = await signup({ phone, password: 'strong-password', firstName: 'Pulo', lastName: 'Driver',
+    email: `${phone}@example.com`, role: 'driver', plate: 'PCH-1', toda: 'pchti toda', capacity: 4 });
   assert.equal(registered.status, 201, JSON.stringify(registered.body));
   assert.equal(registered.body.user.toda, 'PCHTI-TODA', 'stored under the official name');
   const pchti = (await request('/login', null, { phone, password: 'strong-password' })).body;
@@ -254,6 +264,22 @@ test('auth validates credentials, returns stored identity, rejects foreign roles
   assert.equal((await request('/driver/availability', passenger.token, { available: true })).status, 403);
   await request('/logout', passenger.token, {});
   assert.equal((await request('/state', passenger.token)).status, 401);
+});
+
+test('a forgotten password is reset with the emailed code and ends every session', async () => {
+  const user = await account();
+  const email = user.user.email, phone = user.user.phone;
+  assert.equal((await request('/password/code', null, { email: 'nobody@example.com' })).status, 200);
+  assert.equal(emailedCodes.has('nobody@example.com'), false);
+  assert.equal((await request('/password/code', null, { email })).status, 200);
+  const code = emailedCodes.get(email);
+  assert.equal((await request('/password/verify', null, { email, code })).status, 200);
+  const reset = await request('/password/reset', null, { email, code, password: 'a-new-password' });
+  assert.equal(reset.status, 200, JSON.stringify(reset.body));
+  assert.equal((await request('/me', user.token)).status, 401);
+  assert.equal((await request('/login', null, { phone, password: 'strong-password' })).status, 401);
+  assert.equal((await request('/login', null, { phone, password: 'a-new-password' })).status, 200);
+  assert.equal((await request('/password/reset', null, { email, code, password: 'yet-another-one' })).status, 400);
 });
 
 test('real passenger/driver flow persists exclusive assignment, authorized actions and history', async () => {
@@ -438,7 +464,7 @@ test('an assigned ride survives server restart and expires authentication by ser
   await online(d); const booked = await book(p), offer = (await state(d)).offer;
   await action(d, offer.id, 'accept', { offerId: offer.offerId });
   await backend.close();
-  backend = await createBackend({ mongoUri: `${process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017'}/${dbName}`, clock: () => now });
+  backend = await createBackend({ mongoUri: `${process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017'}/${dbName}`, clock: () => now, sendEmail });
   await new Promise((resolve) => backend.server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${backend.server.address().port}`;
   const restored = await state(p);
