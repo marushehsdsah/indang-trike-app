@@ -21,7 +21,7 @@ import { RatingBadge } from '../components/RatingPrompt';
 import useAccountHistory from '../hooks/useAccountHistory';
 import { ACTIVE_STATUSES, formatPeso, isFreshFix } from '../utils/rideState';
 import { getMunicipalityAt } from '../data/indangMap';
-import { findToda, getBarangayAt, getTodaZoneShape } from '../data/todaZones';
+import { findToda, getBarangayAt, getTodaZoneShape, todaCovers } from '../data/todaZones';
 import { tapFeedback } from '../utils/feedback';
 import { COLORS, ELEVATION, FONTS, RADIUS, SPACE, TYPE } from '../theme';
 
@@ -71,7 +71,7 @@ export default function DriverScreen({ navigation }) {
   const fixLatitude = fresh ? gps.fix.latitude : undefined, fixLongitude = fresh ? gps.fix.longitude : undefined;
   const barangay = useMemo(() => (Number.isFinite(fixLatitude) ? getBarangayAt({ latitude: fixLatitude, longitude: fixLongitude }) : null), [fixLatitude, fixLongitude]);
   const town = useMemo(() => (Number.isFinite(fixLatitude) ? getMunicipalityAt({ latitude: fixLatitude, longitude: fixLongitude })?.name : null), [fixLatitude, fixLongitude]);
-  const outsideToda = Boolean(toda && !toda.wholeTown && fresh && !outside && !toda.barangays.includes(barangay));
+  const outsideToda = Boolean(toda && !toda.wholeTown && fresh && !outside && !todaCovers(toda, { latitude: fixLatitude, longitude: fixLongitude }));
   const perform = async (fn) => {
     if (busy) return;
     setBusy(true);
@@ -171,11 +171,12 @@ export default function DriverScreen({ navigation }) {
                   style={({ pressed }) => [styles.zone, pressed && styles.pressed]}>
                   {!toda.wholeTown && <View style={styles.zoneSwatch} />}
                   <Text style={[TYPE.label, styles.flex]} numberOfLines={1}>{toda.wholeTown ? t('driver.zoneAll', { toda: toda.name })
+                    : toda.stops.length ? t('driver.zoneAreas', { toda: toda.name, areas: toda.areas.join(', ') })
                     : t('driver.zone', { toda: toda.name, count: toda.barangays.length })}</Text>
                   <MaterialCommunityIcons name={zoneOpen ? 'chevron-up' : 'chevron-down'} size={22} color={COLORS.inkSecondary} />
                 </Pressable>
                 {zoneOpen && <Text style={[TYPE.caption, styles.zoneList]}>{toda.wholeTown ? t('driver.zoneListAll')
-                  : t('driver.zoneList', { barangays: toda.barangays.join(', ') })}</Text>}
+                  : t('driver.zoneList', { barangays: toda.areas.join(', ') })}</Text>}
               </>}
               {active ? <Button label={t('driver.returnToTrip')} variant="brand" onPress={() => navigation.navigate('ActiveRide')} style={styles.mainAction} />
                 : <View style={styles.homeActions}>

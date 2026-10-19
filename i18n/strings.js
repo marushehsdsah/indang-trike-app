@@ -276,6 +276,7 @@ const en = {
   'driver.tripsUnit': 'trips',
   'driver.cashUnit': 'cash',
   'driver.zone': '{toda} area · {count} barangays',
+  'driver.zoneAreas': '{toda} area · {areas}',
   'driver.zoneList': 'You get requests only for trips within {barangays}.',
   'driver.zoneAll': '{toda} area · all of Indang',
   'driver.zoneListAll': 'You get requests for trips anywhere in Indang.',
@@ -432,7 +433,6 @@ const en = {
   'forgot.doneTitle': 'Password changed',
   'forgot.doneMessage': 'Log in with your new password.',
   'field.newPassword': 'New password',
-  'login.admin': 'Log in as admin',
 
   'register.title': 'Create account',
   'register.passenger': 'Passenger',
@@ -729,6 +729,7 @@ const fil = {
   'driver.tripsUnit': 'biyahe',
   'driver.cashUnit': 'cash',
   'driver.zone': 'Saklaw ng {toda} · {count} barangay',
+  'driver.zoneAreas': 'Saklaw ng {toda} · {areas}',
   'driver.zoneList': 'Request lang sa loob ng {barangays} ang matatanggap mo.',
   'driver.zoneAll': 'Saklaw ng {toda} · buong Indang',
   'driver.zoneListAll': 'Makakatanggap ka ng request para sa mga biyahe saanman sa Indang.',
@@ -885,7 +886,6 @@ const fil = {
   'forgot.doneTitle': 'Napalitan na ang password',
   'forgot.doneMessage': 'Mag-log in gamit ang bagong password mo.',
   'field.newPassword': 'Bagong password',
-  'login.admin': 'Mag-log in bilang admin',
 
   'register.title': 'Gumawa ng account',
   'register.passenger': 'Pasahero',

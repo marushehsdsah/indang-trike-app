@@ -100,10 +100,6 @@ export default function LoginScreen({ navigation }) {
             </Pressable>
           </View>
 
-          {/* Opens the admin interface (navigation/AdminNavigator), starting at its login. */}
-          <Button label={t('login.admin')} variant="outline" size="md" icon="shield-account-outline"
-            onPress={() => navigation.navigate('Admin')} style={styles.admin} />
-
           <View style={styles.legal}>
             <View style={styles.legalRow}>
               <MaterialCommunityIcons name="shield-check-outline" size={13} color={COLORS.inkMuted} />
@@ -147,7 +143,6 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.6 },
 
   footer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', marginTop: SPACE.xxl },
-  admin: { marginTop: SPACE.xl },
   legal: { alignItems: 'center', marginTop: SPACE.xxl },
   legalRow: { flexDirection: 'row', alignItems: 'center' },
   legalText: { color: COLORS.inkMuted, fontSize: 11, lineHeight: 16 },

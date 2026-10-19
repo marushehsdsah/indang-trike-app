@@ -1,6 +1,6 @@
 {
   "source": "TODAs_coordinates.xlsx (COORDINATES and Notes sheets); barangay boundaries: assets/geo/indang-barangays.json",
-  "rule": "A TODA serves the barangays the sheet names and those containing one of its \"Matched\" pins. \"review\" lists barangays only an approximate (\"Verify\") pin points to; they are not part of the zone until moved into \"barangays\".",
+  "rule": "A TODA serves the barangays the sheet names and those containing one of its \"Matched\" pins. \"stops\" are single places a TODA also serves without the rest of their barangay: inside the named barangay and either within radiusMeters of the pin, inside a square sizeMeters wide centred on it, or, with \"along\", within depthMeters of its border with that barangay along the whole border. \"review\" lists barangays only an approximate (\"Verify\") pin points to; they are not part of the zone until moved into \"barangays\".",
   "uncovered": [],
   "todas": [
     {
@@ -11,11 +11,27 @@
         "Bancod Indang Tricycle Operators and Drivers Association"
       ],
       "barangays": [
-        "Bancod",
-        "Kaytapos",
-        "Alulod"
+        "Bancod"
       ],
-      "review": [],
+      "stops": [
+        {
+          "name": "CvSU",
+          "barangay": "Kaytapos",
+          "latitude": 14.19782,
+          "longitude": 120.88149,
+          "radiusMeters": 400
+        }
+      ],
+      "review": [
+        {
+          "barangay": "Alulod",
+          "because": "SITIO QUARRY (Verify pin)"
+        },
+        {
+          "barangay": "Calumpang Cerca",
+          "because": "SOLAR (Verify pin)"
+        }
+      ],
       "places": [
         "BANCOD",
         "PUROK 1",
@@ -34,7 +50,7 @@
         "SITIO QUARRY",
         "CHOCOLATE FARM",
         "SITIO RAGATAN",
-        "COMBIE RESORT",
+        "CAMBIE RESORT",
         "PASONG BADIANG",
         "SOLAR",
         "PASONG RAGATAN"
@@ -69,14 +85,29 @@
       "barangays": [
         "Banaba Cerca"
       ],
+      "stops": [
+        {
+          "name": "Rehab",
+          "barangay": "Banaba Lejos",
+          "along": "Banaba Cerca",
+          "depthMeters": 320
+        },
+        {
+          "name": "British Village",
+          "barangay": "Calumpang Lejos I",
+          "latitude": 14.23255,
+          "longitude": 120.85241,
+          "radiusMeters": 300
+        }
+      ],
       "review": [],
       "places": [
-        "BANABA CEBCA",
+        "BANABA CERCA",
         "CALIFORNIA BREEZE",
         "CMJ",
         "CASITA DE SENEREZ",
         "LOVELY VILLA",
-        "CEBCA GARDEN",
+        "CERCA GARDEN",
         "LITTLE HQ",
         "KALLIKHASAN",
         "VILLA BELLA",
@@ -89,8 +120,15 @@
       "name": "CIKTODA",
       "aliases": [],
       "barangays": [
-        "Kaytambog",
-        "Banaba Cerca"
+        "Kaytambog"
+      ],
+      "stops": [
+        {
+          "name": "Sagana Spring Resort",
+          "barangay": "Banaba Cerca",
+          "along": "Kaytambog",
+          "depthMeters": 330
+        }
       ],
       "review": [],
       "places": [
@@ -116,8 +154,21 @@
       "barangays": [
         "Daine I",
         "Daine II",
-        "Lumampong Balagbag",
-        "Tambo Kulit"
+        "Lumampong Balagbag"
+      ],
+      "stops": [
+        {
+          "name": "Camp Elizabeth",
+          "barangay": "Tambo Kulit",
+          "along": "Lumampong Balagbag",
+          "depthMeters": 100
+        },
+        {
+          "name": "Dulong Bato and Buho",
+          "barangay": "Lumampong Halayhay",
+          "along": "Lumampong Balagbag",
+          "depthMeters": 740
+        }
       ],
       "review": [
         {
@@ -191,6 +242,7 @@
         "Tambo Kulit",
         "Tambo Malaki"
       ],
+      "note": "Serves all of Indang. Split from the sheet's \"ITODA PITODA\" on 2026-10-19; drivers saved under that name are ITODA.",
       "review": [],
       "places": [
         "TAMBO ILAYA",
@@ -199,8 +251,7 @@
         "MAHABANG KAHOY CERCA",
         "BALAGBAG MAHABANG KAHOY",
         "BUNA CERCA"
-      ],
-      "note": "Serves all of Indang. Split from the sheet's \"ITODA PITODA\" on 2026-10-19; drivers saved under that name are ITODA."
+      ]
     },
     {
       "id": "pitoda",
@@ -212,16 +263,18 @@
         "Barangay 3",
         "Barangay 4"
       ],
+      "note": "Serves only the Poblacion (Barangay 1-4). Split from the sheet's \"ITODA PITODA\" on 2026-10-19.",
       "review": [],
       "places": [
         "POBLACION 1, 2, 3, 4"
-      ],
-      "note": "Serves only the Poblacion (Barangay 1-4). Split from the sheet's \"ITODA PITODA\" on 2026-10-19."
+      ]
     },
     {
-      "id": "biptoda",
-      "name": "BIPTODA",
-      "aliases": [],
+      "id": "bli-toda",
+      "name": "BLI-TODA",
+      "aliases": [
+        "BIPTODA"
+      ],
       "barangays": [
         "Banaba Lejos"
       ],
@@ -238,33 +291,37 @@
       ]
     },
     {
-      "id": "glitoda-tbktoda",
-      "name": "GLITODA TBKTODA",
-      "aliases": [
-        "GLITODA",
-        "TBKTODA"
-      ],
+      "id": "glitoda",
+      "name": "GLITODA",
+      "aliases": [],
       "barangays": [
         "Guyam Malaki",
         "Guyam Munti",
-        "Lumampong Halayhay",
-        "Tambo Kulit",
-        "Tambo Balagbag"
+        "Lumampong Halayhay"
       ],
-      "review": [
+      "stops": [
         {
+          "name": "Balwarte Gwapo",
           "barangay": "Harasan",
-          "because": "BALWARTE GWAPO (Verify pin)"
+          "along": "Guyam Malaki",
+          "depthMeters": 130
         },
         {
+          "name": "Old Cemetery and Roman Garden",
           "barangay": "Barangay 3",
-          "because": "ROMAN GARDEN (Verify pin)"
+          "latitude": 14.199562,
+          "longitude": 120.8752,
+          "radiusMeters": 120
         },
         {
+          "name": "Lumampong National High School",
           "barangay": "Barangay 4",
-          "because": "LUMAMPONG NATIONAL (Verify pin)"
+          "latitude": 14.20007,
+          "longitude": 120.8737,
+          "radiusMeters": 120
         }
       ],
+      "review": [],
       "places": [
         "GUYAM MALAKI/MUNTI",
         "DON KOKO",
@@ -278,8 +335,19 @@
         "ALTA RIOS RESORT",
         "DAYUHAN RESORT",
         "ST. VINCENT PARISH CHURCH",
-        "LUMAMPONG NATIONAL",
-        "HIGHSCHOOL/ELEMENTARY",
+        "LUMAMPONG NATIONAL HIGHSCHOOL/ELEMENTARY"
+      ]
+    },
+    {
+      "id": "tbktoda",
+      "name": "TBKTODA",
+      "aliases": [],
+      "barangays": [
+        "Tambo Kulit",
+        "Tambo Balagbag"
+      ],
+      "review": [],
+      "places": [
         "TAMBO KULIT",
         "VILLA COLEMENAR RESORT",
         "RIOVILLA NUEVO RESORT",
@@ -289,7 +357,6 @@
         "STALK",
         "URO'S FARM",
         "TAMBO BALAGBAG",
-        "KURAL",
         "BAMBOO CREST RESORT",
         "PURPLE STAR CAMPSITE",
         "VON RIVER"
@@ -303,6 +370,21 @@
         "Kayquit I",
         "Kayquit II",
         "Kayquit III"
+      ],
+      "stops": [
+        {
+          "name": "Ikloy River",
+          "places": [
+            "IKLOY RIVER",
+            "BERAS FARM",
+            "BICOL REGOIN"
+          ],
+          "note": "BERAS FARM and BICOL REGOIN have no pins (not in the sheet, OpenStreetMap or a web search, Oct 2026); placed in the Ikloy River area by the KITODA list.",
+          "barangay": "Kaytambog",
+          "latitude": 14.18372,
+          "longitude": 120.87093,
+          "sizeMeters": 350
+        }
       ],
       "review": [
         {
@@ -336,12 +418,16 @@
         "Agus-us",
         "Calumpang Lejos I"
       ],
-      "review": [
+      "stops": [
         {
+          "name": "Macalima",
           "barangay": "Banaba Cerca",
-          "because": "MACALIMA (Verify pin)"
+          "latitude": 14.19204,
+          "longitude": 120.87286,
+          "sizeMeters": 350
         }
       ],
+      "review": [],
       "places": [
         "CALUMPANG CERCA",
         "FAMIGLIA FELICE",
@@ -364,7 +450,6 @@
         "LA FELICIDAD",
         "TERRE VERTE",
         "EL HERENCIA",
-        "MUZON",
         "GREEN'S FOR GROWTH",
         "INDANG BRITISH VILLAGE",
         "ROYAL PALMHILLS",
@@ -397,19 +482,12 @@
         "Alulod",
         "Limbon"
       ],
-      "review": [
-        {
-          "barangay": "Banaba Cerca",
-          "because": "PHILMALAY (Verify pin)"
-        }
-      ],
+      "review": [],
       "places": [
         "ALULOD",
         "PATILLO",
         "LIMBON",
         "PANGIL",
-        "BRASS BAG",
-        "PHILMALAY",
         "R.A. RESORT",
         "LA CASA DE SERENIDAD",
         "BONIFACIO SHRINE",
