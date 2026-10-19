@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Screen from '../components/ui/Screen';
@@ -10,17 +10,18 @@ import { COLORS, SPACE, TYPE } from '../theme';
 import { useI18n } from '../i18n';
 import { requestApi } from '../services/api';
 import { successFeedback, warningFeedback } from '../utils/feedback';
+import { normalizePhilippinePhone } from '../utils/registration';
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// Forgot password in three steps: the account's email gets a 6-digit code,
+// Forgot password in three steps: the email of the account with the mobile
+// number typed on Log in gets a 6-digit code (sent as soon as the screen opens),
 // the code is checked, then a new password replaces the old one (which also
-// logs the account out of every phone).
-export default function ForgotPasswordScreen({ navigation }) {
+// logs the account out of every phone). The email is shown only masked.
+export default function ForgotPasswordScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { t } = useI18n();
-  const [step, setStep] = useState('email');
-  const [email, setEmail] = useState('');
+  const [step, setStep] = useState('phone');
+  const [phone, setPhone] = useState(route?.params?.phone ?? '');
+  const [maskedEmail, setMaskedEmail] = useState('');
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -35,7 +36,6 @@ export default function ForgotPasswordScreen({ navigation }) {
     return () => clearInterval(timer);
   }, [resendWait === 0]);
 
-  const cleanEmail = email.trim().toLowerCase();
   const run = async (action) => {
     if (busy) return;
     setBusy(true); setError(null);
@@ -45,19 +45,26 @@ export default function ForgotPasswordScreen({ navigation }) {
   };
 
   const sendCode = () => run(async () => {
-    if (!EMAIL_PATTERN.test(cleanEmail)) throw new Error(t('forgot.invalidEmail'));
-    await requestApi('/password/code', { body: { email: cleanEmail } });
-    setCode(''); setResendAt(Date.now() + 60000); setNow(Date.now()); setStep('code');
+    if (!normalizePhilippinePhone(phone)) throw new Error(t('forgot.invalidPhone'));
+    const sent = await requestApi('/password/code', { body: { phone } });
+    setMaskedEmail(sent.email); setCode(''); setResendAt(Date.now() + 60000); setNow(Date.now()); setStep('code');
   });
+  // A number typed on Log in gets its code straight away.
+  const autoSent = useRef(false);
+  useEffect(() => {
+    if (autoSent.current || !normalizePhilippinePhone(phone)) return;
+    autoSent.current = true;
+    sendCode();
+  }, []);
   const checkCode = () => run(async () => {
     if (!/^\d{6}$/.test(code)) throw new Error(t('forgot.codeLength'));
-    await requestApi('/password/verify', { body: { email: cleanEmail, code } });
+    await requestApi('/password/verify', { body: { phone, code } });
     setStep('password');
   });
   const changePassword = () => run(async () => {
     if (password.length < 8) throw new Error(t('forgot.passwordShort'));
     if (password !== confirmPassword) throw new Error(t('forgot.passwordMismatch'));
-    try { await requestApi('/password/reset', { body: { email: cleanEmail, code, password } }); }
+    try { await requestApi('/password/reset', { body: { phone, code, password } }); }
     catch (failure) {
       // The code expired or ran out of tries while the new password was typed.
       if (failure.status === 400 || failure.status === 429) { setStep('code'); setCode(''); }
@@ -70,7 +77,7 @@ export default function ForgotPasswordScreen({ navigation }) {
   const back = () => {
     setError(null);
     if (step === 'password') setStep('code');
-    else if (step === 'code') setStep('email');
+    else if (step === 'code') setStep('phone');
     else navigation.replace('Login');
   };
 
@@ -82,24 +89,22 @@ export default function ForgotPasswordScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {step === 'email' && <>
-          <Text style={[TYPE.bodyMuted, styles.intro]}>{t('forgot.emailIntro')}</Text>
+        {step === 'phone' && <>
+          <Text style={[TYPE.bodyMuted, styles.intro]}>{t(busy ? 'forgot.sending' : 'forgot.phoneIntro')}</Text>
           <Field
-            label={t('field.email')}
-            icon="email-outline"
-            placeholder="name@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            textContentType="emailAddress"
-            value={email}
-            onChangeText={setEmail}
-            autoFocus
+            label={t('field.phone')}
+            icon="phone-outline"
+            placeholder="09123456789"
+            keyboardType="number-pad"
+            textContentType="telephoneNumber"
+            maxLength={11}
+            value={phone}
+            onChangeText={(text) => setPhone(text.replace(/\D/g, '').slice(0, 11))}
           />
         </>}
 
         {step === 'code' && <>
-          <Text style={[TYPE.body, styles.intro]}>{t('forgot.codeSent', { email: cleanEmail })}</Text>
+          <Text style={[TYPE.body, styles.intro]}>{t('forgot.codeSent', { email: maskedEmail })}</Text>
           <Field
             label={t('field.code')}
             icon="email-check-outline"
@@ -139,7 +144,7 @@ export default function ForgotPasswordScreen({ navigation }) {
 
         {error && <Text accessibilityRole="alert" style={[TYPE.body, styles.error]}>{error}</Text>}
 
-        {step === 'email' && <Button label={t('forgot.sendCode')} variant="hire" trailingIcon="arrow-right" loading={busy} onPress={sendCode} />}
+        {step === 'phone' && <Button label={t('forgot.sendCode')} variant="hire" trailingIcon="arrow-right" loading={busy} onPress={sendCode} />}
         {step === 'code' && <>
           <Button label={t('forgot.verify')} variant="hire" trailingIcon="arrow-right" loading={busy} onPress={checkCode} />
           <Button

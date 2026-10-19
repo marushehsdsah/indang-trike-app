@@ -251,20 +251,22 @@ test('auth validates credentials, returns stored identity, rejects foreign roles
   assert.equal((await request('/state', passenger.token)).status, 401);
 });
 
-test('a forgotten password is reset with the emailed code and ends every session', async () => {
+test('a forgotten password is reset with the code emailed to the number\'s account and ends every session', async () => {
   const user = await account();
   const email = user.user.email, phone = user.user.phone;
-  assert.equal((await request('/password/code', null, { email: 'nobody@example.com' })).status, 200);
-  assert.equal(emailedCodes.has('nobody@example.com'), false);
-  assert.equal((await request('/password/code', null, { email })).status, 200);
+  assert.equal((await request('/password/code', null, { phone: '09180000001' })).status, 404, 'no account uses that number');
+  const sent = await request('/password/code', null, { phone });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  assert.notEqual(sent.body.email, email, 'the app gets the email masked');
+  assert.match(sent.body.email, /^\w{2}\*+\w@example\.com$/);
   const code = emailedCodes.get(email);
-  assert.equal((await request('/password/verify', null, { email, code })).status, 200);
-  const reset = await request('/password/reset', null, { email, code, password: 'a-new-password' });
+  assert.equal((await request('/password/verify', null, { phone, code })).status, 200);
+  const reset = await request('/password/reset', null, { phone, code, password: 'a-new-password' });
   assert.equal(reset.status, 200, JSON.stringify(reset.body));
   assert.equal((await request('/me', user.token)).status, 401);
   assert.equal((await request('/login', null, { phone, password: 'strong-password' })).status, 401);
   assert.equal((await request('/login', null, { phone, password: 'a-new-password' })).status, 200);
-  assert.equal((await request('/password/reset', null, { email, code, password: 'yet-another-one' })).status, 400);
+  assert.equal((await request('/password/reset', null, { phone, code, password: 'yet-another-one' })).status, 400);
 });
 
 test('real passenger/driver flow persists exclusive assignment, authorized actions and history', async () => {

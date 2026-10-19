@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createAuth } = require('../indang-trike-backend/auth');
+const { createAuth, maskEmail } = require('../indang-trike-backend/auth');
 const { createBrevoMailer } = require('../indang-trike-backend/mailer');
 
 // Just enough of the User, Session, EmailCode and ResetCode models for auth.js, in memory.
@@ -140,44 +140,47 @@ test('a forgotten password is changed with the code emailed to the account, whic
   await auth.login({ phone: form.phone, password: form.password });
   assert.equal(models.Session.docs.length, 1);
 
-  assert.deepEqual(await auth.sendResetCode({ email: ' Juan@Gmail.com ' }), { email: 'juan@gmail.com', message: 'If an account uses this email, we sent it a 6-digit code.' });
+  // The number used on Log in finds the account; its email gets the code and
+  // the app is told the address only masked.
+  assert.deepEqual(await auth.sendResetCode({ phone: '0917 123 4567' }), { email: 'j***@gmail.com', message: 'We sent a 6-digit code to j***@gmail.com.' });
   assert.equal(sent.length, 1);
+  assert.equal(sent[0].to, 'juan@gmail.com');
   assert.equal(sent[0].purpose, 'reset');
   const wrong = sent[0].code === '000000' ? '111111' : '000000';
-  await assert.rejects(auth.checkResetCode({ email: 'juan@gmail.com', code: wrong }), { status: 400 });
-  assert.deepEqual(await auth.checkResetCode({ email: 'juan@gmail.com', code: sent[0].code }), { ok: true });
+  await assert.rejects(auth.checkResetCode({ phone: form.phone, code: wrong }), { status: 400 });
+  assert.deepEqual(await auth.checkResetCode({ phone: form.phone, code: sent[0].code }), { ok: true });
 
-  await assert.rejects(auth.resetPassword({ email: 'juan@gmail.com', code: sent[0].code, password: 'short' }), { status: 400 });
-  await auth.resetPassword({ email: 'juan@gmail.com', code: sent[0].code, password: 'brand-new-password' });
+  await assert.rejects(auth.resetPassword({ phone: form.phone, code: sent[0].code, password: 'short' }), { status: 400 });
+  await auth.resetPassword({ phone: form.phone, code: sent[0].code, password: 'brand-new-password' });
   assert.equal(models.Session.docs.length, 0);
   await assert.rejects(auth.login({ phone: form.phone, password: form.password }), { status: 401 });
   assert.match((await auth.login({ phone: form.phone, password: 'brand-new-password' })).token, /^[a-f0-9]{64}$/);
   // The code works once.
-  await assert.rejects(auth.resetPassword({ email: 'juan@gmail.com', code: sent[0].code, password: 'another-password' }), { status: 400 });
+  await assert.rejects(auth.resetPassword({ phone: form.phone, code: sent[0].code, password: 'another-password' }), { status: 400 });
 });
 
-test('an unknown email gets the same answer and no email; reset codes have the same limits', async () => {
+test('an unknown number is told so and gets no email; reset codes have the same limits', async () => {
   const { auth, sent, advance } = await signedUp();
-  assert.equal((await auth.sendResetCode({ email: 'nobody@gmail.com' })).message, 'If an account uses this email, we sent it a 6-digit code.');
+  await assert.rejects(auth.sendResetCode({ phone: '09180000000' }), { status: 404, message: 'No account uses this mobile number.' });
   assert.equal(sent.length, 0);
-  await assert.rejects(auth.sendResetCode({ email: 'not-an-email' }), { status: 400 });
+  await assert.rejects(auth.sendResetCode({ phone: '12345' }), { status: 400 });
 
-  await auth.sendResetCode({ email: 'juan@gmail.com' });
-  // Within the minute: the same answer as any email, and no second email.
-  assert.equal((await auth.sendResetCode({ email: 'juan@gmail.com' })).message, 'If an account uses this email, we sent it a 6-digit code.');
+  await auth.sendResetCode({ phone: form.phone });
+  // Within the minute: no second email.
+  await assert.rejects(auth.sendResetCode({ phone: form.phone }), { status: 429 });
   assert.equal(sent.length, 1);
   const wrong = sent[0].code === '000000' ? '111111' : '000000';
-  for (let i = 0; i < 5; i += 1) await assert.rejects(auth.checkResetCode({ email: 'juan@gmail.com', code: wrong }), { status: 400 });
-  await assert.rejects(auth.resetPassword({ email: 'juan@gmail.com', code: sent[0].code, password: 'brand-new-password' }), { status: 429 });
+  for (let i = 0; i < 5; i += 1) await assert.rejects(auth.checkResetCode({ phone: form.phone, code: wrong }), { status: 400 });
+  await assert.rejects(auth.resetPassword({ phone: form.phone, code: sent[0].code, password: 'brand-new-password' }), { status: 429 });
   advance(60000);
-  await auth.sendResetCode({ email: 'juan@gmail.com' });
+  await auth.sendResetCode({ phone: form.phone });
   advance(10 * 60 * 1000);
-  await assert.rejects(auth.resetPassword({ email: 'juan@gmail.com', code: sent[1].code, password: 'brand-new-password' }), { status: 400, message: /expired/ });
+  await assert.rejects(auth.resetPassword({ phone: form.phone, code: sent[1].code, password: 'brand-new-password' }), { status: 400, message: /expired/ });
 });
 
 test('a reset code is not a sign-up code', async () => {
   const { auth, sent, advance } = await signedUp();
-  await auth.sendResetCode({ email: 'juan@gmail.com' });
+  await auth.sendResetCode({ phone: form.phone });
   advance(60000);
   await assert.rejects(auth.register({ ...form, phone: '09181234567', email: 'new@gmail.com', code: sent[0].code }), { status: 400, message: /expired/ });
 });
@@ -192,23 +195,30 @@ test('the reset email says it is for a password reset', async () => {
 
 test('guesses sent in parallel still get only five tries between them', async () => {
   const { auth, sent } = await signedUp();
-  await auth.sendResetCode({ email: 'juan@gmail.com' });
+  await auth.sendResetCode({ phone: form.phone });
   const wrong = sent[0].code === '000000' ? '111111' : '000000';
-  const results = await Promise.allSettled(Array.from({ length: 20 }, () => auth.checkResetCode({ email: 'juan@gmail.com', code: wrong })));
+  const results = await Promise.allSettled(Array.from({ length: 20 }, () => auth.checkResetCode({ phone: form.phone, code: wrong })));
   assert.equal(results.filter(({ reason }) => reason?.status === 400).length, 5, 'five are compared');
   assert.equal(results.filter(({ reason }) => reason?.status === 429).length, 15, 'the rest are refused');
-  await assert.rejects(auth.checkResetCode({ email: 'juan@gmail.com', code: sent[0].code }), { status: 429 });
+  await assert.rejects(auth.checkResetCode({ phone: form.phone, code: sent[0].code }), { status: 429 });
 });
 
-test('a reset email that fails to send is answered like an unknown email', async () => {
+test('a reset email that fails to send leaves no usable code', async () => {
   const models = fakeModels();
   models.User.docs.push({ _id: 'u1', email: 'juan@gmail.com', phone: '+639171234567', password: 'x' });
   const failing = createAuth(models, Date.now, { sendEmail: async () => { throw new Error('Brevo answered 500'); } });
   const quiet = console.error; console.error = () => {};
   try {
-    assert.equal((await failing.sendResetCode({ email: 'juan@gmail.com' })).message, 'If an account uses this email, we sent it a 6-digit code.');
+    await assert.rejects(failing.sendResetCode({ phone: form.phone }), { status: 503 });
   } finally { console.error = quiet; }
   assert.equal(models.ResetCode.docs.length, 0, 'no usable code is left behind');
+});
+
+test('an email is masked to its first and last letters', () => {
+  assert.equal(maskEmail('romar06.rdc@gmail.com'), 'ro********c@gmail.com');
+  assert.equal(maskEmail('juan@gmail.com'), 'j***@gmail.com');
+  assert.equal(maskEmail('ab@gmail.com'), 'a*@gmail.com');
+  assert.equal(maskEmail('a@gmail.com'), 'a*@gmail.com');
 });
 
 test('one sign-up code creates one account, even when two requests use it at once', async () => {
@@ -224,8 +234,8 @@ test('one sign-up code creates one account, even when two requests use it at onc
 
 test('a reset code changes the password once, even when two requests use it at once', async () => {
   const { auth, sent } = await signedUp();
-  await auth.sendResetCode({ email: 'juan@gmail.com' });
+  await auth.sendResetCode({ phone: form.phone });
   const results = await Promise.allSettled(['first-new-password', 'second-new-password']
-    .map((password) => auth.resetPassword({ email: 'juan@gmail.com', code: sent[0].code, password })));
+    .map((password) => auth.resetPassword({ phone: form.phone, code: sent[0].code, password })));
   assert.deepEqual(results.map(({ status }) => status).sort(), ['fulfilled', 'rejected']);
 });

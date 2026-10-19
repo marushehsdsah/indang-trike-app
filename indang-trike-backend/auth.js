@@ -10,6 +10,14 @@ const CODE_TTL_MS = 10 * 60 * 1000, CODE_RESEND_MS = 60 * 1000, CODE_ATTEMPTS = 
 const validPassword = (password) => typeof password === 'string' && password.length >= 8 && Buffer.byteLength(password) <= 72;
 const PASSWORD_RULE = 'Password must have at least 8 characters and at most 72 bytes.';
 
+// "romar06.rdc@gmail.com" -> "ro********c@gmail.com": enough for the owner to
+// recognise the address without showing it to whoever holds the phone.
+function maskEmail(email) {
+  const at = email.lastIndexOf('@'), local = email.slice(0, at);
+  const head = local.length > 4 ? 2 : 1, tail = local.length > 4 ? 1 : 0;
+  return local.slice(0, head) + '*'.repeat(Math.max(1, local.length - head - tail)) + local.slice(local.length - tail) + email.slice(at);
+}
+
 function createAuth(models, clock, { sendEmail } = {}) {
   const { User, Session, EmailCode, ResetCode } = models;
   // Stores a new code in `Codes` (EmailCode or ResetCode) and emails it.
@@ -89,33 +97,28 @@ function createAuth(models, clock, { sendEmail } = {}) {
     await Session.create({ userId: user._id, tokenHash: hashToken(token), expiresAt });
     return { token, expiresAt, user: publicUser(user) };
   }
-  // Forgot password: a code goes to the account's email, the app checks it,
-  // then the code and a new password change it. The answer is the same whether
-  // or not an account uses the email, so the form cannot reveal who has one.
-  const resetEmail = (body) => {
-    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-    requireValue(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254, 400, 'Enter a valid email address.');
-    return email;
-  };
+  // Forgot password goes by the mobile number the account logs in with: a code
+  // goes to the email that account signed up with, the app checks it, then the
+  // code and a new password change it. The app shows the email only masked.
+  async function resetAccount(body) {
+    const phone = normalizePhilippinePhone(body.phone);
+    requireValue(phone, 400, 'Enter a valid Philippine mobile number.');
+    const user = await User.findOne({ phone: { $in: [phone, `0${phone.slice(3)}`, phone.slice(1), phone.slice(3)] } });
+    requireValue(user?.email, 404, 'No account uses this mobile number.');
+    return { user, email: user.email.toLowerCase() };
+  }
   async function sendResetCode(body) {
-    const email = resetEmail(body);
     requireValue(sendEmail, 503, 'Email verification is not set up on this server.');
-    const user = await User.findOne({ email });
-    // A resend within the minute or a failed email gets the same answer too:
-    // a 429 or 503 only for real accounts would reveal that one exists. The
-    // person sees no new email and can ask again; a failure is logged.
-    if (user) {
-      try { await issueCode(ResetCode, email, 'reset', { userId: user._id }); }
-      catch (error) { if (error.status !== 429 && error.status !== 503) throw error; }
-    }
-    return { email, message: 'If an account uses this email, we sent it a 6-digit code.' };
+    const { user, email } = await resetAccount(body);
+    await issueCode(ResetCode, email, 'reset', { userId: user._id });
+    return { email: maskEmail(email), message: `We sent a 6-digit code to ${maskEmail(email)}.` };
   }
   async function checkResetCode(body) {
-    await checkCode(ResetCode, resetEmail(body), body.code);
+    await checkCode(ResetCode, (await resetAccount(body)).email, body.code);
     return { ok: true };
   }
   async function resetPassword(body) {
-    const email = resetEmail(body);
+    const { email } = await resetAccount(body);
     requireValue(validPassword(body.password), 400, PASSWORD_RULE);
     const entry = await checkCode(ResetCode, email, body.code);
     const user = await User.findById(entry.userId);
@@ -146,4 +149,4 @@ function createAuth(models, clock, { sendEmail } = {}) {
   return { sendSignupCode, register, login, sendResetCode, checkResetCode, resetPassword, authenticate, middleware };
 }
 
-module.exports = { createAuth };
+module.exports = { createAuth, maskEmail };

@@ -55,7 +55,7 @@ export default function LoginScreen({ navigation }) {
           value={password}
           onChangeText={setPassword}
         />
-        <Pressable onPress={() => navigation.replace('ForgotPassword')} accessibilityRole="button" hitSlop={{ top: 12, bottom: 12 }}
+        <Pressable onPress={() => navigation.replace('ForgotPassword', { phone: account })} accessibilityRole="button" hitSlop={{ top: 12, bottom: 12 }}
           style={({ pressed }) => [styles.forgot, pressed && styles.pressed]}>
           <Text style={[TYPE.bodyStrong, styles.link]}>{t('login.forgotPassword')}</Text>
         </Pressable>
