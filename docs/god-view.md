@@ -46,7 +46,7 @@ The website is a free Render **Static Site**, separate from the API service.
    - Build command: `npm ci && npm run build`.
    - Publish directory: `dist`.
    - Environment variables: `GOD_VIEW_API_URL` =
-     `https://indang-trike-app.onrender.com`, `NODE_VERSION` = `22`.
+     `https://indanggo-api.onrender.com`, `NODE_VERSION` = `22`.
    - Headers (Settings → Headers), path `/*`: `X-Frame-Options: DENY`,
      `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`.
 3. Open the site's address, for example `https://indanggo-god-view.onrender.com`.

@@ -5,7 +5,7 @@ or App Store distribution. It embeds the JavaScript, map code and road graph, so
 Metro and Expo Go are not needed. Booking/live updates still need the backend.
 
 The iOS profile uses the same hosted API as the existing Android APK:
-`https://indang-trike-app.onrender.com`. This public URL is explicitly configured
+`https://indanggo-api.onrender.com`. This public URL is explicitly configured
 in `eas.json` so a cloud build cannot silently use localhost. The app identifier
 is `com.indanggo.app`; build numbers are managed and incremented by EAS.
 
@@ -51,7 +51,7 @@ requires an internal/ad hoc build and device registration.
 ## Local readiness checks
 
 ```sh
-EXPO_PUBLIC_API_URL=https://indang-trike-app.onrender.com npx expo export --platform ios --clear --output-dir /tmp/indang-ios-production-export
+EXPO_PUBLIC_API_URL=https://indanggo-api.onrender.com npx expo export --platform ios --clear --output-dir /tmp/indang-ios-production-export
 npx expo config --type introspect
 ```
 

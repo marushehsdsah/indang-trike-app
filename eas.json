@@ -13,7 +13,7 @@
       "distribution": "internal",
       "android": { "buildType": "apk" },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://indang-trike-app.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://indanggo-api.onrender.com"
       }
     },
     "production": {
@@ -25,7 +25,7 @@
         "buildConfiguration": "Release",
         "simulator": false,
         "env": {
-          "EXPO_PUBLIC_API_URL": "https://indang-trike-app.onrender.com"
+          "EXPO_PUBLIC_API_URL": "https://indanggo-api.onrender.com"
         }
       }
     }

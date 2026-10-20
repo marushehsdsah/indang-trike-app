@@ -35,7 +35,7 @@ services:
         value: "22"
       # The API's public address. build.mjs writes it into the site.
       - key: GOD_VIEW_API_URL
-        value: https://indang-trike-app.onrender.com
+        value: https://indanggo-api.onrender.com
     headers:
       - path: /*
         name: X-Frame-Options

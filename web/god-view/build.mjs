@@ -2,13 +2,13 @@
 // argument): the pages in src/, MapLibre GL JS, and config.mjs naming the
 // IndangGO API the site reads.
 //
-//   GOD_VIEW_API_URL=https://indang-trike-app.onrender.com npm run build
+//   GOD_VIEW_API_URL=https://indanggo-api.onrender.com npm run build
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const DEFAULT_API_URL = 'https://indang-trike-app.onrender.com';
+const DEFAULT_API_URL = 'https://indanggo-api.onrender.com';
 const MAP_ASSETS = ['maplibre-gl.mjs', 'maplibre-gl-shared.mjs', 'maplibre-gl-worker.mjs', 'maplibre-gl.css'];
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1']);
 
