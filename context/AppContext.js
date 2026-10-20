@@ -8,12 +8,15 @@ import { clearSessionCache, readSessionCache, writeSessionCache } from '../servi
 import useLiveLocation from '../hooks/useLiveLocation';
 import { canOpenOffline, getSessionExpiry } from '../utils/offlineSession';
 import { ACTIVE_STATUSES, ASSIGNED_STATUSES, isFreshFix, mergeRide, toServerClock } from '../utils/rideState';
+import { markRead, mergeMessages, newClientId, pendingMessage } from '../utils/chatThread';
 
 const Context = createContext(null);
 const TOKEN_KEY = 'indanggo.session';
 // With a saved offline copy, startup waits this long for the server before
 // opening from the copy; a quick answer still opens straight onto a live ride.
 const OFFLINE_START_WAIT_MS = 3000;
+// The chat of one ride: its messages, including those still being sent.
+const NO_CHAT = { rideId: null, messages: [], loaded: false };
 
 export function AppProvider({ children }) {
   const [token, setToken] = useState(null), [user, setUser] = useState(null), [ride, setRide] = useState(null), [offer, setOffer] = useState(null);
@@ -23,18 +26,22 @@ export function AppProvider({ children }) {
   // Whether the phone has internet at all, as opposed to `connected`, which is
   // the live link to the IndangGO server.
   const [online, setOnline] = useState(true);
+  // chatNotice is the last message that came in while its chat was closed.
+  const [chat, setChat] = useState(NO_CHAT), [chatNotice, setChatNotice] = useState(null);
   const tokenRef = useRef(null), socketRef = useRef(null), refreshSequence = useRef(0), current = useRef(null);
   const sessionGeneration = useRef(0), configRef = useRef(null), expiresAtRef = useRef(null), persistedRef = useRef(null);
+  // The ride whose chat is on screen; messages arriving there are read at once.
+  const viewingChat = useRef(null);
   const activeRide = ride && ACTIVE_STATUSES.includes(ride.status);
   // Pilot admins can locate connected users while their app is open. Driver
   // availability remains a separate choice controlling ride requests.
   const gps = useLiveLocation(Boolean(user) && foreground);
-  current.current = { user, ride, token, foreground, gps, connected, serverOffset };
+  current.current = { user, ride, token, foreground, gps, connected, serverOffset, chat };
 
   const clearSession = useCallback(async () => {
     sessionGeneration.current += 1; tokenRef.current = null; configRef.current = null; expiresAtRef.current = null; persistedRef.current = null;
-    refreshSequence.current += 1; socketRef.current?.disconnect();
-    setToken(null); setUser(null); setRide(null); setOffer(null); setConfig(null); setConnected(false);
+    refreshSequence.current += 1; socketRef.current?.disconnect(); viewingChat.current = null;
+    setToken(null); setUser(null); setRide(null); setOffer(null); setConfig(null); setConnected(false); setChat(NO_CHAT); setChatNotice(null);
     clearSessionCache();
     await SecureStore.deleteItemAsync(TOKEN_KEY);
   }, []);
@@ -121,6 +128,55 @@ export function AppProvider({ children }) {
     if (previousToken) await requestApi('/logout', { token: previousToken, body: {} });
   }, [clearSession]);
 
+  // Trip chat (utils/chat.js). Loads a ride's messages from the server,
+  // keeping any still being sent.
+  const loadChat = useCallback(async (rideId) => {
+    const generation = sessionGeneration.current;
+    const result = await request(`/rides/${rideId}/messages`);
+    if (generation !== sessionGeneration.current) return;
+    setChat((previous) => ({ rideId, loaded: true, messages: mergeMessages(previous.rideId === rideId ? previous.messages : [], result.messages) }));
+  }, [request]);
+  const markChatRead = useCallback(async (rideId) => {
+    setRide((previous) => (previous?.id === rideId && previous.unreadMessages ? { ...previous, unreadMessages: 0 } : previous));
+    setChatNotice((notice) => (notice?.rideId === rideId ? null : notice));
+    await request(`/rides/${rideId}/messages/read`, {});
+  }, [request]);
+  // The chat screen calls this with its ride when it opens and null when it closes.
+  const viewChat = useCallback((rideId) => {
+    viewingChat.current = rideId;
+    return rideId ? Promise.all([loadChat(rideId), markChatRead(rideId)]) : Promise.resolve();
+  }, [loadChat, markChatRead]);
+  const updateChat = useCallback((rideId, change) => setChat((previous) => (previous.rideId === rideId ? { ...previous, messages: change(previous.messages) } : previous)), []);
+  // Sends a message the phone already shows as sending; it becomes the saved
+  // copy, or "failed". A failure without a server answer (no internet) is
+  // sent again when the live link comes back.
+  const deliver = useCallback(async (rideId, message) => {
+    const generation = sessionGeneration.current;
+    try {
+      const result = await request(`/rides/${rideId}/messages`, { clientId: message.clientId, ...(message.preset ? { preset: message.preset } : { text: message.text }) });
+      if (generation === sessionGeneration.current) updateChat(rideId, (messages) => mergeMessages(messages, [result.message]));
+    } catch (failure) {
+      if (generation !== sessionGeneration.current) return;
+      updateChat(rideId, (messages) => messages.map((item) => (item.clientId === message.clientId && !item.id
+        ? { ...item, status: 'failed', error: failure.status ? failure.message : null, retry: !failure.status } : item)));
+    }
+  }, [request, updateChat]);
+  // content is { text } or { preset }.
+  const sendChat = useCallback((rideId, content) => {
+    const me = current.current.user;
+    const message = pendingMessage({ clientId: newClientId(), content, senderId: me.id, senderRole: me.role === 'driver' ? 'driver' : 'passenger' });
+    setChat((previous) => (previous.rideId === rideId ? { ...previous, messages: [...previous.messages, message] } : { ...NO_CHAT, rideId, messages: [message] }));
+    return deliver(rideId, message);
+  }, [deliver]);
+  const retryChat = useCallback((rideId, clientId) => {
+    const { chat: shown } = current.current;
+    const message = shown.rideId === rideId ? shown.messages.find((item) => item.clientId === clientId && item.status === 'failed') : null;
+    if (!message) return Promise.resolve();
+    updateChat(rideId, (messages) => messages.map((item) => (item.clientId === clientId && !item.id ? { ...item, status: 'sending', error: null, retry: false } : item)));
+    return deliver(rideId, message);
+  }, [deliver, updateChat]);
+  const dismissChatNotice = useCallback(() => setChatNotice(null), []);
+
   useEffect(() => NetInfo.addEventListener((state) => setOnline(state.isConnected !== false && state.isInternetReachable !== false)), []);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -136,7 +192,8 @@ export function AppProvider({ children }) {
     if (!token || !foreground) return undefined;
     const socket = io(API_BASE_URL, { auth: { token }, transports: ['websocket'], reconnectionDelayMax: 5000 });
     socketRef.current = socket;
-    socket.on('connect', () => { setConnected(true); refresh(); });
+    // A chat on screen reloads too, for messages sent while the link was down.
+    socket.on('connect', () => { setConnected(true); refresh(); if (viewingChat.current) loadChat(viewingChat.current).catch(() => {}); });
     socket.on('disconnect', (reason) => { setConnected(false); if (reason === 'io server disconnect') refresh(); });
     socket.on('connect_error', () => { setConnected(false); refresh(); });
     socket.on('state:changed', refresh);
@@ -148,9 +205,29 @@ export function AppProvider({ children }) {
       setRide((previous) => previous?.id === rideId && ASSIGNED_STATUSES.includes(previous.status) && (previous.passengerLocation?.timestamp ?? 0) <= location.timestamp
         ? { ...previous, passengerLocation: location } : previous);
     });
+    // Both participants get every message, so the sender's other phones stay in step.
+    socket.on('chat:message', ({ rideId, message }) => {
+      updateChat(rideId, (messages) => mergeMessages(messages, [message]));
+      if (message.senderId === current.current.user?.id) return;
+      if (viewingChat.current === rideId) { markChatRead(rideId).catch(() => {}); return; }
+      setRide((previous) => (previous?.id === rideId ? { ...previous, unreadMessages: (previous.unreadMessages ?? 0) + 1 } : previous));
+      setChatNotice({ rideId, message });
+    });
+    socket.on('chat:read', ({ rideId, readerId, readAt }) => {
+      if (readerId !== current.current.user?.id) { updateChat(rideId, (messages) => markRead(messages, readerId, readAt)); return; }
+      // Read on another of this person's phones.
+      setRide((previous) => (previous?.id === rideId && previous.unreadMessages ? { ...previous, unreadMessages: 0 } : previous));
+      setChatNotice((notice) => (notice?.rideId === rideId ? null : notice));
+    });
     const timer = setInterval(refresh, 15000);
     return () => { clearInterval(timer); socket.removeAllListeners(); socket.disconnect(); if (socketRef.current === socket) socketRef.current = null; };
-  }, [token, foreground, refresh]);
+  }, [token, foreground, refresh, loadChat, markChatRead, updateChat]);
+  // Messages that failed for want of internet go out again once the link is back.
+  useEffect(() => {
+    if (!connected) return;
+    const { rideId, messages } = current.current.chat;
+    for (const message of messages) if (message.status === 'failed' && message.retry) retryChat(rideId, message.clientId);
+  }, [connected, retryChat]);
 
   // The backend exposes these fixes to authorized pilot admins; private ride
   // events still reach only the assigned counterpart.
@@ -217,6 +294,7 @@ export function AppProvider({ children }) {
   const dismissRide = useCallback(() => setRide((previous) => previous && ACTIVE_STATUSES.includes(previous.status) ? previous : null), []);
 
   return <Context.Provider value={{ user, ride, offer, token, loading, error, connected, online, syncing, config, gps, foreground, serverOffset,
+    chat, chatNotice, loadChat, viewChat, sendChat, retryChat, dismissChatNotice,
     request, refresh, restore, signIn, signOut, setAvailable, bookRide, rideAction, rateRide, dismissRide, clearError: () => setError(null) }}>{children}</Context.Provider>;
 }
 export const useApp = () => useContext(Context);

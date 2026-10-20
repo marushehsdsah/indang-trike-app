@@ -6,6 +6,7 @@ const { STRINGS, translate } = require('../i18n/translate');
 const { STATUS_LABELS } = require('../utils/rideState');
 const { CATEGORY_COLORS } = require('../utils/placeCategories');
 const { RATING_TAGS } = require('../utils/rating');
+const { QUICK_REPLIES } = require('../utils/chat');
 
 const ROOT = path.join(__dirname, '..');
 const SOURCE_DIRS = ['screens', 'components', 'hooks', 'i18n', 'navigation'];
@@ -57,6 +58,8 @@ test('keys built at runtime exist for every value they are built from', () => {
     ...['driver', 'passenger'].flatMap((role) => [`rating.title.${role}`, `rating.your.${role}`]),
     // components/RatingPrompt.js ratingTagKey: the tag's letters.
     ...Object.values(RATING_TAGS).flatMap(({ praise, concern }) => [...praise, ...concern]).map((tag) => `rating.tag.${tag.replace(/[^A-Za-z]/g, '')}`),
+    ...Object.values(QUICK_REPLIES).flat().map((preset) => `chat.quick.${preset}`),
+    ...['sending', 'sent', 'seen'].map((state) => `chat.state.${state}`),
   ];
   assert.deepEqual(keys.filter((key) => !(key in STRINGS.en)), []);
 });

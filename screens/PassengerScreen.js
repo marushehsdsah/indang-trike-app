@@ -5,6 +5,7 @@ import RouteMap from '../components/RouteMap';
 import LocationSearch from '../components/LocationSearch';
 import LiveLocationMarker from '../components/LiveLocationMarker';
 import StatusPill from '../components/StatusPill';
+import ChatNotice from '../components/ChatNotice';
 import TripStops from '../components/TripStops';
 import BottomNav from '../components/BottomNav';
 import { FloatingCard, MapBottom, MapTop } from '../components/map/MapChrome';
@@ -395,6 +396,7 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
             </View>
           )}
           {(stage === 'trip' || stage === 'pick') && status.tone !== 'live' && <StatusPill {...status} style={styles.tripStatus} />}
+          <ChatNotice onOpen={() => navigation.navigate('ActiveRide', { openChat: true })} style={styles.chatNotice} />
         </MapTop>
 
         {notice && <View style={[styles.snackbar, { bottom: bottomHeight }]} pointerEvents="box-none">
@@ -591,6 +593,7 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
 
 const styles = StyleSheet.create({
   mapArea: { flex: 1 },
+  chatNotice: { marginTop: SPACE.sm },
   pressed: { opacity: 0.7 },
   muted: { color: COLORS.inkMuted },
   danger: { color: COLORS.danger },

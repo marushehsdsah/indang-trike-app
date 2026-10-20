@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { ViewAnnotation } from '@maplibre/maplibre-react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -8,6 +8,8 @@ import Plate from '../components/Plate';
 import LiveLocationMarker from '../components/LiveLocationMarker';
 import { PersonRow, TripFacts } from '../components/RideDetails';
 import RatingPrompt from '../components/RatingPrompt';
+import ChatSheet from '../components/ChatSheet';
+import ChatNotice from '../components/ChatNotice';
 import KeyboardAwareScrollView from '../components/ui/KeyboardAwareScrollView';
 import useKeyboardHeight from '../hooks/useKeyboardHeight';
 import { FloatingCard, MapBottom, MapTop } from '../components/map/MapChrome';
@@ -27,8 +29,8 @@ import { ACTIVE_STATUSES, formatAge, getDriverAction, isFreshFix } from '../util
 import { tapFeedback } from '../utils/feedback';
 import { COLORS, ELEVATION, RADIUS, SPACE, TYPE } from '../theme';
 
-export default function ActiveRideScreen({ navigation }) {
-  const { user, ride, gps, rideAction, connected, dismissRide, serverOffset } = useApp();
+export default function ActiveRideScreen({ navigation, route }) {
+  const { user, ride, gps, rideAction, connected, dismissRide, serverOffset, chat, loadChat } = useApp();
   const { t } = useI18n();
   const { height } = useWindowDimensions();
   const connection = useConnectionStatus();
@@ -121,8 +123,23 @@ export default function ActiveRideScreen({ navigation }) {
   // No countdown once the driver is waiting at the pickup.
   const eta = ride?.status === 'arrived' ? null : leg?.route?.durationLabel ?? null;
 
-  const finish = (route) => { dismissRide(); navigation.navigate(route); };
+  const finish = (screen) => { dismissRide(); navigation.navigate(screen); };
   const person = driver ? ride?.passenger : ride?.driver;
+
+  // The trip chat: opened from the person row, a new-message notice, or the
+  // route guide's notice (the openChat parameter).
+  const [chatVisible, setChatVisible] = useState(false);
+  const closeChat = useCallback(() => setChatVisible(false), []);
+  const openChat = route?.params?.openChat;
+  useEffect(() => {
+    if (!openChat) return;
+    if (person) setChatVisible(true);
+    navigation.setParams({ openChat: undefined });
+  }, [openChat]);
+  // Loaded once per trip, so a finished trip can offer its messages.
+  const hasPerson = Boolean(person);
+  useEffect(() => { if (ride?.id && hasPerson) loadChat(ride.id).catch(() => {}); }, [ride?.id, hasPerson, loadChat]);
+  const messageCount = chat.rideId === ride?.id ? chat.messages.length : 0;
 
   return <BleedScreen>
     {/* The camera frames each stage once (and when its route first appears),
@@ -146,6 +163,7 @@ export default function ActiveRideScreen({ navigation }) {
         <IconButton icon="arrow-left" label={t('common.home')} onPress={() => navigation.navigate(home)} />
         {!terminal && <StatusPill {...status} style={styles.topStatus} />}
       </View>
+      {!chatVisible && <ChatNotice onOpen={() => setChatVisible(true)} style={styles.notice} />}
     </MapTop>
 
     {/* While details are open the camera keeps the collapsed card's inset,
@@ -168,6 +186,8 @@ export default function ActiveRideScreen({ navigation }) {
           </View>}
           {ride?.status === 'completed' && !ratingSkipped && <RatingPrompt ride={ride} asDriver={driver} onSkip={() => setRatingSkipped(true)} style={styles.rating} />}
           {ride?.cancellationReason ? <Text style={[TYPE.caption, styles.reason]}>{ride.cancellationReason}</Text> : null}
+          {person && messageCount > 0 && <Button label={t('chat.viewMessages', { count: messageCount })} icon="chat-outline"
+            variant="tonal" size="md" onPress={() => setChatVisible(true)} style={styles.messages} />}
           <View style={styles.actions}>
             <Button label={t('active.history')} variant="outline" size="md" onPress={() => finish('History')} style={styles.action} />
             <Button label={t('common.done')} variant="brand" size="md" onPress={() => finish(home)} style={styles.action} />
@@ -185,7 +205,7 @@ export default function ActiveRideScreen({ navigation }) {
             <Text style={TYPE.caption}>{sideNote}</Text>
           </Pressable>}
 
-          <PersonRow person={person} style={styles.person}
+          <PersonRow person={person} style={styles.person} onChat={() => setChatVisible(true)} unread={ride.unreadMessages ?? 0}
             subtitle={driver ? t('trip.riders', { count: ride.passengers }) : [person?.toda, t('active.yourDriver')].filter(Boolean).join(' · ')} />
           {!driver && person && ride.status !== 'in_progress' && <View style={styles.plateRow}>
             <Plate plate={person.plate} toda={person.toda} />
@@ -221,6 +241,7 @@ export default function ActiveRideScreen({ navigation }) {
         </>}
       </FloatingCard>
     </MapBottom>
+    {chatVisible && ride && person && <ChatSheet ride={ride} person={person} asDriver={driver} onClose={closeChat} />}
   </BleedScreen>;
 }
 
@@ -228,6 +249,8 @@ const styles = StyleSheet.create({
   rating: { marginTop: SPACE.md },
   topRow: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACE.sm },
   topStatus: { flexShrink: 1 },
+  notice: { marginTop: SPACE.sm },
+  messages: { marginTop: SPACE.md },
   markerFrame: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   marker: {
     width: 42, height: 42, borderRadius: 21, backgroundColor: COLORS.route, borderWidth: 3, borderColor: '#FFF',

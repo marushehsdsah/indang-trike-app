@@ -3,13 +3,15 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
-import { isFreshFix, ACTIVE_STATUSES } from '../utils/rideState';
+import { isFreshFix, ACTIVE_STATUSES, userName } from '../utils/rideState';
 import { StatusBar } from 'expo-status-bar';
 import { Camera, Map, ViewAnnotation } from '@maplibre/maplibre-react-native';
 import IndangMapLayers from '../components/IndangMapLayers';
 import PlacesLayer from '../components/PlacesLayer';
 import { FloatingCard, MapBottom } from '../components/map/MapChrome';
 import RouteLine from '../components/RouteLine';
+import ChatNotice from '../components/ChatNotice';
+import { ChatButton } from '../components/RideDetails';
 import { NAVIGATION_STYLE_URL } from '../components/mapStyles';
 import { getManeuverIcon } from '../components/maneuverIcons';
 import { INDANG_MIN_ZOOM, isInIndangServiceArea } from '../data/indangMap';
@@ -124,7 +126,8 @@ function VehiclePuck({ floating = false }) {
 // Position comes only from measured GPS, with projection and offline rerouting.
 function NavigationGuide({ navigation, trip, initialRoute }) {
   const insets = useSafeAreaInsets();
-  const { gps } = useApp();
+  const { gps, ride, user } = useApp();
+  const chatPerson = ride && ACTIVE_STATUSES.includes(ride.status) ? (user?.role === 'driver' ? ride.passenger : ride.driver) : null;
   const { t } = useI18n();
   const hasLiveFix = gps.status === 'ready' && isFreshFix(gps.fix);
   const [hasPosition, setHasPosition] = useState(false);
@@ -387,6 +390,9 @@ function NavigationGuide({ navigation, trip, initialRoute }) {
       <MapBottom
         onHeight={(value) => setLayout((current) => (current.panel === value ? current : { ...current, panel: value }))}
         rail={<>
+          {/* Unread trip messages stay one tap away after their notice fades. */}
+          {chatPerson && ride.unreadMessages > 0 && <ChatButton name={userName(chatPerson)} unread={ride.unreadMessages} raised
+            onPress={() => navigation.navigate('ActiveRide', { openChat: true })} />}
           {!following && (
             <Pressable
               style={({ pressed }) => [styles.recenterButton, pressed && styles.pressed]}
@@ -407,6 +413,7 @@ function NavigationGuide({ navigation, trip, initialRoute }) {
           />
         </>}
       >
+        <ChatNotice onOpen={() => navigation.navigate('ActiveRide', { openChat: true })} style={styles.chatNotice} />
         <FloatingCard>
           {hasLiveFix && hasPosition && guidance.arrived ? (
             <View style={styles.etaRow}>
@@ -461,6 +468,7 @@ export default function NavigationScreen({ navigation, route: screenRoute }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.canvas },
+  chatNotice: { marginBottom: SPACE.md },
 
   bannerArea: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: SPACE.md },
   banner: {

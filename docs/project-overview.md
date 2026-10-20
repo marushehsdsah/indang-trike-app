@@ -110,6 +110,27 @@ Both roles publish GPS while the app is open for the protected
 passenger or driver (accepted through completion). Backgrounding the app stops
 location publication and new matching without discarding an assigned trip.
 
+Trip chat (`indang-trike-backend/chat.js`, shared rules in `utils/chat.js`):
+from acceptance until the trip ends, the passenger and driver exchange typed
+messages (up to 300 characters) and one-tap quick replies, which are stored as
+keys and shown in each phone's own language. Messages are sent over HTTP
+(`GET`/`POST /api/rides/:id/messages`, `POST /api/rides/:id/messages/read`) and
+delivered over Socket.IO as `chat:message` and `chat:read` to the two
+participants only; `/api/state` adds each ride's `unreadMessages`. A retried
+send with the same `clientId` is saved once, each person may send 10 messages
+per 30 s, and a chat holds at most 200. After the trip the chat is read-only;
+messages are deleted 30 days after sending. Pilot admins can read a trip's chat
+(`GET /api/admin/rides/:id/messages`) only after a safety report on that trip.
+In the app (`components/ChatSheet.js`, state in `context/AppContext.js` and
+`utils/chatThread.js`) the chat opens over the trip screen from the person row's
+chat button, which carries the unread count. Dragging its top edge up (or
+tapping it) fills the screen and adds a call button; dragging down steps back to
+half, then closes it (`utils/sheetGesture.js`). A message that arrives with the
+chat closed buzzes once and shows a notice on the trip, home and route-guide
+screens. Messages show sending, sent, seen or "not sent"; one that failed for
+want of internet goes out again on reconnect, and offline the chat offers a
+text message instead. Text and Call stay as the fallback.
+
 ### 1.7 Tests
 
 **105 unit/component tests** using `node:test`, including actual React provider

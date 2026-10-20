@@ -10,6 +10,7 @@ import RouteMap from '../components/RouteMap';
 import TodaZoneLayer from '../components/TodaZoneLayer';
 import BottomNav from '../components/BottomNav';
 import StatusPill from '../components/StatusPill';
+import ChatNotice from '../components/ChatNotice';
 import TripStops from '../components/TripStops';
 import { FloatingCard, MapBottom, MapTop } from '../components/map/MapChrome';
 import { useConnectionStatus, useGpsStatus } from '../hooks/useMapStatus';
@@ -115,7 +116,10 @@ export default function DriverScreen({ navigation }) {
         </ViewAnnotation>}
       </RouteMap>
 
-      <MapTop><StatusPill {...status} /></MapTop>
+      <MapTop>
+        <StatusPill {...status} />
+        <ChatNotice onOpen={() => navigation.navigate('ActiveRide', { openChat: true })} style={styles.chatNotice} />
+      </MapTop>
 
       <MapBottom edge={false} onHeight={setBottomHeight}
         rail={fresh && !offer ? <IconButton icon="crosshairs-gps" label={t('map.recenter')} onPress={() => mapRef.current?.fit()} /> : null}>
@@ -195,7 +199,8 @@ export default function DriverScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  offerRider: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, marginTop: SPACE.sm },
+  chatNotice: { marginTop: SPACE.sm },
+  offerRider:{ flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, marginTop: SPACE.sm },
   flexShrink: { flexShrink: 1 },
   mapArea: { flex: 1 },
   flex: { flex: 1 },

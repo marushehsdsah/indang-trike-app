@@ -26,3 +26,9 @@ export function successFeedback() {
 export function warningFeedback() {
   run(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning));
 }
+
+// A chat message came in: a firmer tap than a button press, felt with the
+// phone mounted on the trike.
+export function messageFeedback() {
+  run(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy));
+}
