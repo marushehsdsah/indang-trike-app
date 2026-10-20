@@ -81,6 +81,41 @@ test('a message from the other side counts as unread with a notice until the cha
   } finally { await app.close(); }
 });
 
+test('a refresh asked for before the chat was read cannot bring the unread badge back', async () => {
+  let held = null, serverUnread = 0;
+  const app = await mountApp((path, options, snapshot) => {
+    if (path === '/rides/ride-one/messages') return { messages: [fromDriver('m1')] };
+    if (path === '/rides/ride-one/messages/read') { serverUnread = 0; return { ok: true }; }
+    if (path !== '/state') return undefined;
+    // Each snapshot is the server's state at the moment it was asked for.
+    const state = { ...snapshot, ride: { ...RIDE, unreadMessages: serverUnread }, serverTime: Date.now() };
+    if (held) { const pending = held; held = null; return pending.promise.then(() => state); }
+    return state;
+  });
+  try {
+    await renderer.act(async () => { await app.value.signIn('09170000000', 'password'); });
+    await flush();
+    serverUnread = 1;
+    await renderer.act(async () => { app.sockets.at(-1).emit('chat:message', { rideId: 'ride-one', message: fromDriver('m1') }); });
+    assert.equal(app.value.ride.unreadMessages, 1);
+    // A background refresh is on its way when the chat opens and is read.
+    const gate = deferred();
+    held = gate;
+    let refreshing;
+    await renderer.act(async () => { refreshing = app.value.refresh(); });
+    await renderer.act(async () => { await app.value.viewChat('ride-one'); });
+    await renderer.act(async () => { await app.value.viewChat(null); });
+    assert.equal(app.value.ride.unreadMessages, 0);
+    await renderer.act(async () => { gate.resolve(); await refreshing; });
+    assert.equal(app.value.ride.unreadMessages, 0, 'the snapshot from before the read does not count the message again');
+    // A snapshot asked for later counts messages that arrived after the read.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    serverUnread = 1;
+    await renderer.act(async () => { await app.value.refresh(); });
+    assert.equal(app.value.ride.unreadMessages, 1);
+  } finally { await app.close(); }
+});
+
 test('the other side reading the chat marks the phone\'s messages seen; logging out forgets the chat', async () => {
   const mine = { ...fromDriver('m1'), senderId: 'account-one', senderRole: 'passenger' };
   const { app, socket } = await riding((path) => (path === '/rides/ride-one/messages' ? { messages: [mine] } : { ok: true }));

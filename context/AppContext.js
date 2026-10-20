@@ -32,6 +32,10 @@ export function AppProvider({ children }) {
   const sessionGeneration = useRef(0), configRef = useRef(null), expiresAtRef = useRef(null), persistedRef = useRef(null);
   // The ride whose chat is on screen; messages arriving there are read at once.
   const viewingChat = useRef(null);
+  // When each ride's chat was last marked read (Infinity while that is being
+  // sent). A snapshot asked for before then may still count those messages
+  // as unread, so the phone's own count is kept instead.
+  const chatReadAt = useRef(new Map());
   const activeRide = ride && ACTIVE_STATUSES.includes(ride.status);
   // Pilot admins can locate connected users while their app is open. Driver
   // availability remains a separate choice controlling ride requests.
@@ -40,7 +44,7 @@ export function AppProvider({ children }) {
 
   const clearSession = useCallback(async () => {
     sessionGeneration.current += 1; tokenRef.current = null; configRef.current = null; expiresAtRef.current = null; persistedRef.current = null;
-    refreshSequence.current += 1; socketRef.current?.disconnect(); viewingChat.current = null;
+    refreshSequence.current += 1; socketRef.current?.disconnect(); viewingChat.current = null; chatReadAt.current.clear();
     setToken(null); setUser(null); setRide(null); setOffer(null); setConfig(null); setConnected(false); setChat(NO_CHAT); setChatNotice(null);
     clearSessionCache();
     await SecureStore.deleteItemAsync(TOKEN_KEY);
@@ -65,19 +69,24 @@ export function AppProvider({ children }) {
       throw failure;
     }
   }, [clearSession]);
-  const applyState = useCallback((state) => {
+  // requestedAt is when the state was asked for, if known (see chatReadAt).
+  const applyState = useCallback((state, requestedAt) => {
     setUser(state.user); setOffer(state.offer);
     setServerOffset(state.serverTime - Date.now());
-    setRide((previous) => mergeRide(previous, state.ride || (previous?.id === state.lastRide?.id ? state.lastRide : null)));
+    setRide((previous) => {
+      const next = mergeRide(previous, state.ride || (previous?.id === state.lastRide?.id ? state.lastRide : null));
+      const stale = next && previous?.id === next.id && next !== previous && (chatReadAt.current.get(next.id) ?? -Infinity) >= requestedAt;
+      return stale ? { ...next, unreadMessages: previous.unreadMessages ?? 0 } : next;
+    });
   }, []);
   const refresh = useCallback(async () => {
     if (!tokenRef.current) return;
-    const requestToken = tokenRef.current, sequence = ++refreshSequence.current;
+    const requestToken = tokenRef.current, sequence = ++refreshSequence.current, requestedAt = Date.now();
     setSyncing(true);
     try {
       const [state, settings] = await Promise.all([request('/state'), configRef.current || request('/config')]);
       if (requestToken === tokenRef.current && sequence === refreshSequence.current) {
-        configRef.current = settings; setConfig(settings); applyState(state); setError(null); persistSession(state.user, settings);
+        configRef.current = settings; setConfig(settings); applyState(state, requestedAt); setError(null); persistSession(state.user, settings);
       }
       return state;
     } catch (failure) { if (requestToken === tokenRef.current) setError(failure.message); }
@@ -137,9 +146,11 @@ export function AppProvider({ children }) {
     setChat((previous) => ({ rideId, loaded: true, messages: mergeMessages(previous.rideId === rideId ? previous.messages : [], result.messages) }));
   }, [request]);
   const markChatRead = useCallback(async (rideId) => {
+    chatReadAt.current.set(rideId, Infinity);
     setRide((previous) => (previous?.id === rideId && previous.unreadMessages ? { ...previous, unreadMessages: 0 } : previous));
     setChatNotice((notice) => (notice?.rideId === rideId ? null : notice));
-    await request(`/rides/${rideId}/messages/read`, {});
+    try { await request(`/rides/${rideId}/messages/read`, {}); }
+    finally { if (chatReadAt.current.get(rideId) === Infinity) chatReadAt.current.set(rideId, Date.now()); }
   }, [request]);
   // The chat screen calls this with its ride when it opens and null when it closes.
   const viewChat = useCallback((rideId) => {
@@ -216,6 +227,7 @@ export function AppProvider({ children }) {
     socket.on('chat:read', ({ rideId, readerId, readAt }) => {
       if (readerId !== current.current.user?.id) { updateChat(rideId, (messages) => markRead(messages, readerId, readAt)); return; }
       // Read on another of this person's phones.
+      chatReadAt.current.set(rideId, Date.now());
       setRide((previous) => (previous?.id === rideId && previous.unreadMessages ? { ...previous, unreadMessages: 0 } : previous));
       setChatNotice((notice) => (notice?.rideId === rideId ? null : notice));
     });
