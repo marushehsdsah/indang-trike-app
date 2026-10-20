@@ -5,6 +5,8 @@ const { io } = require('socket.io-client');
 const { createBackend } = require('../indang-trike-backend/app');
 const { DEFAULT_TRIP } = require('../data/indangMap');
 const { quoteTrip } = require('../data/fares');
+const { SEND_LIMIT, SEND_WINDOW_MS } = require('../indang-trike-backend/chat');
+const { MAX_MESSAGES_PER_RIDE, MESSAGE_RETENTION_DAYS } = require('../utils/chat');
 
 let backend, base, sequence = 1000000;
 let now = Date.now();
@@ -594,5 +596,115 @@ test('a rating whose average update fails is taken back, so rating again works',
   assert.equal(await backend.models.Rating.countDocuments({ rideId: ride.id }), 0, 'nothing half-saved');
   assert.equal((await request(`/rides/${ride.id}/rating`, passenger.token, { stars: 4 })).status, 200, 'the retry is accepted');
   assert.deepEqual((await state(driver)).user.rating, { average: 4, count: 1 });
+  await request('/driver/availability', driver.token, { available: false });
+});
+
+// A booked ride accepted by the driver, with helpers for its chat.
+async function acceptedChat() {
+  const passenger = await account(), driver = await account('driver');
+  await online(driver);
+  const ride = (await book(passenger)).body.ride, offer = (await state(driver)).offer;
+  const messages = (who) => request(`/rides/${ride.id}/messages`, who.token);
+  const send = (who, body) => request(`/rides/${ride.id}/messages`, who.token, { clientId: randomUUID(), ...body });
+  return { passenger, driver, ride, offer, messages, send };
+}
+
+test('the passenger and the driver chat live once the trip is accepted, and no one else can read it', async () => {
+  const { passenger, driver, ride, offer, messages, send } = await acceptedChat();
+  const stranger = await account();
+  const events = { passenger: [], driver: [], stranger: [] };
+  for (const [name, who] of Object.entries({ passenger, driver, stranger })) {
+    const socket = await connect(who.token);
+    socket.on('chat:message', (event) => events[name].push(['message', event]));
+    socket.on('chat:read', (event) => events[name].push(['read', event]));
+  }
+  assert.equal((await send(passenger, { text: 'Hello?' })).status, 409, 'no chat before a driver accepts');
+  assert.equal((await messages(driver)).status, 403, 'the offered driver cannot read it yet');
+  await action(driver, ride.id, 'accept', { offerId: offer.offerId });
+
+  const hello = await send(passenger, { text: '  Nasa blue gate po ako  ' });
+  assert.equal(hello.status, 200, JSON.stringify(hello.body));
+  assert.deepEqual([hello.body.message.text, hello.body.message.senderRole, hello.body.message.readAt], ['Nasa blue gate po ako', 'passenger', null]);
+  assert.equal((await send(driver, { preset: 'imHere' })).body.message.preset, 'imHere');
+  assert.equal((await send(passenger, { preset: 'imHere' })).status, 400, "a driver's quick reply");
+  assert.equal((await send(stranger, { text: 'Hi' })).status, 403);
+  assert.equal((await messages(stranger)).status, 403);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.deepEqual(events.driver.map(([, event]) => event.message.text ?? event.message.preset), ['Nasa blue gate po ako', 'imHere']);
+  assert.ok(events.driver.every(([, event]) => event.rideId === ride.id));
+  assert.equal(events.passenger.length, 2, "the sender's own phones stay in step too");
+  assert.equal(events.stranger.length, 0);
+
+  // A retried send (the same clientId) is saved and delivered once.
+  const retry = { clientId: randomUUID(), text: 'Papunta na ako' };
+  const first = await request(`/rides/${ride.id}/messages`, driver.token, retry);
+  const again = await request(`/rides/${ride.id}/messages`, driver.token, retry);
+  assert.equal(again.body.message.id, first.body.message.id);
+  const chat = (await messages(passenger)).body;
+  assert.equal(chat.open, true);
+  assert.deepEqual(chat.messages.map((message) => message.text ?? message.preset), ['Nasa blue gate po ako', 'imHere', 'Papunta na ako']);
+
+  // Unread until the recipient opens the chat; then the sender sees it was read.
+  assert.equal((await state(passenger)).ride.unreadMessages, 2);
+  assert.equal((await state(driver)).ride.unreadMessages, 1);
+  assert.equal((await request(`/rides/${ride.id}/messages/read`, passenger.token, {})).status, 200);
+  assert.equal((await state(passenger)).ride.unreadMessages, 0);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  const read = events.driver.find(([kind]) => kind === 'read')?.[1];
+  assert.deepEqual([read?.rideId, read?.readerId], [ride.id, passenger.user.id]);
+  const seen = (await messages(driver)).body.messages;
+  assert.ok(seen.filter((message) => message.senderRole === 'driver').every((message) => message.readAt), "the driver's messages are read");
+  assert.equal(seen.find((message) => message.senderRole === 'passenger').readAt, null, "the passenger's message is not read yet");
+
+  // After the trip the chat stays readable but takes no new messages.
+  for (const step of ['arrive', 'start', 'complete']) await action(driver, ride.id, step);
+  assert.match((await send(driver, { text: 'Salamat!' })).body.error, /chat is closed/);
+  const after = (await messages(passenger)).body;
+  assert.deepEqual([after.open, after.messages.length], [false, 3]);
+  assert.equal((await state(driver)).lastRide.unreadMessages, 1, 'the unread count stays with the last trip');
+  await request('/driver/availability', driver.token, { available: false });
+});
+
+test('chat sending is limited per person, a trip chat has a size cap, and messages expire', async () => {
+  const { passenger, driver, ride, offer, messages, send } = await acceptedChat();
+  await action(driver, ride.id, 'accept', { offerId: offer.offerId });
+  for (let index = 0; index < SEND_LIMIT; index += 1) assert.equal((await send(passenger, { text: `Message ${index}` })).status, 200);
+  assert.equal((await send(passenger, { text: 'One more' })).status, 429);
+  assert.equal((await send(driver, { preset: 'onMyWay' })).status, 200, 'the limit is per person');
+  now += SEND_WINDOW_MS + 1;
+  assert.equal((await send(passenger, { text: 'After a pause' })).status, 200);
+
+  // Fill the chat to its cap with older messages.
+  const sent = SEND_LIMIT + 2, sentAt = new Date(now - 3600000);
+  await backend.models.Message.insertMany(Array.from({ length: MAX_MESSAGES_PER_RIDE - sent }, () => ({
+    rideId: ride.id, senderId: driver.user.id, recipientId: passenger.user.id, senderRole: 'driver', clientId: randomUUID(), text: 'Filler', sentAt,
+  })));
+  assert.match((await send(driver, { text: 'Too many' })).body.error, /chat is full/);
+  assert.equal((await messages(passenger)).body.messages.length, MAX_MESSAGES_PER_RIDE);
+
+  const indexes = await backend.models.Message.collection.indexes();
+  const expiry = indexes.find((index) => index.expireAfterSeconds !== undefined);
+  assert.deepEqual([expiry.key, expiry.expireAfterSeconds], [{ sentAt: 1 }, MESSAGE_RETENTION_DAYS * 24 * 3600]);
+  await action(passenger, ride.id, 'cancel');
+  await request('/driver/availability', driver.token, { available: false });
+});
+
+test('pilot admins can read a trip chat only after a safety report on that trip', async () => {
+  const { passenger, driver, ride, offer, send } = await acceptedChat();
+  await action(driver, ride.id, 'accept', { offerId: offer.offerId });
+  await send(passenger, { text: 'Please slow down' });
+  for (const step of ['arrive', 'start', 'complete']) await action(driver, ride.id, step);
+  // The God view test registered the admin earlier in this run.
+  const admin = (await request('/login', null, { phone: adminPhone, password: 'strong-password' })).body;
+  const transcript = (who) => request(`/admin/rides/${ride.id}/messages`, who.token);
+  assert.equal((await transcript(passenger)).status, 403, 'not an admin');
+  assert.equal((await transcript(admin)).status, 403, 'no safety report yet');
+  await request(`/rides/${ride.id}/rating`, passenger.token, { stars: 2, tags: ['Rude'] });
+  assert.equal((await transcript(admin)).status, 403, 'a low rating is not a safety report');
+  await request(`/rides/${ride.id}/rating`, driver.token, { stars: 2, tags: ['Unsafe behaviour'] });
+  const shown = await transcript(admin);
+  assert.equal(shown.status, 200, JSON.stringify(shown.body));
+  assert.deepEqual(shown.body.messages.map((message) => [message.senderRole, message.text]), [['passenger', 'Please slow down']]);
+  assert.equal((await request('/admin/rides/not-a-ride/messages', admin.token)).status, 404);
   await request('/driver/availability', driver.token, { available: false });
 });

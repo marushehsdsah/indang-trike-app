@@ -7,6 +7,7 @@ const { createModels } = require('./models');
 const { createAuth } = require('./auth');
 const { createDispatch } = require('./dispatch');
 const { createAdmin } = require('./admin');
+const { createChat } = require('./chat');
 const { createBrevoMailer } = require('./mailer');
 const { requireValue, profileFields, publicUser } = require('./policy');
 const { SERVICE_AREA_NAME, INDANG_BOUNDARY_SHAPE } = require('../data/indangMap');
@@ -26,6 +27,7 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   const presence = new Map(), auth = createAuth(models, clock, { sendEmail });
   const dispatch = createDispatch({ models, io, clock, presence, options: dispatchOptions });
   const admin = createAdmin({ models, presence, clock, adminPhones });
+  const chat = createChat({ models, io, clock });
   app.disable('x-powered-by');
   // The God view website (web/god-view) is hosted separately and calls this
   // API cross-origin with a bearer token; CORS_ORIGIN can restrict callers.
@@ -54,6 +56,7 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   app.use('/api', auth.middleware);
   app.use('/api/admin', admin.middleware);
   app.get('/api/admin/overview', async (req, res) => res.json(await admin.overview()));
+  app.get('/api/admin/rides/:id/messages', async (req, res) => res.json(await chat.transcript(req.params.id)));
   // The service area and the same places layer the app draws (assets/places).
   app.get('/api/admin/map', (req, res) => res.json({ boundary: INDANG_BOUNDARY_SHAPE, places: SERVICE_AREA_PLACES }));
   app.get('/api/config', (req, res) => res.json({ fare: FLAT_FARE, currency: 'PHP', maxPassengers: 4, gpsMaxAgeMs: 30000 }));
@@ -65,7 +68,7 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
     });
     dispatch.notify(req.user._id); res.json({ user: publicUser(user) });
   });
-  app.get('/api/state', async (req, res) => { await dispatch.tick(); res.json(await dispatch.snapshot(req.user._id)); });
+  app.get('/api/state', async (req, res) => { await dispatch.tick(); res.json(await chat.addUnread(await dispatch.snapshot(req.user._id), req.user._id)); });
   app.post('/api/logout', async (req, res) => {
     await models.Session.deleteOne({ _id: req.session._id });
     io.in(`session:${req.session._id}`).disconnectSockets(true);
@@ -81,8 +84,11 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
     const result = await dispatch.run(() => dispatch.book(req.user, req.body));
     res.status(result.reused ? 200 : 201).json(result);
   });
-  // Before the generic action route, which would otherwise take "rating".
+  // Before the generic action route, which would otherwise take "rating" and "messages".
   app.post('/api/rides/:id/rating', async (req, res) => res.json(await dispatch.run(() => dispatch.rate(req.user, req.params.id, req.body))));
+  app.get('/api/rides/:id/messages', async (req, res) => res.json(await chat.list(req.user, req.params.id)));
+  app.post('/api/rides/:id/messages', async (req, res) => res.json(await chat.send(req.user, req.params.id, req.body)));
+  app.post('/api/rides/:id/messages/read', async (req, res) => res.json(await chat.markRead(req.user, req.params.id)));
   app.post('/api/rides/:id/:action', async (req, res) => res.json(await dispatch.run(() => dispatch.action(req.user, req.params.id, req.params.action, req.body))));
   app.get('/api/history', async (req, res) => {
     const filter = req.user.role === 'driver' ? { driverId: String(req.user._id) } : { passengerId: String(req.user._id) };

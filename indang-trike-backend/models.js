@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { MESSAGE_RETENTION_DAYS } = require('../utils/chat');
 
 function createModels(connection) {
   const { Schema } = mongoose;
@@ -62,13 +63,27 @@ function createModels(connection) {
   }, { timestamps: true, bufferCommands: false });
   ratingSchema.index({ rideId: 1, raterId: 1 }, { unique: true });
   ratingSchema.index({ flagged: 1, createdAt: -1 });
+  // A trip chat message between a ride's passenger and driver (utils/chat.js):
+  // typed text or a quick-reply key. The sender's clientId makes a retried
+  // send idempotent. sentAt is the server's clock; the database deletes a
+  // message MESSAGE_RETENTION_DAYS after it.
+  const messageSchema = new Schema({
+    rideId: { type: String, required: true }, senderId: { type: String, required: true }, recipientId: { type: String, required: true },
+    senderRole: { type: String, enum: ['passenger', 'driver'], required: true },
+    clientId: { type: String, required: true }, text: String, preset: String,
+    sentAt: { type: Date, required: true, expires: MESSAGE_RETENTION_DAYS * 24 * 60 * 60 }, readAt: Date,
+  }, { bufferCommands: false });
+  messageSchema.index({ senderId: 1, clientId: 1 }, { unique: true });
+  messageSchema.index({ rideId: 1, sentAt: 1 });
+  messageSchema.index({ senderId: 1, sentAt: -1 });
   const User = connection.model('User', userSchema);
   const Session = connection.model('Session', sessionSchema);
   const Ride = connection.model('Ride', rideSchema);
   const EmailCode = connection.model('EmailCode', emailCodeSchema);
   const ResetCode = connection.model('ResetCode', resetCodeSchema);
   const Rating = connection.model('Rating', ratingSchema);
-  return { User, Session, Ride, Rating, EmailCode, ResetCode };
+  const Message = connection.model('Message', messageSchema);
+  return { User, Session, Ride, Rating, Message, EmailCode, ResetCode };
 }
 
 module.exports = { createModels };
