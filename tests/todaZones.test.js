@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const todaData = require('../assets/geo/indang-todas.json');
 const { BARANGAY_NAMES, TODA_NAMES, findToda, getBarangayAt, getTodaZoneShape, todaName, todaServes } = require('../data/todaZones');
+const { createMapPolygons, isCoordinateInPolygons } = require('../utils/geojson');
 
 const at = (latitude, longitude) => ({ latitude, longitude });
 // Pins from TODAs_coordinates.xlsx.
@@ -15,6 +16,10 @@ test('Indang has 36 barangays and every TODA lists only real ones', () => {
     for (const barangay of [...toda.barangays, ...toda.review.map((item) => item.barangay)]) assert.ok(BARANGAY_NAMES.includes(barangay), `${toda.name}: ${barangay}`);
   }
   assert.deepEqual(todaData.uncovered, [], 'ITODA serves every barangay');
+  // A stop's pin in another barangay would leave nothing of it to draw.
+  for (const toda of TODA_NAMES.map(findToda)) {
+    for (const stop of toda.stops.filter(({ along }) => !along)) assert.equal(getBarangayAt(stop), stop.barangay, `${toda.name}: ${stop.name}`);
+  }
 });
 
 test('no two TODAs share a name or alias', () => {
@@ -70,6 +75,17 @@ test('BITODA serves Bancod and CvSU only, not the rest of Kaytapos or the unveri
   assert.equal(todaServes(bitoda, CVSU, POBLACION), false, 'the Poblacion next to CvSU');
   assert.equal(todaServes(bitoda, BANCOD, SITIO_QUARRY), false, 'Alulod is under review');
   assert.deepEqual(getTodaZoneShape(bitoda).features.map((feature) => feature.properties.name), ['Bancod', 'CvSU']);
+});
+
+test('the driver map draws a stop only inside its own barangay, where it counts', () => {
+  const bitoda = findToda('BITODA');
+  const CVSU = at(14.19782, 120.88149), LIBRARY = at(14.1994, 120.8823);
+  const shape = (name) => createMapPolygons({ type: 'FeatureCollection', features: getTodaZoneShape(bitoda).features.filter((feature) => feature.properties.name === name) });
+  assert.equal(isCoordinateInPolygons(CVSU, shape('CvSU')), true);
+  assert.equal(isCoordinateInPolygons(LIBRARY, shape('CvSU')), true);
+  // The Poblacion pin is about 330 m from CvSU, inside the 400 m circle.
+  assert.equal(isCoordinateInPolygons(POBLACION, shape('CvSU')), false, 'the Poblacion part of the circle');
+  assert.equal(todaServes(bitoda, POBLACION, BANCOD), false);
 });
 
 test('SITODAI serves Banaba Cerca, the strip of Banaba Lejos along their border up to Rehab, and British Village', () => {

@@ -116,6 +116,19 @@ function borderStripRing({ barangay, along, depthMeters }) {
   return [...strip, strip[0]];
 }
 
+// The part of a stop the driver's map shows. A stop counts only inside its own
+// barangay (todaCovers), so a circle or square is drawn clipped to it; a
+// border strip already lies inside it.
+function stopMapRing(stop, ring) {
+  if (stop.along) return ring;
+  // Clipping keeps straight lines straight, so plain longitude/latitude will do.
+  const toXY = (p) => [p.longitude, p.latitude];
+  const barangay = BARANGAYS.find(({ name }) => name === stop.barangay).polygons[0].coordinates;
+  const part = clipToConvex(barangay.slice(0, -1).map(toXY), ring.slice(0, -1).map(toXY))
+    .map(([longitude, latitude]) => ({ latitude, longitude }));
+  return [...part, part[0]];
+}
+
 // "PCHTI toda", "pchti-toda" and "PCHTI" all name PCHTI-TODA.
 const normalize = (value) => String(value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const TODAS = todaData.todas.map((toda) => ({
@@ -124,7 +137,7 @@ const TODAS = todaData.todas.map((toda) => ({
   barangays: toda.barangays,
   stops: (toda.stops ?? []).map((stop) => {
     const coordinates = stop.along ? borderStripRing(stop) : stop.sizeMeters ? squareRing(stop) : circleRing(stop);
-    return { ...stop, polygon: { coordinates, holes: [] } };
+    return { ...stop, polygon: { coordinates, holes: [] }, mapPolygon: { coordinates: stopMapRing(stop, coordinates), holes: [] } };
   }),
   areas: [...toda.barangays, ...(toda.stops ?? []).map((stop) => stop.name)],
   wholeTown: BARANGAYS.every(({ name }) => toda.barangays.includes(name)),
@@ -168,7 +181,7 @@ function getTodaZoneShape(toda) {
   const features = [
     ...BARANGAYS.filter(({ name }) => toda.barangays.includes(name))
       .flatMap(({ name, polygons }) => polygons.map((polygon) => named(polygon, name))),
-    ...toda.stops.map((stop) => named(stop.polygon, stop.name)),
+    ...toda.stops.map((stop) => named(stop.mapPolygon, stop.name)),
   ];
   return { type: 'FeatureCollection', features };
 }
