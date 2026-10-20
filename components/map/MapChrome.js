@@ -47,7 +47,8 @@ export function MapBottom({ rail, children, edge = true, onHeight, style }) {
       onLayout={onHeight ? ({ nativeEvent }) => onHeight(Math.round(nativeEvent.layout.height)) : undefined}
     >
       <View style={styles.rail} pointerEvents="box-none">
-        <MapAttribution />
+        {/* The credit wraps when a wide button (the driver's Navigate) needs the room. */}
+        <MapAttribution style={styles.credit} />
         <View style={styles.buttons} pointerEvents="box-none">{rail}</View>
       </View>
       {children}
@@ -63,5 +64,6 @@ const styles = StyleSheet.create({
   top: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: SPACE.md },
   bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: SPACE.md },
   rail: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: SPACE.md },
-  buttons: { alignItems: 'flex-end', gap: SPACE.md },
+  credit: { flexShrink: 1, marginRight: SPACE.sm },
+  buttons: { flexShrink: 0, alignItems: 'flex-end', gap: SPACE.md },
 });
