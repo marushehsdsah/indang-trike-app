@@ -5,51 +5,51 @@
 // (Toda ID / Passenger / Status), matching the reference design.
 //
 // HOW TO EDIT:
-// - Trip/account data comes from data/mockData.js.
-// - Stat numbers below are computed live from that same data, so
-//   adding/removing accounts or trips in mockData.js updates the
-//   counts automatically — no need to touch this file.
+// - The numbers and recent trips come from useAdminData('dashboard'):
+//   the API in the IndangGO app (GET /api/admin/dashboard), or
+//   data/mockData.js when this runs on its own. Pull down to refresh.
+// - "Online Now" counts passengers and drivers with the app open.
 // - "View All" jumps to the Trips tab via the onViewAllTrips prop
 //   (wired up in App.js).
 // =============================================================
 
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl } from 'react-native';
 import colors from '../theme/colors';
-import { trips, accounts } from '../data/mockData';
+import useAdminData from '../useAdminData';
 import StatusBadge from '../components/StatusBadge';
 import TopHeader from '../components/TopHeader';
+import LoadState, { RefreshError } from '../components/LoadState';
 
 export default function DashboardScreen({ onViewAllTrips }) {
-  const ongoingCount = trips.filter((t) => t.status === 'Ongoing').length;
-  const activeAccountsCount = accounts.filter(
-    (a) => a.status === 'Active' || a.status === 'Verified'
-  ).length;
-
-  // Only show a handful on the dashboard preview; the full list
-  // lives on the Trips tab.
-  const recentTrips = trips.slice(0, 3);
+  const { data, loading, refreshing, error, reload, refresh } = useAdminData('dashboard');
 
   return (
     <View style={styles.screen}>
       <TopHeader title="Admin" />
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[colors.brandGreen]} />}
+      >
         <Text style={styles.heading}>Dashboard</Text>
+
+        {!data ? <LoadState loading={loading} error={error} onRetry={reload} /> : <>
+        {error && <RefreshError message={error} />}
 
         {/* ---- Quick stat summary cards ---- */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{accounts.length}</Text>
+            <Text style={styles.statNumber}>{data.totalAccounts}</Text>
             <Text style={styles.statLabel}>Total Accounts</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{activeAccountsCount}</Text>
-            <Text style={styles.statLabel}>Active Accounts</Text>
+            <Text style={styles.statNumber}>{data.onlineNow}</Text>
+            <Text style={styles.statLabel}>Online Now</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={[styles.statNumber, { color: colors.statusOngoing }]}>
-              {ongoingCount}
+              {data.ongoingTrips}
             </Text>
             <Text style={styles.statLabel}>Ongoing Trips</Text>
           </View>
@@ -65,13 +65,14 @@ export default function DashboardScreen({ onViewAllTrips }) {
           </View>
 
           <View style={styles.tableHeaderRow}>
-            <Text style={[styles.tableHeaderText, { flex: 1.1 }]}>Toda ID</Text>
+            <Text style={[styles.tableHeaderText, { flex: 1.1 }]}>Trip ID</Text>
             <Text style={[styles.tableHeaderText, { flex: 1.4 }]}>Passenger</Text>
             <Text style={[styles.tableHeaderText, { flex: 1 }, styles.rightAlign]}>Status</Text>
           </View>
 
-          {recentTrips.map((trip) => (
-            <View key={trip.id} style={styles.tripRow}>
+          {data.recentTrips.length === 0 && <Text style={styles.emptyText}>No trips yet.</Text>}
+          {data.recentTrips.map((trip) => (
+            <View key={trip.key ?? trip.id} style={styles.tripRow}>
               <Text style={[styles.tripId, { flex: 1.1 }]}>{trip.id}</Text>
               <View style={{ flex: 1.4 }}>
                 <Text style={styles.passengerName}>{trip.passenger}</Text>
@@ -83,6 +84,7 @@ export default function DashboardScreen({ onViewAllTrips }) {
             </View>
           ))}
         </View>
+        </>}
       </ScrollView>
     </View>
   );
@@ -186,5 +188,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  emptyText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingVertical: 16,
   },
 });

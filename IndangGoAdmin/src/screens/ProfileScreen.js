@@ -4,34 +4,41 @@
 // The signed-in admin's own profile, opened from the avatar in
 // TopHeader: name, Admin ID and role, plus a Logout button.
 //
-// NON-FUNCTIONAL NOTE:
-// Like Login, Logout only moves the app. It resets the stack so
-// Login is the only screen left — the back button can't return to
-// the dashboard afterwards. Add a real sign-out call to
-// handleLogout() once admin login checks credentials.
+// In the IndangGO app, Logout ends the admin's session, which
+// returns the app to its splash screen. Run on its own (App.js),
+// Logout only resets the stack so Login is the only screen left —
+// the back button can't return to the dashboard afterwards.
 //
 // HOW TO EDIT:
-// - Name, Admin ID and role come from data/mockData.js (currentAdmin).
+// - Name, Admin ID and role come from the signed-in admin
+//   (../session.js), or data/mockData.js (currentAdmin) when this
+//   runs on its own.
 // - Rows in the details card live in DETAILS below.
 // - Colors come from ../theme/colors.js.
 // =============================================================
 
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
-import { currentAdmin } from '../data/mockData';
-
-// Rows shown in the "Account Details" card.
-const DETAILS = [
-  { icon: 'id-card-outline', label: 'Admin ID', value: currentAdmin.adminId },
-  { icon: 'shield-checkmark-outline', label: 'Role', value: currentAdmin.role },
-];
+import { useAdminSession } from '../session';
 
 export default function ProfileScreen({ navigation }) {
+  const { admin, signOut } = useAdminSession();
+
+  // Rows shown in the "Account Details" card.
+  const DETAILS = [
+    { icon: 'id-card-outline', label: 'Admin ID', value: admin.adminId },
+    { icon: 'shield-checkmark-outline', label: 'Role', value: admin.role },
+  ];
+
   const handleLogout = () => {
-    // TODO: end the real admin session here once login is wired up.
-    navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+    if (!signOut) {
+      navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+      return;
+    }
+    // The session is removed from this phone even when the server can't be told.
+    signOut().catch(() => Alert.alert('Logged out on this phone', 'The server couldn’t be reached. Your session was removed from this phone.'));
   };
 
   return (
@@ -55,7 +62,7 @@ export default function ProfileScreen({ navigation }) {
           <View style={styles.avatar}>
             <Ionicons name="person" size={36} color={colors.textOnDark} />
           </View>
-          <Text style={styles.name}>{currentAdmin.name}</Text>
+          <Text style={styles.name}>{admin.name}</Text>
           <Text style={styles.organization}>Indang Go Municipal Transit Authority</Text>
         </View>
 

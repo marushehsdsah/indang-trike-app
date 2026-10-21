@@ -1,12 +1,14 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
+const { createRequire } = require('node:module');
 const { io } = require('socket.io-client');
 const { createBackend } = require('../indang-trike-backend/app');
 const { DEFAULT_TRIP } = require('../data/indangMap');
 const { quoteTrip } = require('../data/fares');
 const { SEND_LIMIT, SEND_WINDOW_MS } = require('../indang-trike-backend/chat');
 const { MAX_MESSAGES_PER_RIDE, MESSAGE_RETENTION_DAYS } = require('../utils/chat');
+const bcrypt = createRequire(require.resolve('../indang-trike-backend/package.json'))('bcryptjs');
 
 let backend, base, sequence = 1000000;
 let now = Date.now();
@@ -118,6 +120,73 @@ test('the separate God view website may call the API, but every overview needs a
   assert.equal((await request('/admin/overview', admin.token)).body.users.some(item => item.id === ordinary.user.id), false);
   await request('/logout', admin.token, {});
   assert.equal((await request('/admin/overview', admin.token)).status, 401);
+});
+
+test('an admin account added in the database logs in on the app login, may use God view, and cannot ride', async () => {
+  const phone = `0917${sequence++}`;
+  // As an administrator adds one in Atlas: the password as a bcrypt hash, and role "admin".
+  await backend.models.User.collection.insertOne({ phone: `+63${phone.slice(1)}`, password: await bcrypt.hash('strong-password', 10),
+    firstName: 'Pilot', lastName: 'Admin', email: `${phone}@example.com`, role: 'admin', createdAt: new Date(now), updatedAt: new Date(now) });
+  const login = await request('/login', null, { phone, password: 'strong-password' });
+  assert.equal(login.status, 200, JSON.stringify(login.body));
+  const admin = login.body;
+  assert.equal(admin.user.role, 'admin');
+  assert.equal(admin.user.profileComplete, true);
+  assert.equal((await request('/state', admin.token)).status, 200);
+  // The app's live link makes the admin present, but admins are not shown among the riders.
+  const socket = await connect(admin.token);
+  const overview = await request('/admin/overview', admin.token);
+  assert.equal(overview.status, 200);
+  assert.equal(overview.body.users.some(item => item.id === admin.user.id), false);
+  assert.equal((await book(admin)).status, 403);
+  assert.equal((await request('/passenger/location', admin.token, fix())).status, 403);
+  assert.equal((await request('/driver/availability', admin.token, { available: true })).status, 403);
+  socket.disconnect();
+  // Sign-up cannot make one.
+  const other = `0917${sequence++}`;
+  const signupAdmin = await request('/register/code', null, { phone: other, password: 'strong-password', firstName: 'Not', lastName: 'Admin', email: `${other}@example.com`, role: 'admin' });
+  assert.equal(signupAdmin.status, 400);
+});
+
+test('the admin interface lists the accounts and trips in the database, for admins only', async () => {
+  const passenger = await account(), driver = await account('driver');
+  // A completed trip, a cancelled one, then one still looking for a driver.
+  const socket = await connect(driver.token);
+  assert.equal((await request('/driver/location', driver.token, fix())).status, 200);
+  assert.equal((await request('/driver/availability', driver.token, { available: true })).status, 200);
+  const completed = (await book(passenger)).body.ride;
+  assert.equal((await action(driver, completed.id, 'accept', { offerId: (await state(driver)).offer.offerId })).status, 200);
+  for (const step of ['arrive', 'start', 'complete']) assert.equal((await action(driver, completed.id, step)).status, 200);
+  assert.equal((await request('/driver/availability', driver.token, { available: false })).status, 200);
+  const cancelled = (await book(passenger)).body.ride;
+  assert.equal((await action(passenger, cancelled.id, 'cancel')).status, 200);
+  const searching = (await book(passenger)).body.ride;
+
+  for (const path of ['/admin/dashboard', '/admin/accounts', '/admin/trips']) assert.equal((await request(path, passenger.token)).status, 403, path);
+  // The God view test registered the admin earlier in this run.
+  const admin = (await request('/login', null, { phone: adminPhone, password: 'strong-password' })).body;
+  const route = `${DEFAULT_TRIP.pickup.name} → ${DEFAULT_TRIP.dropoff.name}`;
+  const trips = (await request('/admin/trips', admin.token)).body.trips;
+  assert.deepEqual(trips.slice(0, 3).map(({ key, id, todaId, passenger: rider, driver: assigned, status, route: path }) => ({ key, id, todaId, rider, assigned, status, path })), [
+    { key: searching.id, id: `#TR-${searching.id.slice(-6).toUpperCase()}`, todaId: '—', rider: 'Test passenger', assigned: '—', status: 'Ongoing', path: route },
+    { key: cancelled.id, id: `#TR-${cancelled.id.slice(-6).toUpperCase()}`, todaId: '—', rider: 'Test passenger', assigned: '—', status: 'Cancelled', path: route },
+    { key: completed.id, id: `#TR-${completed.id.slice(-6).toUpperCase()}`, todaId: 'Test TODA', rider: 'Test passenger', assigned: 'Test driver', status: 'Completed', path: route },
+  ]);
+  assert.ok(Number.isFinite(Date.parse(trips[0].date)));
+
+  const accounts = (await request('/admin/accounts', admin.token)).body.accounts;
+  assert.deepEqual(accounts.find((item) => item.key === passenger.user.id),
+    { key: passenger.user.id, id: passenger.user.phone.replace('+63', '0'), name: 'Test passenger', email: passenger.user.email, role: 'PASSENGER', status: 'Offline' });
+  assert.deepEqual(accounts.find((item) => item.key === driver.user.id),
+    { key: driver.user.id, id: driver.user.phone.replace('+63', '0'), name: 'Test driver', email: driver.user.email, role: 'RIDER', status: 'Online', toda: 'Test TODA', plate: driver.user.plate });
+  assert.equal(accounts.some((item) => item.name === 'Pilot Admin'), false, 'admin accounts are not listed');
+  assert.equal(accounts.length, await backend.models.User.countDocuments({ role: { $ne: 'admin' } }));
+
+  const dashboard = (await request('/admin/dashboard', admin.token)).body;
+  assert.deepEqual(dashboard, { totalAccounts: accounts.length, onlineNow: 1, ongoingTrips: 1, recentTrips: trips.slice(0, 3) });
+  await action(passenger, searching.id, 'cancel');
+  socket.disconnect();
+  await request('/logout', admin.token, {});
 });
 
 test('a booking outside Indang is rejected before any ride is created', async () => {

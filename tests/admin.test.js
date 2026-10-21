@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseAdminPhones, buildOverview } = require('../indang-trike-backend/admin');
+const { parseAdminPhones, buildOverview, buildAccounts, buildTrips, tripStatus } = require('../indang-trike-backend/admin');
 const { profileFields, publicUser } = require('../indang-trike-backend/policy');
 const { DEFAULT_TRIP } = require('../data/indangMap');
 
@@ -121,4 +121,32 @@ test('a driver saved under the former "ITODA PITODA" is shown and saved as ITODA
   const profile = { firstName: 'Pilot', lastName: 'Driver', email: 'pilot@example.com', plate: 'abc 1', capacity: 4 };
   assert.equal(profileFields({ ...profile, toda: 'itoda pitoda' }, 'driver').toda, 'ITODA');
   assert.equal(profileFields({ ...profile, toda: ' pitoda ' }, 'driver').toda, 'PITODA');
+});
+
+test('the admin screens list accounts by mobile number and whether the app is open, keeping secrets out', () => {
+  const accounts = buildAccounts([
+    { _id: 'p1', phone: '+639171234567', firstName: 'Ana', lastName: 'Cruz', email: 'ana@example.com', role: 'passenger', password: 'hash', location: fix },
+    { _id: 'd1', phone: '09181234567', firstName: 'Ben', lastName: 'Reyes', email: 'ben@example.com', role: 'driver', available: true, toda: 'ITODA PITODA', plate: 'ABC 123' },
+    { _id: 'd2', phone: '+639191234567', role: 'driver', available: false },
+  ], new Set(['d1', 'd2']));
+  assert.deepEqual(accounts, [
+    { key: 'p1', id: '09171234567', name: 'Ana Cruz', email: 'ana@example.com', role: 'PASSENGER', status: 'Offline' },
+    { key: 'd1', id: '09181234567', name: 'Ben Reyes', email: 'ben@example.com', role: 'RIDER', status: 'Available', toda: 'ITODA', plate: 'ABC 123' },
+    { key: 'd2', id: '09191234567', name: 'Driver', email: '', role: 'RIDER', status: 'Online', toda: '', plate: '' },
+  ]);
+});
+
+test('the admin screens show each booking with its people, the driver\'s TODA and a plain status', () => {
+  assert.deepEqual(['searching', 'accepted', 'arrived', 'in_progress', 'completed', 'cancelled', 'no_driver'].map(tripStatus),
+    ['Ongoing', 'Ongoing', 'Ongoing', 'Ongoing', 'Completed', 'Cancelled', 'No driver']);
+  const people = new Map([['p1', { firstName: 'Ana', lastName: 'Cruz' }], ['d1', { firstName: 'Ben', lastName: 'Reyes', toda: 'ITODA PITODA' }]]);
+  const createdAt = new Date(now);
+  const trips = buildTrips([
+    { _id: '6ad8e18d3ba4e6be0a9ca70a', passengerId: 'p1', driverId: 'd1', status: 'completed', trip: { pickup: { name: 'Plaza' }, dropoff: { name: 'CvSU' } }, createdAt },
+    { _id: '6ad8e18d3ba4e6be0a9ca70b', passengerId: 'gone', status: 'searching', createdAt },
+  ], people);
+  assert.deepEqual(trips, [
+    { key: '6ad8e18d3ba4e6be0a9ca70a', id: '#TR-9CA70A', todaId: 'ITODA', passenger: 'Ana Cruz', driver: 'Ben Reyes', status: 'Completed', route: 'Plaza → CvSU', date: createdAt },
+    { key: '6ad8e18d3ba4e6be0a9ca70b', id: '#TR-9CA70B', todaId: '—', passenger: 'Deleted account', driver: '—', status: 'Ongoing', route: 'Pickup → Destination', date: createdAt },
+  ]);
 });

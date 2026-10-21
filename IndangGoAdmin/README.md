@@ -1,15 +1,16 @@
 # Indang Go Admin — Non-Functional Design Mockup
 
 React Native (JavaScript, StyleSheet, no TypeScript) admin app mockup
-for tricycle ride-hailing. Nothing here talks to a real backend —
-it's a clickable design prototype so you can review the flow and
-screens before building the real thing.
+for tricycle ride-hailing. Run on its own, nothing here talks to a real
+backend — it's a clickable design prototype so you can review the flow
+and screens. Inside the IndangGO app the same screens run for real (see
+below).
 
 ## What's included
 
-- **Login** — Admin ID + Password, with a show/hide eye toggle, and a back
-  button (top left) to the IndangGO app's splash screen. The back button
-  only shows inside the IndangGO app, which has that splash screen.
+- **Login** — Admin ID + Password, with a show/hide eye toggle. Used only
+  when this folder runs on its own; in the IndangGO app, admins log in
+  on the app's own login page.
 - **Welcome screen** — "Login successful" confirmation shown after login.
 - **Bottom navigation** — Dashboard / Accounts / Trips.
 - **Dashboard** — quick stat cards + a recent trips list.
@@ -19,13 +20,18 @@ screens before building the real thing.
 - **Profile** — opened from the avatar at the top right: the admin's name,
   Admin ID and role, and a Logout button.
 
-All data is fake, defined in `src/data/mockData.js`.
+Inside the IndangGO app, Dashboard, Accounts and Trips load real data
+from the API (`GET /api/admin/dashboard`, `/accounts`, `/trips`), and
+pulling down refreshes them. Run on its own, this folder shows the fake
+data in `src/data/mockData.js` instead, in the same shape.
 
 ## How to run it
 
 > **Inside the IndangGO app** these screens run from the main project:
-> start it with `npm run dev` in the repository root and open them
-> with "Log in as admin" on the login page. Don't run `npm install`
+> start it with `npm run dev` in the repository root and log in on the
+> app's own login page with an admin account (a user with role
+> `"admin"`, added only in the database); the app then opens Welcome,
+> skipping this folder's Login. Don't run `npm install`
 > in this folder there — a second `node_modules` here would load a
 > second copy of React into the app and break it ("Invalid hook
 > call"). The steps below are for running this folder on its own.
@@ -70,9 +76,10 @@ Profile is the exception: the avatar in `TopHeader` opens it with
 were on. Its Logout button resets the stack to Login alone, so
 back can't return to the dashboard after logging out.
 
-Inside the IndangGO app the same stack is set up again in
-`../navigation/AdminNavigator.js` — add any new admin screen there
-as well as in `App.js`.
+Inside the IndangGO app the same stack, without Login, is set up
+again in `../navigation/AdminNavigator.js` — add any new admin screen
+there as well as in `App.js`. There the screens show the signed-in
+admin account (`src/session.js`), and Logout ends the app's session.
 
 The bottom tab bar (Dashboard / Accounts / Trips) is **not** part
 of the stack — it lives inside `Main` (`src/screens/MainScreen.js`)
@@ -99,10 +106,13 @@ src/
     TopHeader.js            <- shared top bar (hamburger + title + avatar -> Profile)
     BottomNav.js             <- shared bottom tab bar
     StatusBadge.js            <- colored status/role pill used everywhere
+    LoadState.js              <- spinner / error + Retry while a screen's data loads
   theme/
     colors.js                 <- ALL colors live here — edit this to re-skin
   data/
-    mockData.js                <- fake accounts + trips data
+    mockData.js                <- fake accounts + trips data (when run on its own)
+  session.js                   <- signed-in admin, Logout, and where data comes from
+  useAdminData.js              <- loads a screen's data (API or mock)
 ```
 
 ## Where to make common edits
@@ -110,8 +120,9 @@ src/
 | I want to...                                   | Edit this file                          |
 |--------------------------------------------------|------------------------------------------|
 | Change any color / the whole palette              | `src/theme/colors.js`                     |
-| Add, remove, or change accounts                   | `src/data/mockData.js` (`accounts` array) |
-| Add, remove, or change trips                      | `src/data/mockData.js` (`trips` array)    |
+| Change the real accounts/trips the screens get   | `../indang-trike-backend/admin.js` (`buildAccounts`, `buildTrips`) |
+| Add, remove, or change mock accounts              | `src/data/mockData.js` (`accounts` array) |
+| Add, remove, or change mock trips                 | `src/data/mockData.js` (`trips` array)    |
 | Add a new status (e.g. "On Hold")                 | `src/components/StatusBadge.js` (`STATUS_COLORS`) |
 | Add/remove a bottom nav tab                       | `src/components/BottomNav.js` (`TABS` array) |
 | Change what happens when Login is tapped          | `src/screens/LoginScreen.js` (`handleLogin`) |
