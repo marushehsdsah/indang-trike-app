@@ -1,9 +1,10 @@
 # Indang Go Admin — Non-Functional Design Mockup
 
 React Native (JavaScript, StyleSheet, no TypeScript) admin app mockup
-for tricycle ride-hailing. Nothing here talks to a real backend —
-it's a clickable design prototype so you can review the flow and
-screens before building the real thing.
+for tricycle ride-hailing. Run on its own, nothing here talks to a real
+backend — it's a clickable design prototype so you can review the flow
+and screens. Inside the IndangGO app the same screens run for real (see
+below).
 
 ## What's included
 
@@ -19,7 +20,10 @@ screens before building the real thing.
 - **Profile** — opened from the avatar at the top right: the admin's name,
   Admin ID and role, and a Logout button.
 
-All data is fake, defined in `src/data/mockData.js`.
+Inside the IndangGO app, Dashboard, Accounts and Trips load real data
+from the API (`GET /api/admin/dashboard`, `/accounts`, `/trips`), and
+pulling down refreshes them. Run on its own, this folder shows the fake
+data in `src/data/mockData.js` instead, in the same shape.
 
 ## How to run it
 
@@ -102,10 +106,13 @@ src/
     TopHeader.js            <- shared top bar (hamburger + title + avatar -> Profile)
     BottomNav.js             <- shared bottom tab bar
     StatusBadge.js            <- colored status/role pill used everywhere
+    LoadState.js              <- spinner / error + Retry while a screen's data loads
   theme/
     colors.js                 <- ALL colors live here — edit this to re-skin
   data/
-    mockData.js                <- fake accounts + trips data
+    mockData.js                <- fake accounts + trips data (when run on its own)
+  session.js                   <- signed-in admin, Logout, and where data comes from
+  useAdminData.js              <- loads a screen's data (API or mock)
 ```
 
 ## Where to make common edits
@@ -113,8 +120,9 @@ src/
 | I want to...                                   | Edit this file                          |
 |--------------------------------------------------|------------------------------------------|
 | Change any color / the whole palette              | `src/theme/colors.js`                     |
-| Add, remove, or change accounts                   | `src/data/mockData.js` (`accounts` array) |
-| Add, remove, or change trips                      | `src/data/mockData.js` (`trips` array)    |
+| Change the real accounts/trips the screens get   | `../indang-trike-backend/admin.js` (`buildAccounts`, `buildTrips`) |
+| Add, remove, or change mock accounts              | `src/data/mockData.js` (`accounts` array) |
+| Add, remove, or change mock trips                 | `src/data/mockData.js` (`trips` array)    |
 | Add a new status (e.g. "On Hold")                 | `src/components/StatusBadge.js` (`STATUS_COLORS`) |
 | Add/remove a bottom nav tab                       | `src/components/BottomNav.js` (`TABS` array) |
 | Change what happens when Login is tapped          | `src/screens/LoginScreen.js` (`handleLogin`) |

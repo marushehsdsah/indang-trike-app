@@ -15,13 +15,18 @@ const Stack = createNativeStackNavigator();
 // The admin interface (IndangGoAdmin) for an admin account (role "admin", added
 // only in the database) that logged in on the app's own login: its Welcome ->
 // Main (+ Profile) stack, as in IndangGoAdmin/App.js after its Login. Its
-// screens show this account, and its Logout ends the app's session.
+// screens show this account and load their data from the API, and its Logout
+// ends the app's session.
 export default function AdminNavigator() {
-  const { user, signOut } = useApp();
+  const { user, signOut, request } = useApp();
   const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'Admin';
   // The mobile number the admin logs in with, as they type it (09…).
   const adminId = user?.phone?.replace(/^\+63/, '0') || '';
-  const session = useMemo(() => ({ admin: { name, adminId, role: 'Administrator' }, signOut }), [name, adminId, signOut]);
+  const session = useMemo(() => ({
+    admin: { name, adminId, role: 'Administrator' }, signOut,
+    // 'dashboard' | 'accounts' | 'trips': GET /api/admin/<name>.
+    load: (dataName) => request(`/admin/${dataName}`),
+  }), [name, adminId, signOut, request]);
   return (
     <AdminSession.Provider value={session}>
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>

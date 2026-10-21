@@ -20,6 +20,7 @@ const STATUS_COLORS = {
   ongoing: colors.statusOngoing,
   completed: colors.statusCompleted,
   cancelled: colors.statusCancelled,
+  'no driver': colors.statusInactive,
   active: colors.statusOngoing,
   verified: colors.statusVerified,
   blocked: colors.statusBlocked,

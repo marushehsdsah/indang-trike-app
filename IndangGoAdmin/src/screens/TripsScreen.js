@@ -4,12 +4,16 @@
 // "Trip Records" screen: search bar (searches by trip ID, Toda ID,
 // passenger, or driver) + a filter row to show All / Ongoing /
 // Completed / Cancelled trips, followed by a scrollable list of
-// trip cards (Toda ID, passenger, driver, status).
+// trip cards (Toda ID, passenger, driver, route, date, status).
 //
 // HOW TO EDIT:
-// - Trip data comes from data/mockData.js (trips array).
-// - Filter options live in STATUS_FILTERS below — add a new one
-//   there if you introduce another trip status.
+// - Trip data comes from useAdminData('trips'): the API in the
+//   IndangGO app (GET /api/admin/trips, newest first), or
+//   data/mockData.js when this runs on its own. Pull down to
+//   refresh.
+// - Filter options live in STATUS_FILTERS below, each with the
+//   trip statuses it shows — add a new one there if you introduce
+//   another trip status.
 // - Fields the search bar looks in live in SEARCH_FIELDS below.
 // - Tapping a trip row is non-functional right now (onPress is a
 //   no-op) — hook up a trip-details screen there later.
@@ -26,33 +30,45 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
-import { trips } from '../data/mockData';
+import useAdminData from '../useAdminData';
 import StatusBadge from '../components/StatusBadge';
 import TopHeader from '../components/TopHeader';
+import LoadState, { RefreshError } from '../components/LoadState';
 
-// Filter chip options shown at the top of the list.
+// Filter chip options shown at the top of the list, with the trip
+// statuses each one shows (All shows every trip).
 const STATUS_FILTERS = [
   { key: 'ALL', label: 'All' },
-  { key: 'Ongoing', label: 'Ongoing' },
-  { key: 'Completed', label: 'Finished' },
-  { key: 'Cancelled', label: 'Cancelled' },
+  { key: 'Ongoing', label: 'Ongoing', statuses: ['Ongoing'] },
+  { key: 'Completed', label: 'Finished', statuses: ['Completed'] },
+  // A booking no driver took counts as cancelled.
+  { key: 'Cancelled', label: 'Cancelled', statuses: ['Cancelled', 'No driver'] },
 ];
 
 // Trip fields the search bar matches against (case-insensitive).
 const SEARCH_FIELDS = ['id', 'todaId', 'passenger', 'driver'];
 
+// When a trip was booked, in Philippine time like the rest of the app.
+function formatDate(value) {
+  return new Date(value).toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+}
+
 export default function TripsScreen() {
   const [searchText, setSearchText] = useState('');
   const [activeStatusFilter, setActiveStatusFilter] = useState('ALL');
+  const { data, loading, refreshing, error, reload, refresh } = useAdminData('trips');
+  const trips = data?.trips;
 
   // A trip shows when it matches both the status filter and the
   // search text, so you can e.g. search a driver's name within
   // "Ongoing" trips only.
   const query = searchText.trim().toLowerCase();
   const filteredTrips = useMemo(() => {
-    return trips.filter((trip) => {
-      const matchesStatus =
-        activeStatusFilter === 'ALL' || trip.status === activeStatusFilter;
+    const { statuses } = STATUS_FILTERS.find((filter) => filter.key === activeStatusFilter);
+    return (trips || []).filter((trip) => {
+      const matchesStatus = !statuses || statuses.includes(trip.status);
 
       const matchesSearch =
         query.length === 0 ||
@@ -60,7 +76,7 @@ export default function TripsScreen() {
 
       return matchesStatus && matchesSearch;
     });
-  }, [query, activeStatusFilter]);
+  }, [trips, query, activeStatusFilter]);
 
   return (
     <View style={styles.screen}>
@@ -103,14 +119,19 @@ export default function TripsScreen() {
           })}
         </View>
 
+        {error && trips && <RefreshError message={error} />}
+
         {/* ---- Trip list ---- */}
+        {!trips ? <LoadState loading={loading} error={error} onRetry={reload} /> : (
         <FlatList
           data={filteredTrips}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item.key ?? item.id}
           contentContainerStyle={styles.listContent}
+          refreshing={refreshing}
+          onRefresh={refresh}
           ListEmptyComponent={
             <Text style={styles.emptyText}>
-              {query ? 'No trips match your search.' : 'No trips match this filter.'}
+              {trips.length === 0 ? 'No trips yet.' : query ? 'No trips match your search.' : 'No trips match this filter.'}
             </Text>
           }
           renderItem={({ item }) => (
@@ -135,9 +156,18 @@ export default function TripsScreen() {
                 <Text style={styles.personLabel}>Driver:</Text>
                 <Text style={styles.personName}>{item.driver}</Text>
               </View>
+              <View style={styles.personRow}>
+                <Ionicons name="navigate-outline" size={14} color={colors.textSecondary} />
+                <Text style={styles.detailText} numberOfLines={2}>{item.route}</Text>
+              </View>
+              <View style={styles.personRow}>
+                <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                <Text style={styles.detailText}>{formatDate(item.date)}</Text>
+              </View>
             </TouchableOpacity>
           )}
         />
+        )}
       </View>
     </View>
   );
@@ -253,5 +283,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: colors.textPrimary,
+  },
+  detailText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.textSecondary,
   },
 });

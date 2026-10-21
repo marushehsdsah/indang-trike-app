@@ -1,36 +1,37 @@
 // =============================================================
 // data/mockData.js
 // -------------------------------------------------------------
-// FAKE data only. The app is a non-functional design mockup, so
-// there is no backend yet — these arrays stand in for it.
+// FAKE data, shown only when this folder runs on its own (App.js).
+// Inside the IndangGO app the Dashboard, Accounts and Trips
+// screens load real data from the API instead (see session.js),
+// in the same shape as these arrays.
 //
 // HOW TO EDIT:
 // - Add/remove objects from the arrays to change what shows up
 //   on the Dashboard, Accounts, and Trips screens.
-// - Later, when a real backend exists, fetch data from your API
-//   (e.g. inside a useEffect) and pass it down the same way these
-//   arrays are used — the screens don't need to change.
 // =============================================================
 
-// role: 'RIDER' (driver) | 'PASSENGER'
-// status: 'Active' | 'Verified' | 'Blocked' | 'Pending Docs'
+// id: the account's mobile number. role: 'RIDER' (driver) | 'PASSENGER'
+// status: 'Available' (a driver taking ride requests) | 'Online' (app open) | 'Offline'
+// Drivers also have toda and plate.
 export const accounts = [
-  { id: '2026-001', name: 'Johnwil Verano', email: 'johnwilverano@email.com', role: 'RIDER', status: 'Active' },
-  { id: '2026-042', name: 'Jame Barrios', email: 'barriosjamehart@email.com', role: 'PASSENGER', status: 'Verified' },
-  { id: '2026-015', name: 'Ricardo Reyes', email: 'ric.r@email.com', role: 'RIDER', status: 'Blocked' },
-  { id: '2026-069', name: 'Elena Dizon', email: 'elena.d@email.com', role: 'RIDER', status: 'Pending Docs' },
-  { id: '2026-070', name: 'Kuya Virgilio', email: 'virgilio.toda@email.com', role: 'RIDER', status: 'Active' },
-  { id: '2026-071', name: 'Maria Clara', email: 'maria.clara@email.com', role: 'PASSENGER', status: 'Verified' },
+  { id: '09171234501', name: 'Johnwil Verano', email: 'johnwilverano@email.com', role: 'RIDER', status: 'Available', toda: 'ITODA', plate: 'ABC 1234' },
+  { id: '09171234542', name: 'Jame Barrios', email: 'barriosjamehart@email.com', role: 'PASSENGER', status: 'Online' },
+  { id: '09171234515', name: 'Ricardo Reyes', email: 'ric.r@email.com', role: 'RIDER', status: 'Offline', toda: 'BITODA', plate: 'XYZ 5678' },
+  { id: '09171234569', name: 'Elena Dizon', email: 'elena.d@email.com', role: 'RIDER', status: 'Online', toda: 'ITODA', plate: 'DEF 9012' },
+  { id: '09171234570', name: 'Kuya Virgilio', email: 'virgilio.toda@email.com', role: 'RIDER', status: 'Offline', toda: 'BITODA', plate: 'GHI 3456' },
+  { id: '09171234571', name: 'Maria Clara', email: 'maria.clara@email.com', role: 'PASSENGER', status: 'Offline' },
 ];
 
-// status: 'Ongoing' | 'Completed' | 'Cancelled'
+// status: 'Ongoing' | 'Completed' | 'Cancelled' | 'No driver' (no driver took it)
+// date: when it was booked. driver and todaId are '—' until a driver accepts.
 export const trips = [
-  { id: '#TR-8921', todaId: 'TODA-3142', passenger: 'Elena Cruz', driver: 'Kuya Vida', status: 'Ongoing' },
-  { id: '#TR-891h8', todaId: 'TODA-1235', passenger: 'Jame Barrios', driver: 'Kuya Virgilio', status: 'Completed' },
-  { id: '#TR-8915', todaId: 'TODA-1190', passenger: 'Maria Clara', driver: 'Lando Garcia', status: 'Cancelled' },
-  { id: '#TR-8930', todaId: 'TODA-2831', passenger: 'Ricardo Reyes', driver: 'Ricardo Reyes', status: 'Ongoing' },
-  { id: '#TR-8877', todaId: 'TODA-1034', passenger: 'Lito Camagong', driver: 'Lito Camagong', status: 'Completed' },
-  { id: '#TR-8850', todaId: 'TODA-3142', passenger: 'Johnwil Verano', driver: 'Kuya Vida', status: 'Cancelled' },
+  { id: '#TR-8921', todaId: 'ITODA', passenger: 'Elena Cruz', driver: 'Kuya Vida', status: 'Ongoing', route: 'Indang Public Market → CvSU Main Campus', date: '2026-10-21T08:30:00.000Z' },
+  { id: '#TR-891H8', todaId: 'BITODA', passenger: 'Jame Barrios', driver: 'Kuya Virgilio', status: 'Completed', route: 'Bancod → Indang Municipal Hall', date: '2026-10-21T07:55:00.000Z' },
+  { id: '#TR-8915', todaId: '—', passenger: 'Maria Clara', driver: '—', status: 'Cancelled', route: 'Agus-os → Indang Public Market', date: '2026-10-21T07:10:00.000Z' },
+  { id: '#TR-8930', todaId: 'ITODA', passenger: 'Ricardo Reyes', driver: 'Lito Camagong', status: 'Ongoing', route: 'CvSU Main Campus → Kayquit', date: '2026-10-21T06:40:00.000Z' },
+  { id: '#TR-8877', todaId: 'BITODA', passenger: 'Lito Camagong', driver: 'Kuya Vida', status: 'Completed', route: 'Bancod → CvSU Main Campus', date: '2026-10-20T23:15:00.000Z' },
+  { id: '#TR-8850', todaId: '—', passenger: 'Johnwil Verano', driver: '—', status: 'No driver', route: 'Tambo Kulit → Indang Public Market', date: '2026-10-20T22:05:00.000Z' },
 ];
 
 // The admin who is "logged in", shown on the welcome/splash screen

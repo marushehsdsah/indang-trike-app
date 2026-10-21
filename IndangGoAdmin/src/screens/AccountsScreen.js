@@ -1,12 +1,16 @@
 // =============================================================
 // screens/AccountsScreen.js
 // -------------------------------------------------------------
-// "Manage Accounts" screen: search bar (searches by name or ID)
-// + a filter row to show All / Riders (drivers) / Passengers,
-// followed by a scrollable list of account cards.
+// "Manage Accounts" screen: search bar (searches by name or
+// mobile number, the account's id) + a filter row to show All /
+// Riders (drivers) / Passengers, followed by a scrollable list of
+// account cards.
 //
 // HOW TO EDIT:
-// - Account data comes from data/mockData.js (accounts array).
+// - Account data comes from useAdminData('accounts'): the API in
+//   the IndangGO app (GET /api/admin/accounts, passengers and
+//   drivers, newest first), or data/mockData.js when this runs on
+//   its own. Pull down to refresh.
 // - Filter options live in ROLE_FILTERS below — add a new one
 //   there if you introduce another role.
 // - Tapping an account row is non-functional right now (onPress
@@ -24,9 +28,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
-import { accounts } from '../data/mockData';
+import useAdminData from '../useAdminData';
 import StatusBadge from '../components/StatusBadge';
 import TopHeader from '../components/TopHeader';
+import LoadState, { RefreshError } from '../components/LoadState';
 
 // Filter chip options shown under the search bar.
 const ROLE_FILTERS = [
@@ -38,12 +43,13 @@ const ROLE_FILTERS = [
 export default function AccountsScreen() {
   const [searchText, setSearchText] = useState('');
   const [activeRoleFilter, setActiveRoleFilter] = useState('ALL');
+  const { data, loading, refreshing, error, reload, refresh } = useAdminData('accounts');
+  const accounts = data?.accounts;
 
   // Recomputes only when the search text, filter, or the account
-  // list itself changes — cheap for this size of mock data, but
-  // useMemo keeps it efficient if the list grows.
+  // list itself changes.
   const filteredAccounts = useMemo(() => {
-    return accounts.filter((account) => {
+    return (accounts || []).filter((account) => {
       const matchesRole =
         activeRoleFilter === 'ALL' || account.role === activeRoleFilter;
 
@@ -55,7 +61,7 @@ export default function AccountsScreen() {
 
       return matchesRole && matchesSearch;
     });
-  }, [searchText, activeRoleFilter]);
+  }, [accounts, searchText, activeRoleFilter]);
 
   return (
     <View style={styles.screen}>
@@ -69,7 +75,7 @@ export default function AccountsScreen() {
           <Ionicons name="search" size={18} color={colors.textSecondary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search users by name or ID..."
+            placeholder="Search by name or mobile number..."
             placeholderTextColor={colors.placeholder}
             value={searchText}
             onChangeText={setSearchText}
@@ -96,13 +102,20 @@ export default function AccountsScreen() {
           })}
         </View>
 
+        {error && accounts && <RefreshError message={error} />}
+
         {/* ---- Account list ---- */}
+        {!accounts ? <LoadState loading={loading} error={error} onRetry={reload} /> : (
         <FlatList
           data={filteredAccounts}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item.key ?? item.id}
           contentContainerStyle={styles.listContent}
+          refreshing={refreshing}
+          onRefresh={refresh}
           ListEmptyComponent={
-            <Text style={styles.emptyText}>No accounts match your search.</Text>
+            <Text style={styles.emptyText}>
+              {accounts.length === 0 ? 'No accounts yet.' : 'No accounts match your search.'}
+            </Text>
           }
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.accountCard} onPress={() => {}} activeOpacity={0.7}>
@@ -117,13 +130,24 @@ export default function AccountsScreen() {
                   </Text>
                   <StatusBadge label={item.role} />
                 </View>
-                <Text style={styles.accountId}>ID: {item.id}</Text>
-                <View style={styles.emailRow}>
-                  <Ionicons name="mail-outline" size={12} color={colors.textSecondary} />
-                  <Text style={styles.accountEmail} numberOfLines={1}>
-                    {item.email}
-                  </Text>
-                </View>
+                <Text style={styles.accountId}>Mobile No#: {item.id}</Text>
+                {item.email ? (
+                  <View style={styles.emailRow}>
+                    <Ionicons name="mail-outline" size={12} color={colors.textSecondary} />
+                    <Text style={styles.accountEmail} numberOfLines={1}>
+                      {item.email}
+                    </Text>
+                  </View>
+                ) : null}
+                {/* Drivers: their TODA and plate. */}
+                {item.role === 'RIDER' ? (
+                  <View style={styles.emailRow}>
+                    <Ionicons name="car-outline" size={12} color={colors.textSecondary} />
+                    <Text style={styles.accountEmail} numberOfLines={1}>
+                      {[item.toda, item.plate].filter(Boolean).join(' · ') || 'No TODA or plate yet'}
+                    </Text>
+                  </View>
+                ) : null}
                 <View style={styles.statusRow}>
                   <View
                     style={[
@@ -137,6 +161,7 @@ export default function AccountsScreen() {
             </TouchableOpacity>
           )}
         />
+        )}
       </View>
 
       {/* ---- Floating "add account" button (non-functional) ---- */}
@@ -147,16 +172,13 @@ export default function AccountsScreen() {
   );
 }
 
-// Small helper to color the status dot next to each account's status text.
+// Small helper to color the status dot next to each account's status text:
+// green while the app is open, gray when offline.
 function statusDotColor(status) {
   switch (status) {
-    case 'Active':
-    case 'Verified':
-      return colors.statusVerified;
-    case 'Blocked':
-      return colors.statusBlocked;
-    case 'Pending Docs':
-      return colors.statusPending;
+    case 'Available':
+    case 'Online':
+      return colors.statusOngoing;
     default:
       return colors.statusInactive;
   }
