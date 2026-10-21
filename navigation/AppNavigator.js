@@ -32,8 +32,9 @@ export default function AppNavigator() {
     return () => cancelIdleCallback(handle);
   }, [signedIn]);
   if (loading) return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface }}><ActivityIndicator size="large" color={COLORS.brand} /></View>;
-  const driver = user?.role === 'driver';
-  const initial = !user?.profileComplete ? 'Profile' : ride && ACTIVE_STATUSES.includes(ride.status) ? (ride.status === 'searching' ? 'Searching' : 'ActiveRide') : driver ? 'Driver' : 'Passenger';
+  const driver = user?.role === 'driver', admin = user?.role === 'admin';
+  // An admin account logs in here like everyone else and gets only the admin interface.
+  const initial = admin ? 'Admin' : !user?.profileComplete ? 'Profile' : ride && ACTIVE_STATUSES.includes(ride.status) ? (ride.status === 'searching' ? 'Searching' : 'ActiveRide') : driver ? 'Driver' : 'Passenger';
   return (
     <Stack.Navigator key={user?.id || 'guest'} initialRouteName={user ? initial : 'Splash'} screenOptions={{ headerShown: false }}>
       {!user ? <>
@@ -41,8 +42,7 @@ export default function AppNavigator() {
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Register" component={RegisterScreen} />
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-      <Stack.Screen name="Admin" component={AdminNavigator} />
-      </> : <>
+      </> : admin ? <Stack.Screen name="Admin" component={AdminNavigator} /> : <>
       {driver ? <Stack.Screen name="Driver" component={DriverScreen} /> : <>
       <Stack.Screen name="Passenger" component={PassengerScreen} />
       <Stack.Screen name="Searching" component={SearchingScreen} />

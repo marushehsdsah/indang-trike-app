@@ -1,12 +1,14 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
+const { createRequire } = require('node:module');
 const { io } = require('socket.io-client');
 const { createBackend } = require('../indang-trike-backend/app');
 const { DEFAULT_TRIP } = require('../data/indangMap');
 const { quoteTrip } = require('../data/fares');
 const { SEND_LIMIT, SEND_WINDOW_MS } = require('../indang-trike-backend/chat');
 const { MAX_MESSAGES_PER_RIDE, MESSAGE_RETENTION_DAYS } = require('../utils/chat');
+const bcrypt = createRequire(require.resolve('../indang-trike-backend/package.json'))('bcryptjs');
 
 let backend, base, sequence = 1000000;
 let now = Date.now();
@@ -118,6 +120,32 @@ test('the separate God view website may call the API, but every overview needs a
   assert.equal((await request('/admin/overview', admin.token)).body.users.some(item => item.id === ordinary.user.id), false);
   await request('/logout', admin.token, {});
   assert.equal((await request('/admin/overview', admin.token)).status, 401);
+});
+
+test('an admin account added in the database logs in on the app login, may use God view, and cannot ride', async () => {
+  const phone = `0917${sequence++}`;
+  // As an administrator adds one in Atlas: the password as a bcrypt hash, and role "admin".
+  await backend.models.User.collection.insertOne({ phone: `+63${phone.slice(1)}`, password: await bcrypt.hash('strong-password', 10),
+    firstName: 'Pilot', lastName: 'Admin', email: `${phone}@example.com`, role: 'admin', createdAt: new Date(now), updatedAt: new Date(now) });
+  const login = await request('/login', null, { phone, password: 'strong-password' });
+  assert.equal(login.status, 200, JSON.stringify(login.body));
+  const admin = login.body;
+  assert.equal(admin.user.role, 'admin');
+  assert.equal(admin.user.profileComplete, true);
+  assert.equal((await request('/state', admin.token)).status, 200);
+  // The app's live link makes the admin present, but admins are not shown among the riders.
+  const socket = await connect(admin.token);
+  const overview = await request('/admin/overview', admin.token);
+  assert.equal(overview.status, 200);
+  assert.equal(overview.body.users.some(item => item.id === admin.user.id), false);
+  assert.equal((await book(admin)).status, 403);
+  assert.equal((await request('/passenger/location', admin.token, fix())).status, 403);
+  assert.equal((await request('/driver/availability', admin.token, { available: true })).status, 403);
+  socket.disconnect();
+  // Sign-up cannot make one.
+  const other = `0917${sequence++}`;
+  const signupAdmin = await request('/register/code', null, { phone: other, password: 'strong-password', firstName: 'Not', lastName: 'Admin', email: `${other}@example.com`, role: 'admin' });
+  assert.equal(signupAdmin.status, 400);
 });
 
 test('a booking outside Indang is rejected before any ride is created', async () => {

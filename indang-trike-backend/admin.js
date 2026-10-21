@@ -101,15 +101,17 @@ function createAdmin({ models, presence, clock, adminPhones }) {
     }
     return approachCache.get(key);
   }
+  // An admin account, or an account whose phone is on GOD_VIEW_ADMIN_PHONES.
   function middleware(req, res, next) {
     res.set('Cache-Control', 'no-store');
-    requireValue(allowed.has(normalizePhilippinePhone(req.user.phone)), 403, 'This account does not have God view access. Ask the pilot administrator to enable it.');
+    requireValue(req.user.role === 'admin' || allowed.has(normalizePhilippinePhone(req.user.phone)), 403, 'This account does not have God view access. Ask the pilot administrator to enable it.');
     next();
   }
   async function overview() {
     const ids = [...presence.keys()];
+    // Admins signed in on the app are watching, not riding, so they are not shown.
     const [users, rides, reports] = await Promise.all([
-      models.User.find({ _id: { $in: ids } }).select('firstName lastName role plate toda available location locationAvailable ratingSum ratingCount').lean(),
+      models.User.find({ _id: { $in: ids }, role: { $ne: 'admin' } }).select('firstName lastName role plate toda available location locationAvailable ratingSum ratingCount').lean(),
       models.Ride.find({ active: true, $or: [{ passengerId: { $in: ids } }, { driverSlot: { $in: ids } }] }).select('passengerId driverId driverSlot status trip route').lean(),
       models.Rating.aggregate([{ $match: { flagged: true, rateeId: { $in: ids } } }, { $group: { _id: '$rateeId', count: { $sum: 1 } } }]),
     ]).then(([found, active, flagged]) => [found, active, new Map(flagged.map(({ _id, count }) => [String(_id), count]))]);

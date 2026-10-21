@@ -7,9 +7,9 @@ screens before building the real thing.
 
 ## What's included
 
-- **Login** — Admin ID + Password, with a show/hide eye toggle, and a back
-  button (top left) to the IndangGO app's splash screen. The back button
-  only shows inside the IndangGO app, which has that splash screen.
+- **Login** — Admin ID + Password, with a show/hide eye toggle. Used only
+  when this folder runs on its own; in the IndangGO app, admins log in
+  on the app's own login page.
 - **Welcome screen** — "Login successful" confirmation shown after login.
 - **Bottom navigation** — Dashboard / Accounts / Trips.
 - **Dashboard** — quick stat cards + a recent trips list.
@@ -24,8 +24,10 @@ All data is fake, defined in `src/data/mockData.js`.
 ## How to run it
 
 > **Inside the IndangGO app** these screens run from the main project:
-> start it with `npm run dev` in the repository root and open them
-> with "Log in as admin" on the login page. Don't run `npm install`
+> start it with `npm run dev` in the repository root and log in on the
+> app's own login page with an admin account (a user with role
+> `"admin"`, added only in the database); the app then opens Welcome,
+> skipping this folder's Login. Don't run `npm install`
 > in this folder there — a second `node_modules` here would load a
 > second copy of React into the app and break it ("Invalid hook
 > call"). The steps below are for running this folder on its own.
@@ -70,9 +72,10 @@ Profile is the exception: the avatar in `TopHeader` opens it with
 were on. Its Logout button resets the stack to Login alone, so
 back can't return to the dashboard after logging out.
 
-Inside the IndangGO app the same stack is set up again in
-`../navigation/AdminNavigator.js` — add any new admin screen there
-as well as in `App.js`.
+Inside the IndangGO app the same stack, without Login, is set up
+again in `../navigation/AdminNavigator.js` — add any new admin screen
+there as well as in `App.js`. There the screens show the signed-in
+admin account (`src/session.js`), and Logout ends the app's session.
 
 The bottom tab bar (Dashboard / Accounts / Trips) is **not** part
 of the stack — it lives inside `Main` (`src/screens/MainScreen.js`)

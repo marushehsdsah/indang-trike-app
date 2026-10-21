@@ -38,8 +38,9 @@ export function AppProvider({ children }) {
   const chatReadAt = useRef(new Map());
   const activeRide = ride && ACTIVE_STATUSES.includes(ride.status);
   // Pilot admins can locate connected users while their app is open. Driver
-  // availability remains a separate choice controlling ride requests.
-  const gps = useLiveLocation(Boolean(user) && foreground);
+  // availability remains a separate choice controlling ride requests. Admin
+  // accounts do not ride, so their GPS is never tracked.
+  const gps = useLiveLocation(Boolean(user) && foreground && user.role !== 'admin');
   current.current = { user, ride, token, foreground, gps, connected, serverOffset, chat };
 
   const clearSession = useCallback(async () => {

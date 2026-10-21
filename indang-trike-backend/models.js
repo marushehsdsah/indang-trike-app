@@ -6,7 +6,9 @@ function createModels(connection) {
   const userSchema = new Schema({
     phone: { type: String, required: true, unique: true }, password: { type: String, required: true },
     firstName: { type: String, default: '' }, lastName: { type: String, default: '' }, email: { type: String, default: '' },
-    role: { type: String, enum: ['passenger', 'driver'], default: 'passenger' },
+    // An admin account is added only in the database (role "admin"); sign-up
+    // offers passenger or driver.
+    role: { type: String, enum: ['passenger', 'driver', 'admin'], default: 'passenger' },
     plate: String, toda: String, capacity: { type: Number, default: 4 },
     // The one test driver who may switch TODAs from the profile, to check each
     // TODA's zone. Set only by scripts/create-toda-tester.js, never by the API.

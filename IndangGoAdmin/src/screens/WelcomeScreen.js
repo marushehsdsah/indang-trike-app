@@ -12,19 +12,23 @@
 // you'd rather require a tap to continue.
 //
 // HOW TO EDIT:
-// - Admin name shown here comes from data/mockData.js (currentAdmin).
+// - Admin name and ID shown here come from the signed-in admin
+//   (../session.js), or data/mockData.js (currentAdmin) when this
+//   runs on its own.
 // =============================================================
 
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
-import { currentAdmin } from '../data/mockData';
+import { useAdminSession } from '../session';
 
 // How long the welcome card stays on screen before moving on.
 const AUTO_ADVANCE_MS = 1800;
 
 export default function WelcomeScreen({ navigation }) {
+  const { admin } = useAdminSession();
+
   useEffect(() => {
     const timer = setTimeout(() => {
       navigation.replace('Main');
@@ -39,7 +43,7 @@ export default function WelcomeScreen({ navigation }) {
           <Ionicons name="checkmark" size={30} color={colors.textOnDark} />
         </View>
 
-        <Text style={styles.welcomeText}>Welcome, {currentAdmin.name}!</Text>
+        <Text style={styles.welcomeText}>Welcome, {admin.name}!</Text>
         <Text style={styles.subText}>Authentication successfully verified</Text>
 
         <View style={styles.metaRow}>
@@ -49,7 +53,7 @@ export default function WelcomeScreen({ navigation }) {
         </View>
 
         <Text style={styles.adminIdText}>
-          Authorized access only. Admin ID: {currentAdmin.adminId}
+          Authorized access only. Admin ID: {admin.adminId}
         </Text>
       </View>
 

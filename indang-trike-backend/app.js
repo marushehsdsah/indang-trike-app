@@ -59,6 +59,11 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   app.get('/api/admin/rides/:id/messages', async (req, res) => res.json(await chat.transcript(req.params.id)));
   // The service area and the same places layer the app draws (assets/places).
   app.get('/api/admin/map', (req, res) => res.json({ boundary: INDANG_BOUNDARY_SHAPE, places: SERVICE_AREA_PLACES }));
+  // Admin accounts oversee the service; they do not book, drive or chat on trips.
+  app.use(['/api/rides', '/api/driver', '/api/passenger'], (req, res, next) => {
+    requireValue(req.user.role !== 'admin', 403, 'Admin accounts cannot book or drive.');
+    next();
+  });
   app.get('/api/config', (req, res) => res.json({ fare: FLAT_FARE, currency: 'PHP', maxPassengers: 4, gpsMaxAgeMs: 30000 }));
   app.get('/api/me', (req, res) => res.json({ user: publicUser(req.user) }));
   app.patch('/api/me', async (req, res) => {
