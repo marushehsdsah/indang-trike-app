@@ -54,6 +54,12 @@ test('from the Palengke sub-terminal its own table applies', () => {
   assert.equal(quote.special.origin, 'palengke');
   assert.equal(quoteTrip({ pickup: PLAZA, dropoff: CVSU, at: DAY }).special.fare, 30);
   assert.equal(quoteTrip({ pickup: MARKET, dropoff: CVSU, at: DAY }).special.fare, 30);
+  // Kaytapos's areas cost the same from the Poblacion but not from the
+  // Palengke, so from there its farther Upland side is ₱35.
+  const upland = at(14.19339, 120.88396);
+  assert.equal(quoteTrip({ pickup: PLAZA, dropoff: upland, at: DAY }).special.fare, 30);
+  assert.equal(quoteTrip({ pickup: MARKET, dropoff: upland, at: DAY }).special.area.label, 'Kaytapos · Upland / Rough Road Subdivision');
+  assert.equal(quoteTrip({ pickup: MARKET, dropoff: upland, at: DAY }).special.fare, 35);
 });
 
 test('Bancod has special and regular fares per purok (TARIPA), by distance', () => {

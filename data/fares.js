@@ -71,12 +71,16 @@ function plazaRange(areas) {
 // areas but not where they are, and its parts farther from the town (Dulo)
 // cost more than those near it (Bukana). So the barangay's reach from the
 // plaza is split into equal bands, cheapest area nearest, and the stop takes
-// the area of its band. One area, or areas that all cost the same, need no band.
-function resolveArea(zone) {
+// the area of its band. One area, or areas that all cost the same from this
+// trip's origin (day and night), need no band. Prices are compared from the
+// origin itself: Kaytapos's areas cost the same from the Poblacion but not
+// from the Palengke.
+function resolveArea(zone, origin) {
   const { areas } = zone;
   if (areas.length <= 1) return areas[0] ?? null;
-  const byFare = [...areas].sort((a, b) => specialFare(a, 'poblacion')[0] - specialFare(b, 'poblacion')[0]);
-  if (new Set(byFare.map((area) => specialFare(area, 'poblacion')[0])).size === 1 && !areas.some((area) => area.regular)) return byFare[0];
+  const fareKey = (area) => specialFare(area, origin).join('/');
+  const byFare = [...areas].sort((a, b) => specialFare(a, origin)[0] - specialFare(b, origin)[0] || specialFare(a, origin)[1] - specialFare(b, origin)[1]);
+  if (new Set(byFare.map(fareKey)).size === 1 && !areas.some((area) => area.regular)) return byFare[0];
   const { min, max } = plazaRange(areas);
   const share = max > min ? Math.min(Math.max((plazaDistance(zone.coordinate) - min) / (max - min), 0), 1) : 0;
   return byFare[Math.min(byFare.length - 1, Math.floor(share * byFare.length))];
@@ -125,7 +129,7 @@ function quoteTrip({ pickup, dropoff, at = Date.now() }) {
 
   const zone = stops[priced];
   if (!zone.areas.length) return { ...base, flat: FLAT_FARE };
-  const area = resolveArea(zone);
+  const area = resolveArea(zone, origin);
   const bunaCercaArea = fromBunaCerca && priced === 'dropoff' ? TERMINALS.bunaCerca.special[area.id] : null;
   const special = bunaCercaArea
     ? { fare: bunaCercaArea[period], origin: 'bunaCerca', area: { id: area.id, label: area.label } }
