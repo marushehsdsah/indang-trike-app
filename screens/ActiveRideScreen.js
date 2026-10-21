@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { ViewAnnotation } from '@maplibre/maplibre-react-native';
+import { GeoJSONSource, Layer, ViewAnnotation } from '@maplibre/maplibre-react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import RouteMap from '../components/RouteMap';
 import StatusPill from '../components/StatusPill';
@@ -12,6 +12,7 @@ import ChatSheet from '../components/ChatSheet';
 import ChatNotice from '../components/ChatNotice';
 import KeyboardAwareScrollView from '../components/ui/KeyboardAwareScrollView';
 import useKeyboardHeight from '../hooks/useKeyboardHeight';
+import useReducedMotion from '../hooks/useReducedMotion';
 import { FloatingCard, MapBottom, MapTop } from '../components/map/MapChrome';
 import { BleedScreen } from '../components/ui/Screen';
 import Button from '../components/ui/Button';
@@ -28,6 +29,41 @@ import { advanceLeg, distanceToStop, hasReachedStop } from '../utils/tripProgres
 import { ACTIVE_STATUSES, formatAge, getDriverAction, isFreshFix } from '../utils/rideState';
 import { tapFeedback } from '../utils/feedback';
 import { COLORS, ELEVATION, RADIUS, SPACE, TYPE } from '../theme';
+
+// A ring that grows out of the trike and fades, once every PULSE_MS. The map
+// draws it as a circle layer under the trike, stepped from here every
+// PULSE_FRAME_MS: the trike's ViewAnnotation is a still bitmap on Android, and
+// adding a Marker (a live view) there makes the map stop hiding the other
+// markers' source views, which then show in its top-left corner.
+const PULSE_MS = 1600, PULSE_FRAME_MS = 40;
+const TRIKE_RADIUS = 21, PULSE_GROWTH = 25;
+// No easing between steps: the map's default transition would lag each one.
+const PULSE_PAINT = {
+  'circle-color': COLORS.route,
+  'circle-radius-transition': { duration: 0, delay: 0 },
+  'circle-opacity-transition': { duration: 0, delay: 0 },
+};
+function DriverPulse({ coordinate }) {
+  const reduced = useReducedMotion();
+  const [phase, setPhase] = useState(0);
+  useEffect(() => {
+    if (reduced) return undefined;
+    const start = Date.now();
+    const timer = setInterval(() => setPhase(((Date.now() - start) % PULSE_MS) / PULSE_MS), PULSE_FRAME_MS);
+    return () => clearInterval(timer);
+  }, [reduced]);
+  const shape = useMemo(() => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [coordinate.longitude, coordinate.latitude] } }),
+    [coordinate.longitude, coordinate.latitude]);
+  if (reduced) return null;
+  // The searching screen's pulse curve, Easing.out(Easing.exp).
+  const grown = 1 - 2 ** (-10 * phase);
+  return (
+    <GeoJSONSource id="driver-pulse" data={shape}>
+      <Layer id="driver-pulse-ring" type="circle"
+        paint={{ ...PULSE_PAINT, 'circle-radius': TRIKE_RADIUS + PULSE_GROWTH * grown, 'circle-opacity': 0.45 * (1 - grown) }} />
+    </GeoJSONSource>
+  );
+}
 
 export default function ActiveRideScreen({ navigation, route }) {
   const { user, ride, gps, rideAction, connected, dismissRide, serverOffset, chat, loadChat } = useApp();
@@ -147,8 +183,11 @@ export default function ActiveRideScreen({ navigation, route }) {
     <RouteMap ref={mapRef} pickup={toPickup || leg?.live ? null : ride?.trip.pickup} destination={toPickup ? ride?.trip.pickup : ride?.trip.dropoff}
       route={terminal ? null : leg?.route} fitKey={ride ? `${ride.id}:${ride.status}:${leg?.route ? 'route' : 'none'}` : undefined}
       bottomInset={bottomHeight}>
-      {/* A fixed-size frame: MapLibre draws markers into bitmaps and crashes on a zero-width one. */}
-      {position && !terminal && <ViewAnnotation lngLat={[position.longitude, position.latitude]}
+      {/* The passenger sees the trike pulse while it is on its way on live GPS. */}
+      {position && !driver && fresh && ride.status === 'accepted' && <DriverPulse coordinate={position} />}
+      {/* A fixed-size frame: MapLibre draws markers into bitmaps and crashes on a zero-width one.
+          The bitmap is drawn once, so the key redraws it when the fix turns live or stale. */}
+      {position && !terminal && <ViewAnnotation key={fresh ? 'live' : 'stale'} lngLat={[position.longitude, position.latitude]}
         title={t(fresh ? 'active.driverLocationLive' : 'active.driverLocationLast')} anchor="center">
         <View style={styles.markerFrame}>
           <View style={[styles.marker, !fresh && styles.markerStale]}><MaterialCommunityIcons name="rickshaw" size={24} color="#FFF" /></View>
