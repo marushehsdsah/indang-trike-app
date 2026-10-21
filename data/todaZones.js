@@ -5,10 +5,11 @@ const { createMapPolygons, isCoordinateInPolygons, toPolygonFeature } = require(
 // Indang's tricycle operators and drivers associations (TODAs) and the
 // barangays each may serve (assets/geo/indang-todas.json, from
 // TODAs_coordinates.xlsx). A driver registered with one of these TODAs is
-// offered only trips whose pickup and destination are both inside its
-// barangays or at one of its stops (a single place, such as BITODA's CvSU,
-// served without the rest of its barangay); drivers of other TODAs keep the town-wide rules, and so do those
-// of a TODA that serves every barangay (ITODA).
+// offered only trips that pick up inside its barangays or at one of its stops
+// (a single place, such as BITODA's CvSU, served without the rest of its
+// barangay); the drop-off may be anywhere in town. Drivers of other TODAs keep
+// the town-wide rules, and so do those of a TODA that serves every barangay
+// (ITODA).
 
 const BARANGAYS = barangayBoundaries.features.map((feature) => ({
   name: feature.properties.name,
@@ -156,14 +157,9 @@ function todaName(name) {
   return findToda(name)?.name ?? name;
 }
 
-// Whether a driver of this TODA may serve a trip touching these points. Trips
-// already stay inside Indang, so a whole-town TODA serves them all.
-function todaServes(toda, ...coordinates) {
-  return coordinates.every((coordinate) => todaCovers(toda, coordinate));
-}
-
-// Whether a point is in the TODA's area: one of its barangays, or inside one
-// of its stops and that stop's barangay.
+// Whether a point is in the TODA's area, where its drivers may pick up: one
+// of its barangays, or inside one of its stops and that stop's barangay. Trips
+// already stay inside Indang, so a whole-town TODA covers every pickup.
 function todaCovers(toda, coordinate) {
   if (toda.wholeTown) return true;
   const barangay = getBarangayAt(coordinate);
@@ -194,5 +190,4 @@ module.exports = {
   getTodaZoneShape,
   todaCovers,
   todaName,
-  todaServes,
 };

@@ -6,7 +6,7 @@ import { TODA_NAMES, findToda } from '../data/todaZones';
 import { useI18n } from '../i18n';
 import { SPACE, TYPE } from '../theme';
 
-// A driver's TODA: one of Indang's TODAs, which limits ride requests to its
+// A driver's TODA: one of Indang's TODAs, which limits pickups to its
 // barangays (data/todaZones.js), or any other TODA typed in.
 export default function TodaPicker({ value, onChange }) {
   const { t } = useI18n();

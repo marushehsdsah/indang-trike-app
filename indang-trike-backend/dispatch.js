@@ -1,7 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const { ASSIGNED_STATUSES, GPS_MAX_AGE_MS, isFreshFix, rankDrivers, validateFix, nextRideStatus } = require('../utils/rideState');
 const { getMunicipalityAt } = require('../data/indangMap');
-const { findToda, todaName, todaServes } = require('../data/todaZones');
+const { findToda, todaCovers, todaName } = require('../data/todaZones');
 const { HttpError, requireValue, publicUser, bookingFields, cleanText } = require('./policy');
 const { ratingSummary, validateRating } = require('../utils/rating');
 
@@ -86,10 +86,11 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
       // Drivers share GPS from anywhere, but only those in the pickup's town get
       // its offers, within that town's radius: the towns' roads do not connect.
       const town = getMunicipalityAt(ride.trip.pickup.coordinate);
-      // An Indang TODA's drivers serve only trips inside its barangays.
+      // An Indang TODA's drivers pick up only inside its barangays; the
+      // drop-off may be anywhere in town.
       const inTodaScope = (user) => {
         const toda = findToda(user.toda);
-        return !toda || todaServes(toda, ride.trip.pickup.coordinate, ride.trip.dropoff.coordinate);
+        return !toda || todaCovers(toda, ride.trip.pickup.coordinate);
       };
       const candidates = rankDrivers(users.filter((user) => publicUser(user).profileComplete && user.locationAvailable &&
         user.location && town && getMunicipalityAt(user.location) === town && !ride.attemptedDrivers.includes(String(user._id)) && inTodaScope(user))

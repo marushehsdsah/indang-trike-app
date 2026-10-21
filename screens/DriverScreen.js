@@ -64,9 +64,10 @@ export default function DriverScreen({ navigation }) {
   const fresh = gps.status === 'ready' && isFreshFix(gps.fix, now), available = user.available && connected && fresh;
   // Location is still shared outside the service area; requests stay inside it.
   const outside = fresh && gps.inServiceArea === false;
-  // An Indang TODA's drivers get requests only inside its barangays, which
-  // their map shows; drivers of other TODAs keep the town-wide area, and so do
-  // those of a TODA serving all of Indang, whose map needs no zone.
+  // An Indang TODA's drivers get requests only for pickups inside its
+  // barangays, which their map shows, and may drop off anywhere in town;
+  // drivers of other TODAs keep the town-wide area, and so do those of a TODA
+  // serving all of Indang, whose map needs no zone.
   const toda = findToda(user.toda);
   const todaZone = useMemo(() => (toda && !toda.wholeTown ? getTodaZoneShape(toda) : null), [toda?.name]);
   const fixLatitude = fresh ? gps.fix.latitude : undefined, fixLongitude = fresh ? gps.fix.longitude : undefined;

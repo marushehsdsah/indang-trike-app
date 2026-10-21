@@ -108,6 +108,6 @@ MALAINEN (Malainen Luma, Naic) pins lie outside Indang, which the app does not
 serve, and JARO and GLORY MOORE have no pins, so its area is Banaba Lejos only.
 
 A driver whose TODA field names one of these TODAs (any spelling of its name or
-an alias) is offered only trips whose pickup and destination are both inside its
-barangays, and their map shows that area. Drivers of other TODAs keep the
-town-wide rules. Passengers see no TODA areas.
+an alias) is offered only trips whose pickup is inside its barangays, and their
+map shows that area; the destination may be anywhere in Indang. Drivers of
+other TODAs keep the town-wide rules. Passengers see no TODA areas.

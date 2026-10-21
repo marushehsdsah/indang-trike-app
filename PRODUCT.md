@@ -44,8 +44,9 @@ zones.
   decline, navigate to pickup with the route guide, arrive, start, complete.
 - Both roles open the app offline from a saved session; booking and live trips
   need internet, maps/search/routes/guide do not.
-- Indang drivers registered with one of the 12 Indang TODAs only get trips
-  inside their TODA's barangays; passengers never see TODA areas.
+- Indang drivers registered with one of the Indang TODAs only get trips that
+  pick up inside their TODA's barangays, and may drop off anywhere in Indang;
+  passengers never see TODA areas.
 
 ## Capabilities and Constraints
 

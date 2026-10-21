@@ -1,10 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const todaData = require('../assets/geo/indang-todas.json');
-const { BARANGAY_NAMES, TODA_NAMES, findToda, getBarangayAt, getTodaZoneShape, todaName, todaServes } = require('../data/todaZones');
+const { BARANGAY_NAMES, TODA_NAMES, findToda, getBarangayAt, getTodaZoneShape, todaCovers, todaName } = require('../data/todaZones');
 const { createMapPolygons, isCoordinateInPolygons } = require('../utils/geojson');
 
 const at = (latitude, longitude) => ({ latitude, longitude });
+// Whether every point is in the TODA's area, where its drivers may pick up.
+const inArea = (toda, ...points) => points.every((point) => todaCovers(toda, point));
 // Pins from TODAs_coordinates.xlsx.
 const PULO = at(14.16990, 120.87269), HARASAN = at(14.16053, 120.87006), CARASUCHI = at(14.14694, 120.88147);
 const POBLACION = at(14.19558, 120.87956), BANCOD = at(14.21894, 120.87430);
@@ -31,14 +33,14 @@ test('PITODA serves only the Poblacion and ITODA all of Indang', () => {
   const pitoda = findToda('PITODA'), itoda = findToda('ITODA');
   assert.deepEqual(pitoda.barangays, ['Barangay 1', 'Barangay 2', 'Barangay 3', 'Barangay 4']);
   assert.equal(pitoda.wholeTown, false);
-  assert.equal(todaServes(pitoda, POBLACION, POBLACION), true);
-  assert.equal(todaServes(pitoda, POBLACION, BANCOD), false, 'a destination outside the Poblacion');
-  assert.equal(todaServes(pitoda, PULO, POBLACION), false, 'a pickup outside the Poblacion');
+  assert.equal(inArea(pitoda, POBLACION), true);
+  assert.equal(inArea(pitoda, BANCOD), false, 'Bancod is outside the Poblacion');
+  assert.equal(inArea(pitoda, PULO), false, 'Pulo is outside the Poblacion');
   assert.deepEqual(getTodaZoneShape(pitoda).features.map((feature) => feature.properties.name).sort(), ['Barangay 1', 'Barangay 2', 'Barangay 3', 'Barangay 4']);
   assert.deepEqual([...itoda.barangays].sort(), [...BARANGAY_NAMES].sort());
   assert.equal(itoda.wholeTown, true);
-  assert.equal(todaServes(itoda, PULO, BANCOD), true);
-  assert.equal(todaServes(itoda, CARASUCHI, POBLACION), true);
+  assert.equal(inArea(itoda, PULO, BANCOD), true);
+  assert.equal(inArea(itoda, CARASUCHI, POBLACION), true);
   assert.equal(TODA_NAMES.filter((name) => findToda(name).wholeTown).join(), 'ITODA', 'the only whole-town TODA');
 });
 
@@ -54,10 +56,10 @@ test('drivers saved under the former "ITODA PITODA" are ITODA', () => {
 test('PCHTI-TODA serves only Pulo, Carasuchi, Harasan and Tambo Ilaya', () => {
   const pchti = findToda('PCHTI-TODA');
   assert.deepEqual(pchti.barangays, ['Pulo', 'Carasuchi', 'Harasan', 'Tambo Ilaya']);
-  assert.equal(todaServes(pchti, PULO, HARASAN), true);
-  assert.equal(todaServes(pchti, CARASUCHI, PULO), true);
-  assert.equal(todaServes(pchti, PULO, POBLACION), false, 'a destination outside its barangays');
-  assert.equal(todaServes(pchti, BANCOD, PULO), false, 'a pickup outside its barangays');
+  assert.equal(inArea(pchti, PULO, HARASAN), true);
+  assert.equal(inArea(pchti, CARASUCHI, PULO), true);
+  assert.equal(inArea(pchti, POBLACION), false, 'the Poblacion is outside its barangays');
+  assert.equal(inArea(pchti, BANCOD), false, 'Bancod is outside its barangays');
   assert.deepEqual(getTodaZoneShape(pchti).features.map((feature) => feature.properties.name).sort(), ['Carasuchi', 'Harasan', 'Pulo', 'Tambo Ilaya']);
 });
 
@@ -68,12 +70,12 @@ test('BITODA serves Bancod and CvSU only, not the rest of Kaytapos or the unveri
   assert.deepEqual(bitoda.barangays, ['Bancod']);
   assert.deepEqual(bitoda.areas, ['Bancod', 'CvSU']);
   assert.equal(getBarangayAt(KAYTAPOS_AWAY), 'Kaytapos');
-  assert.equal(todaServes(bitoda, BANCOD, CVSU), true);
-  assert.equal(todaServes(bitoda, LIBRARY, BANCOD), true, 'inside the campus');
-  assert.equal(todaServes(bitoda, CAMBIE, BANCOD), true);
-  assert.equal(todaServes(bitoda, BANCOD, KAYTAPOS_AWAY), false, 'Kaytapos away from CvSU');
-  assert.equal(todaServes(bitoda, CVSU, POBLACION), false, 'the Poblacion next to CvSU');
-  assert.equal(todaServes(bitoda, BANCOD, SITIO_QUARRY), false, 'Alulod is under review');
+  assert.equal(inArea(bitoda, BANCOD, CVSU), true);
+  assert.equal(inArea(bitoda, LIBRARY, BANCOD), true, 'inside the campus');
+  assert.equal(inArea(bitoda, CAMBIE, BANCOD), true);
+  assert.equal(inArea(bitoda, BANCOD, KAYTAPOS_AWAY), false, 'Kaytapos away from CvSU');
+  assert.equal(inArea(bitoda, CVSU, POBLACION), false, 'the Poblacion next to CvSU');
+  assert.equal(inArea(bitoda, BANCOD, SITIO_QUARRY), false, 'Alulod is under review');
   assert.deepEqual(getTodaZoneShape(bitoda).features.map((feature) => feature.properties.name), ['Bancod', 'CvSU']);
 });
 
@@ -85,7 +87,7 @@ test('the driver map draws a stop only inside its own barangay, where it counts'
   assert.equal(isCoordinateInPolygons(LIBRARY, shape('CvSU')), true);
   // The Poblacion pin is about 330 m from CvSU, inside the 400 m circle.
   assert.equal(isCoordinateInPolygons(POBLACION, shape('CvSU')), false, 'the Poblacion part of the circle');
-  assert.equal(todaServes(bitoda, POBLACION, BANCOD), false);
+  assert.equal(inArea(bitoda, POBLACION, BANCOD), false);
 });
 
 test('SITODAI serves Banaba Cerca, the strip of Banaba Lejos along their border up to Rehab, and British Village', () => {
@@ -93,19 +95,19 @@ test('SITODAI serves Banaba Cerca, the strip of Banaba Lejos along their border 
   const BANABA_CERCA = at(14.21434, 120.85302), CERCA_GARDEN = at(14.21818, 120.84664), REHAB = at(14.22466, 120.84297);
   const PAST_BORDER = at(14.2229, 120.8441), PAST_REHAB = at(14.2272, 120.8410), HARAYA_FARM = at(14.22837, 120.83528);
   const BRITISH = at(14.23255, 120.85241), WEST_END = at(14.2200, 120.8380), EAST_END = at(14.2268, 120.8500);
-  assert.equal(todaServes(sitodai, WEST_END, EAST_END), true, 'both ends of the Banaba Cerca border');
+  assert.equal(inArea(sitodai, WEST_END, EAST_END), true, 'both ends of the Banaba Cerca border');
   assert.equal(getTodaZoneShape(sitodai).features.find((feature) => feature.properties.name === 'Rehab').geometry.coordinates[0].length > 4, true);
   assert.deepEqual(sitodai.areas, ['Banaba Cerca', 'Rehab', 'British Village']);
-  assert.equal(todaServes(sitodai, BANABA_CERCA, CERCA_GARDEN), true);
+  assert.equal(inArea(sitodai, BANABA_CERCA, CERCA_GARDEN), true);
   assert.equal(getBarangayAt(REHAB), 'Banaba Lejos');
-  assert.equal(todaServes(sitodai, REHAB, BANABA_CERCA), true);
+  assert.equal(inArea(sitodai, REHAB, BANABA_CERCA), true);
   assert.equal(getBarangayAt(PAST_BORDER), 'Banaba Lejos');
-  assert.equal(todaServes(sitodai, PAST_BORDER, BANABA_CERCA), true, 'between the Banaba Cerca border and Rehab');
+  assert.equal(inArea(sitodai, PAST_BORDER, BANABA_CERCA), true, 'between the Banaba Cerca border and Rehab');
   assert.equal(getBarangayAt(PAST_REHAB), 'Banaba Lejos');
-  assert.equal(todaServes(sitodai, BANABA_CERCA, PAST_REHAB), false, 'Banaba Lejos past Rehab');
-  assert.equal(todaServes(sitodai, BANABA_CERCA, HARAYA_FARM), false);
+  assert.equal(inArea(sitodai, BANABA_CERCA, PAST_REHAB), false, 'Banaba Lejos past Rehab');
+  assert.equal(inArea(sitodai, BANABA_CERCA, HARAYA_FARM), false);
   assert.equal(getBarangayAt(BRITISH), 'Calumpang Lejos I');
-  assert.equal(todaServes(sitodai, BANABA_CERCA, BRITISH), true);
+  assert.equal(inArea(sitodai, BANABA_CERCA, BRITISH), true);
 });
 
 test('CIKTODA serves Kaytambog and the edge of Banaba Cerca by Sagana Spring Resort, not the rest of Banaba Cerca', () => {
@@ -113,11 +115,11 @@ test('CIKTODA serves Kaytambog and the edge of Banaba Cerca by Sagana Spring Res
   const KAYTAMBOG = at(14.19066, 120.86770), EJ_GARAGE = at(14.17418, 120.87445), SAGANA = at(14.19734, 120.86507);
   const BANABA_CERCA = at(14.21434, 120.85302), CALIFORNIA_BREEZE = at(14.20590, 120.86090);
   assert.deepEqual(ciktoda.areas, ['Kaytambog', 'Sagana Spring Resort']);
-  assert.equal(todaServes(ciktoda, KAYTAMBOG, EJ_GARAGE), true);
+  assert.equal(inArea(ciktoda, KAYTAMBOG, EJ_GARAGE), true);
   assert.equal(getBarangayAt(SAGANA), 'Banaba Cerca');
-  assert.equal(todaServes(ciktoda, KAYTAMBOG, SAGANA), true);
-  assert.equal(todaServes(ciktoda, KAYTAMBOG, BANABA_CERCA), false, 'Banaba Cerca is SITODAI');
-  assert.equal(todaServes(ciktoda, CALIFORNIA_BREEZE, KAYTAMBOG), false);
+  assert.equal(inArea(ciktoda, KAYTAMBOG, SAGANA), true);
+  assert.equal(inArea(ciktoda, KAYTAMBOG, BANABA_CERCA), false, 'Banaba Cerca is SITODAI');
+  assert.equal(inArea(ciktoda, CALIFORNIA_BREEZE, KAYTAMBOG), false);
 });
 
 test('DITTODA serves Daine I and II, Lumampong Balagbag, the edge of Tambo Kulit by Camp Elizabeth and of Lumampong Halayhay to Dulong Bato', () => {
@@ -125,14 +127,14 @@ test('DITTODA serves Daine I and II, Lumampong Balagbag, the edge of Tambo Kulit
   const LUMAMPONG_BALAGBAG = at(14.17397, 120.84986), SADATI_FOREST = at(14.19201, 120.83559), CAMP_ELIZABETH = at(14.17751, 120.85466);
   const TAMBO_KULIT = at(14.17709, 120.85994), BUHO = at(14.1670, 120.8650);
   assert.deepEqual(dittoda.areas, ['Daine I', 'Daine II', 'Lumampong Balagbag', 'Camp Elizabeth', 'Dulong Bato and Buho']);
-  assert.equal(todaServes(dittoda, LUMAMPONG_BALAGBAG, SADATI_FOREST), true);
+  assert.equal(inArea(dittoda, LUMAMPONG_BALAGBAG, SADATI_FOREST), true);
   assert.equal(getBarangayAt(CAMP_ELIZABETH), 'Tambo Kulit');
-  assert.equal(todaServes(dittoda, LUMAMPONG_BALAGBAG, CAMP_ELIZABETH), true);
-  assert.equal(todaServes(dittoda, LUMAMPONG_BALAGBAG, TAMBO_KULIT), false, 'the rest of Tambo Kulit is TBKTODA');
+  assert.equal(inArea(dittoda, LUMAMPONG_BALAGBAG, CAMP_ELIZABETH), true);
+  assert.equal(inArea(dittoda, LUMAMPONG_BALAGBAG, TAMBO_KULIT), false, 'the rest of Tambo Kulit is TBKTODA');
   assert.equal(getBarangayAt(BUHO), 'Lumampong Halayhay');
-  assert.equal(todaServes(dittoda, LUMAMPONG_BALAGBAG, BUHO), true);
-  assert.equal(todaServes(dittoda, at(14.1612, 120.8554), LUMAMPONG_BALAGBAG), true, 'Dulong Bato');
-  assert.equal(todaServes(dittoda, at(14.1540, 120.8520), LUMAMPONG_BALAGBAG), false, 'Lumampong Halayhay past Dulong Bato');
+  assert.equal(inArea(dittoda, LUMAMPONG_BALAGBAG, BUHO), true);
+  assert.equal(inArea(dittoda, at(14.1612, 120.8554), LUMAMPONG_BALAGBAG), true, 'Dulong Bato');
+  assert.equal(inArea(dittoda, at(14.1540, 120.8520), LUMAMPONG_BALAGBAG), false, 'Lumampong Halayhay past Dulong Bato');
 });
 
 test('BLI-TODA serves Banaba Lejos, and drivers saved as BIPTODA are BLI-TODA', () => {
@@ -142,8 +144,8 @@ test('BLI-TODA serves Banaba Lejos, and drivers saved as BIPTODA are BLI-TODA', 
   assert.deepEqual(bliToda.areas, ['Banaba Lejos']);
   assert.equal(findToda('bli toda').name, 'BLI-TODA');
   assert.equal(todaName('BIPTODA'), 'BLI-TODA');
-  assert.equal(todaServes(bliToda, BANABA_LEJOS, MRF), true);
-  assert.equal(todaServes(bliToda, BIYAYA_FARM, BANABA_LEJOS), true);
+  assert.equal(inArea(bliToda, BANABA_LEJOS, MRF), true);
+  assert.equal(inArea(bliToda, BIYAYA_FARM, BANABA_LEJOS), true);
   assert.equal(getBarangayAt(MALAINEN), null, 'Malainen Luma is in Naic, outside Indang');
 });
 
@@ -154,16 +156,16 @@ test('GLITODA and TBKTODA are separate TODAs with their own areas', () => {
   const TAMBO_KULIT = at(14.17709, 120.85994), TAMBO_BALAGBAG = at(14.18715, 120.85277), HARASAN = at(14.16053, 120.87006);
   assert.deepEqual(glitoda.barangays, ['Guyam Malaki', 'Guyam Munti', 'Lumampong Halayhay']);
   assert.deepEqual(tbktoda.barangays, ['Tambo Kulit', 'Tambo Balagbag']);
-  assert.equal(todaServes(glitoda, GUYAM_MALAKI, ALTA_RIOS), true);
+  assert.equal(inArea(glitoda, GUYAM_MALAKI, ALTA_RIOS), true);
   assert.equal(getBarangayAt(BALWARTE_GWAPO), 'Harasan');
-  assert.equal(todaServes(glitoda, GUYAM_MALAKI, BALWARTE_GWAPO), true);
-  assert.equal(todaServes(glitoda, GUYAM_MALAKI, HARASAN), false, 'the rest of Harasan is PCHTI-TODA');
-  assert.equal(todaServes(glitoda, GUYAM_MALAKI, OLD_CEMETERY), true);
-  assert.equal(todaServes(glitoda, ROMAN_GARDEN, LUMAMPONG_NATIONAL), true);
-  assert.equal(todaServes(glitoda, GUYAM_MALAKI, POBLACION), false, 'the rest of the Poblacion');
-  assert.equal(todaServes(glitoda, GUYAM_MALAKI, TAMBO_KULIT), false);
-  assert.equal(todaServes(tbktoda, TAMBO_KULIT, TAMBO_BALAGBAG), true);
-  assert.equal(todaServes(tbktoda, TAMBO_KULIT, GUYAM_MALAKI), false);
+  assert.equal(inArea(glitoda, GUYAM_MALAKI, BALWARTE_GWAPO), true);
+  assert.equal(inArea(glitoda, GUYAM_MALAKI, HARASAN), false, 'the rest of Harasan is PCHTI-TODA');
+  assert.equal(inArea(glitoda, GUYAM_MALAKI, OLD_CEMETERY), true);
+  assert.equal(inArea(glitoda, ROMAN_GARDEN, LUMAMPONG_NATIONAL), true);
+  assert.equal(inArea(glitoda, GUYAM_MALAKI, POBLACION), false, 'the rest of the Poblacion');
+  assert.equal(inArea(glitoda, GUYAM_MALAKI, TAMBO_KULIT), false);
+  assert.equal(inArea(tbktoda, TAMBO_KULIT, TAMBO_BALAGBAG), true);
+  assert.equal(inArea(tbktoda, TAMBO_KULIT, GUYAM_MALAKI), false);
   assert.equal(findToda('GLITODA TBKTODA'), null, 'the combined name is gone');
 });
 
@@ -173,14 +175,14 @@ test('KITODA serves Kayquit I, II and III and Ikloy River, not the rest of Kayta
   const IKLOY_RIVER = at(14.18372, 120.87093), THE_RAVINE = at(14.18889, 120.86855), KAYTAMBOG = at(14.19066, 120.86770);
   assert.deepEqual(kitoda.areas, ['Kayquit I', 'Kayquit II', 'Kayquit III', 'Ikloy River']);
   assert.deepEqual(kitoda.stops[0].places, ['IKLOY RIVER', 'BERAS FARM', 'BICOL REGOIN'], 'Beras Farm and Bicol Region are by Ikloy River');
-  assert.equal(todaServes(kitoda, KAYQUIT_1, KAYQUIT_2), true);
-  assert.equal(todaServes(kitoda, MUZON, KAYQUIT_1), true, 'Muzon (Asis) on the Kayquit III border');
+  assert.equal(inArea(kitoda, KAYQUIT_1, KAYQUIT_2), true);
+  assert.equal(inArea(kitoda, MUZON, KAYQUIT_1), true, 'Muzon (Asis) on the Kayquit III border');
   assert.equal(getBarangayAt(IKLOY_RIVER), 'Kaytambog');
-  assert.equal(todaServes(kitoda, KAYQUIT_2, IKLOY_RIVER), true);
-  assert.equal(todaServes(kitoda, KAYQUIT_2, at(14.18372 + 0.0015, 120.87093 + 0.0015)), true, 'a corner of the 350 m square');
-  assert.equal(todaServes(kitoda, KAYQUIT_2, at(14.18372 + 0.0018, 120.87093)), false, 'just past the square');
-  assert.equal(todaServes(kitoda, KAYQUIT_2, THE_RAVINE), false, 'Kaytambog is CIKTODA');
-  assert.equal(todaServes(kitoda, KAYQUIT_2, KAYTAMBOG), false);
+  assert.equal(inArea(kitoda, KAYQUIT_2, IKLOY_RIVER), true);
+  assert.equal(inArea(kitoda, KAYQUIT_2, at(14.18372 + 0.0015, 120.87093 + 0.0015)), true, 'a corner of the 350 m square');
+  assert.equal(inArea(kitoda, KAYQUIT_2, at(14.18372 + 0.0018, 120.87093)), false, 'just past the square');
+  assert.equal(inArea(kitoda, KAYQUIT_2, THE_RAVINE), false, 'Kaytambog is CIKTODA');
+  assert.equal(inArea(kitoda, KAYQUIT_2, KAYTAMBOG), false);
 });
 
 test('MACITODA serves Calumpang Cerca, Agus-us, Calumpang Lejos I and a 350 m square around Macalima', () => {
@@ -189,13 +191,13 @@ test('MACITODA serves Calumpang Cerca, Agus-us, Calumpang Lejos I and a 350 m sq
   const EL_HERENCIA = at(14.22879, 120.85653), MRP = at(14.23868, 120.84330), BRITISH_VILLAGE = at(14.23255, 120.85241);
   const MACALIMA = at(14.19204, 120.87286);
   assert.deepEqual(macitoda.areas, ['Calumpang Cerca', 'Agus-us', 'Calumpang Lejos I', 'Macalima']);
-  assert.equal(todaServes(macitoda, CALUMPANG_CERCA, FAMIGLIA_FELICE), true);
-  assert.equal(todaServes(macitoda, TRIO_AS_FARM, EL_HERENCIA), true);
-  assert.equal(todaServes(macitoda, MRP, BRITISH_VILLAGE), true);
+  assert.equal(inArea(macitoda, CALUMPANG_CERCA, FAMIGLIA_FELICE), true);
+  assert.equal(inArea(macitoda, TRIO_AS_FARM, EL_HERENCIA), true);
+  assert.equal(inArea(macitoda, MRP, BRITISH_VILLAGE), true);
   assert.equal(getBarangayAt(MACALIMA), 'Banaba Cerca');
-  assert.equal(todaServes(macitoda, CALUMPANG_CERCA, MACALIMA), true);
-  assert.equal(todaServes(macitoda, CALUMPANG_CERCA, at(14.19204 + 0.0018, 120.87286)), false, 'just past the square');
-  assert.equal(todaServes(macitoda, CALUMPANG_CERCA, at(14.21434, 120.85302)), false, 'the rest of Banaba Cerca is SITODAI');
+  assert.equal(inArea(macitoda, CALUMPANG_CERCA, MACALIMA), true);
+  assert.equal(inArea(macitoda, CALUMPANG_CERCA, at(14.19204 + 0.0018, 120.87286)), false, 'just past the square');
+  assert.equal(inArea(macitoda, CALUMPANG_CERCA, at(14.21434, 120.85302)), false, 'the rest of Banaba Cerca is SITODAI');
 });
 
 test('ALITODA serves Alulod and Limbon, not Philmalay in Banaba Cerca', () => {
@@ -203,11 +205,11 @@ test('ALITODA serves Alulod and Limbon, not Philmalay in Banaba Cerca', () => {
   const ALULOD = at(14.20339, 120.89046), VILLA_FELICIANA = at(14.20673, 120.89061), BONIFACIO_SHRINE = at(14.19990, 120.90330);
   const PANGIL = at(14.20036, 120.90543), PHILMALAY = at(14.19620, 120.87159);
   assert.deepEqual(alitoda.areas, ['Alulod', 'Limbon']);
-  assert.equal(todaServes(alitoda, ALULOD, VILLA_FELICIANA), true);
-  assert.equal(todaServes(alitoda, BONIFACIO_SHRINE, ALULOD), true);
+  assert.equal(inArea(alitoda, ALULOD, VILLA_FELICIANA), true);
+  assert.equal(inArea(alitoda, BONIFACIO_SHRINE, ALULOD), true);
   assert.equal(getBarangayAt(PANGIL), 'Limbon', 'Pangil, Amadeo, just past the town edge counts as Limbon');
   assert.equal(getBarangayAt(PHILMALAY), 'Banaba Cerca');
-  assert.equal(todaServes(alitoda, ALULOD, PHILMALAY), false);
+  assert.equal(inArea(alitoda, ALULOD, PHILMALAY), false);
 });
 
 test('a TODA is found by its name however it is typed, other TODAs are not zoned', () => {
