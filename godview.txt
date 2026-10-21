@@ -1,9 +1,0 @@
-Your login will keep working. The account is saved in the live database, so 09813140408 / l6Xn_SgMs-Ns stays valid unless someone removes that number from GOD_VIEW_ADMIN_PHONES on Render.
-To open God view yourself later:
-
-1. Open PowerShell and run:
-cd "C:\claude projects\Indang GO\indang-trike-app\web\god-view"
-npm start
-2. When it prints God view: http://localhost:8080, open http://localhost:8080 in your browser.
-3. Sign in with the login above.
-4. Keep that PowerShell window open while you use God view. Press Ctrl+C in it to stop.
