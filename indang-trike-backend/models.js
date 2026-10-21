@@ -6,8 +6,8 @@ function createModels(connection) {
   const userSchema = new Schema({
     phone: { type: String, required: true, unique: true }, password: { type: String, required: true },
     firstName: { type: String, default: '' }, lastName: { type: String, default: '' }, email: { type: String, default: '' },
-    // An admin account is added only in the database (role "admin", e.g. by
-    // scripts/create-admin.js); sign-up offers passenger or driver.
+    // An admin account is added only in the database (role "admin"); sign-up
+    // offers passenger or driver.
     role: { type: String, enum: ['passenger', 'driver', 'admin'], default: 'passenger' },
     plate: String, toda: String, capacity: { type: Number, default: 4 },
     // The one test driver who may switch TODAs from the profile, to check each
