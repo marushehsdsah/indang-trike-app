@@ -2,6 +2,8 @@ const fareData = require('../assets/fares/indang-fares.json');
 const { getMunicipalityAt } = require('./indangMap');
 const { getBarangayAt } = require('./todaZones');
 const { haversineDistance } = require('../utils/pathfinding');
+const { createMapPolygons } = require('../utils/geojson');
+const barangayBoundaries = require('../assets/geo/indang-barangays.json');
 
 // Tricycle fares from Indang's taripa (assets/fares/indang-fares.json, from
 // TODAs_coordinates (1).xlsx). A booking is a special trip (the whole trike,
@@ -45,31 +47,53 @@ function zoneOf(coordinate) {
 // table, which every area has.
 const specialFare = (area, origin) => area.special[origin] ?? area.special.poblacion;
 
-// The area the priced stop is in: the only area there, any area when all of
-// them cost the same from this origin, or else the rider's choice. `options`
-// lists the areas whenever the rider has to (or did) choose.
-function resolveArea(zone, origin, chosenId, period) {
-  const fares = new Set(zone.areas.map((area) => specialFare(area, origin)[period]));
-  if (zone.areas.length && fares.size === 1 && !zone.areas.some((area) => area.regular)) return { area: zone.areas[0], options: null };
-  const options = zone.areas.map((area) => ({ id: area.id, label: area.label, fare: specialFare(area, origin)[period] }));
-  return { area: zone.areas.find((area) => area.id === chosenId) ?? null, options };
+const BARANGAY_SHAPES = new Map(barangayBoundaries.features.map((feature) => [
+  feature.properties.name, createMapPolygons({ type: 'FeatureCollection', features: [feature] }),
+]));
+const plazaDistance = (coordinate) => haversineDistance(coordinate, POBLACION.center);
+const plazaRanges = new Map();
+// How far the barangays an area list covers reach from the town plaza: their
+// nearest and farthest outline points.
+function plazaRange(areas) {
+  const barangays = [...new Set(areas.flatMap((area) => area.barangays))].sort();
+  const key = barangays.join('|');
+  if (!plazaRanges.has(key)) {
+    let min = Infinity, max = 0;
+    for (const name of barangays) for (const { coordinates } of BARANGAY_SHAPES.get(name) ?? []) {
+      for (const point of coordinates) { const distance = plazaDistance(point); min = Math.min(min, distance); max = Math.max(max, distance); }
+    }
+    plazaRanges.set(key, { min, max });
+  }
+  return plazaRanges.get(key);
 }
 
-// What a trip between two coordinates costs at `at` (ms). `areas` holds the
-// rider's choice of area for each stop, when the stop's barangay has several.
-// Returns { town, night, flat } for a flat-fare town, or { town, night,
-// special, regular, choice, choose }: `special` and `regular` are null when
-// not available (regular exists only on the routes the taripa lists).
-// `choice` lists the areas of the stop whose fare applies when its barangay
-// has several, with the one chosen; `choose` is that same choice while the
-// rider still has to make it, and then there is no fare yet.
-function quoteTrip({ pickup, dropoff, at = Date.now(), areas = {} }) {
+// The area the priced stop is in, by distance: the taripa names a barangay's
+// areas but not where they are, and its parts farther from the town (Dulo)
+// cost more than those near it (Bukana). So the barangay's reach from the
+// plaza is split into equal bands, cheapest area nearest, and the stop takes
+// the area of its band. One area, or areas that all cost the same, need no band.
+function resolveArea(zone) {
+  const { areas } = zone;
+  if (areas.length <= 1) return areas[0] ?? null;
+  const byFare = [...areas].sort((a, b) => specialFare(a, 'poblacion')[0] - specialFare(b, 'poblacion')[0]);
+  if (new Set(byFare.map((area) => specialFare(area, 'poblacion')[0])).size === 1 && !areas.some((area) => area.regular)) return byFare[0];
+  const { min, max } = plazaRange(areas);
+  const share = max > min ? Math.min(Math.max((plazaDistance(zone.coordinate) - min) / (max - min), 0), 1) : 0;
+  return byFare[Math.min(byFare.length - 1, Math.floor(share * byFare.length))];
+}
+
+// What a trip between two coordinates costs at `at` (ms). Returns { town,
+// night, flat } for a flat fare, or { town, night, special, regular }:
+// `special` and `regular` are null when not available (regular exists only on
+// the routes the taripa lists). A barangay with several areas is priced by the
+// stop's distance from the town plaza (resolveArea), never by asking the rider.
+function quoteTrip({ pickup, dropoff, at = Date.now() }) {
   const town = getMunicipalityAt(pickup)?.name ?? null;
   const night = isNightAt(at);
-  if (town !== 'Indang') return { town, night, flat: FLAT_FARE, special: null, regular: null, choice: null, choose: null };
+  if (town !== 'Indang') return { town, night, flat: FLAT_FARE, special: null, regular: null };
   const period = night ? 1 : 0;
   const stops = { pickup: zoneOf(pickup), dropoff: zoneOf(dropoff) };
-  const base = { town, night, flat: null, special: null, regular: null, choice: null, choose: null };
+  const base = { town, night, flat: null, special: null, regular: null };
 
   if (stops.pickup.poblacion && stops.dropoff.poblacion) {
     return { ...base, special: { fare: POBLACION.special[period], origin: 'poblacion', area: null } };
@@ -101,11 +125,7 @@ function quoteTrip({ pickup, dropoff, at = Date.now(), areas = {} }) {
 
   const zone = stops[priced];
   if (!zone.areas.length) return { ...base, flat: FLAT_FARE };
-  const resolved = resolveArea(zone, origin, areas[priced], period);
-  const choice = resolved.options
-    ? { endpoint: priced, barangay: zone.barangay, options: resolved.options, selected: resolved.area?.id ?? null } : null;
-  if (!resolved.area) return { ...base, choice, choose: choice };
-  const { area } = resolved;
+  const area = resolveArea(zone);
   const bunaCercaArea = fromBunaCerca && priced === 'dropoff' ? TERMINALS.bunaCerca.special[area.id] : null;
   const special = bunaCercaArea
     ? { fare: bunaCercaArea[period], origin: 'bunaCerca', area: { id: area.id, label: area.label } }
@@ -116,7 +136,7 @@ function quoteTrip({ pickup, dropoff, at = Date.now(), areas = {} }) {
   const regularOrigin = origin === 'palengke' ? 'poblacion' : origin;
   const regularFares = area.regular?.[regularOrigin]?.[night ? 'night' : 'day'];
   const regular = regularFares ? { price: regularFares[0], student: regularFares[1], origin: regularOrigin, area: special.area } : null;
-  return { ...base, choice, special, regular };
+  return { ...base, special, regular };
 }
 
 // The total for a quote: a flat fare; a special trip's fare covering two

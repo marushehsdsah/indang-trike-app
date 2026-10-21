@@ -48,10 +48,8 @@ function fareFields(body, trip, now) {
   requireValue(body.fareType === undefined || ['special', 'regular'].includes(body.fareType), 400, 'Choose a special or regular trip.');
   requireValue(body.discounted === undefined || (Number.isInteger(body.discounted) && body.discounted >= 0 && body.discounted <= body.passengers),
     400, 'Choose how many passengers have a student, senior or PWD ID.');
-  const areas = body.fareAreas && typeof body.fareAreas === 'object' ? body.fareAreas : {};
-  const quote = quoteTrip({ pickup: trip.pickup.coordinate, dropoff: trip.dropoff.coordinate, at: now,
-    areas: { pickup: typeof areas.pickup === 'string' ? areas.pickup : undefined, dropoff: typeof areas.dropoff === 'string' ? areas.dropoff : undefined } });
-  requireValue(!quote.choose, 400, `Choose which part of ${quote.choose?.barangay} the ${quote.choose?.endpoint === 'pickup' ? 'pickup' : 'destination'} is in.`);
+  // A barangay's area is set by the stop's distance from the town (data/fares.js).
+  const quote = quoteTrip({ pickup: trip.pickup.coordinate, dropoff: trip.dropoff.coordinate, at: now });
   const type = body.fareType ?? 'special';
   requireValue(type !== 'regular' || quote.regular || quote.flat !== null, 400, 'Regular fares are listed only for the Bancod routes; book a special trip.');
   const details = fareDetails(quote, { type, passengers: body.passengers, discounted: body.discounted ?? 0 });

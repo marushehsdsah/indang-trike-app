@@ -25,7 +25,11 @@ How a trip is priced:
   town plaza.
 - Night is 9:00 PM to 4:00 AM, Philippine time.
 - When a barangay has several listed areas (Alulod's Bukana, School, Dulo…),
-  the rider picks one; the booking is refused until they do.
+  the stop's straight-line distance from the town plaza decides, not the
+  rider. The taripa names the areas but not where they are, and a barangay's
+  far parts cost more than its near ones, so its reach from the plaza (nearest
+  to farthest outline point) is split into equal bands: the cheapest area
+  nearest the town, the dearest farthest out (`resolveArea` in data/fares.js).
 - A stop the taripa lists no area for is priced ₱45 flat (`FLAT_FARE`).
 
 `review` in the JSON lists every place where the sheets disagree or a point had

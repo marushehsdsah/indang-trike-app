@@ -59,7 +59,6 @@ function createPinnedPlace(t, coordinate) {
 
 // "Alulod · School / Petron" reads "School / Petron" on a chip that already
 // sits under "Which part of Alulod?".
-const areaName = (label) => (label.includes(' · ') ? label.split(' · ').slice(1).join(' · ') : label);
 
 // The last few places the rider actually went, newest first, one per name.
 function recentDestinations(rides) {
@@ -119,7 +118,6 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
   // area a stop is in when its barangay has several.
   const [fareType, setFareType] = useState('special');
   const [discounted, setDiscounted] = useState(0);
-  const [fareAreas, setFareAreas] = useState({});
   // Day and night fares change at 9 PM and 4 AM, so the quote is redone each minute.
   const [fareClock, setFareClock] = useState(Date.now);
   const [notice, setNotice] = useState(null);
@@ -162,12 +160,6 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
     const timer = setInterval(() => setFareClock(Date.now()), 60000);
     return () => clearInterval(timer);
   }, [destination]);
-  // A new stop may be in another barangay, so its area is chosen again. The
-  // GPS pickup keeps its choice while it follows the rider.
-  const destinationKey = destination ? destination.id ?? `${destination.coordinate.latitude},${destination.coordinate.longitude}` : null;
-  const pickupKey = pickup && pickup.kind !== 'current-location' ? pickup.id ?? `${pickup.coordinate.latitude},${pickup.coordinate.longitude}` : 'gps';
-  useEffect(() => { setFareAreas((areas) => ({ ...areas, dropoff: undefined })); }, [destinationKey]);
-  useEffect(() => { setFareAreas((areas) => ({ ...areas, pickup: undefined })); }, [pickupKey]);
   useEffect(() => { setDiscounted((count) => Math.min(count, passengers)); }, [passengers]);
 
   // The GPS pickup moves with every fix; the route is searched again only
@@ -203,10 +195,10 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
   const blockedReason = !online ? t('trip.blockedOffline') : !connected || !config ? t('trip.blockedConnecting')
     : location.outsideServiceArea ? t('trip.blockedOutside') : null;
   const quote = useMemo(() => (pickup && destination && routeState.canConfirm
-    ? quoteTrip({ pickup: routePickup, dropoff: destination.coordinate, at: fareClock, areas: fareAreas }) : null),
-  [pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude, routeState.canConfirm, fareClock, fareAreas]);
+    ? quoteTrip({ pickup: routePickup, dropoff: destination.coordinate, at: fareClock }) : null),
+  [pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude, routeState.canConfirm, fareClock]);
   const tripType = quote?.regular ? fareType : quote?.flat !== null && quote?.flat !== undefined ? 'flat' : 'special';
-  const total = quote && !quote.choose ? fareTotal(quote, { type: tripType, passengers, discounted }) : null;
+  const total = quote ? fareTotal(quote, { type: tripType, passengers, discounted }) : null;
   const canBook = routeState.canConfirm && !blockedReason && total !== null;
   const fare = total !== null ? formatPeso(total) : null;
 
@@ -327,7 +319,7 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
     if (!bookingKeyRef.current) bookingKeyRef.current = `booking-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     try {
       await bookRide({ ...createPayload(), idempotencyKey: bookingKeyRef.current,
-        fareType: tripType === 'regular' ? 'regular' : 'special', discounted: tripType === 'regular' ? discounted : 0, fareAreas });
+        fareType: tripType === 'regular' ? 'regular' : 'special', discounted: tripType === 'regular' ? discounted : 0 });
       // The booking is made: the next one is a new request with a new key.
       bookingKeyRef.current = null;
       followLocationRef.current = true;
@@ -525,19 +517,6 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
                     { value: 'regular', label: t('fare.regular'), accessibilityLabel: t('fare.regularA11y') },
                   ]} />
                 )}
-                {quote?.choice && (
-                  <View style={styles.areaChoice}>
-                    <Text style={[TYPE.label, quote.choose && styles.areaPrompt]}>
-                      {t(quote.choice.endpoint === 'pickup' ? 'fare.chooseAreaPickup' : 'fare.chooseArea', { barangay: quote.choice.barangay })}
-                    </Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={styles.chips}>
-                      {quote.choice.options.map((option) => (
-                        <Chip key={option.id} tone="map" label={areaName(option.label)} selected={quote.choice.selected === option.id}
-                          onPress={() => setFareAreas((areas) => ({ ...areas, [quote.choice.endpoint]: option.id }))} />
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
                 <View style={styles.options}>
                   <Stepper value={passengers} onChange={setPassengers} min={MIN_PASSENGERS} max={MAX_PASSENGERS} icon="account"
                     label={t('trip.ridersLabel', { count: passengers })} fewerLabel={t('trip.fewerRiders')} moreLabel={t('trip.moreRiders')} />
@@ -643,8 +622,6 @@ const styles = StyleSheet.create({
   noteChip: { flexShrink: 1 },
   flex: { flex: 1 },
   fareType: { marginTop: SPACE.md },
-  areaChoice: { marginTop: SPACE.md },
-  areaPrompt: { color: COLORS.brand, fontWeight: '700' },
   idRow: { flexDirection: 'row', alignItems: 'center', marginBottom: SPACE.md },
   fareRule: { marginBottom: SPACE.md },
   noteInput: {

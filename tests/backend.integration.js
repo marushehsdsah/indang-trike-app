@@ -152,9 +152,8 @@ test('an Indang pickup is offered only to Indang drivers within Indang\'s 5 km r
     assert.equal((await request('/driver/location', drivers[name].token, { ...fix(), ...coordinate })).status, 200);
     assert.equal((await request('/driver/availability', drivers[name].token, { available: true })).status, 200);
   }
-  // Mataas na Lupa has three fare areas on the taripa; the rider names one.
-  const booked = await request('/rides', passenger.token, { trip, passengers: 1, note: '', idempotencyKey: randomUUID(),
-    fareAreas: { pickup: 'mataas-na-lupa-metrogate' } });
+  // Mataas na Lupa has three fare areas on the taripa; distance picks one.
+  const booked = await request('/rides', passenger.token, { trip, passengers: 1, note: '', idempotencyKey: randomUUID() });
   assert.equal(booked.status, 201, JSON.stringify(booked.body));
   const rideId = booked.body.ride.id;
   assert.equal((await state(drivers.cvsuMain)).offer?.id, rideId, 'the nearest Indang driver is offered');
@@ -493,23 +492,22 @@ test('an assigned ride survives server restart and expires authentication by ser
 test('an Indang booking is charged from the taripa by the server, not the app', async () => {
   const passenger = await account();
   const plaza = { name: 'Indang Town Plaza', coordinate: { latitude: 14.19576, longitude: 120.87849 } };
-  const bancod = { name: 'Bancod Elementary School', coordinate: { latitude: 14.21077, longitude: 120.87758 } };
+  // In Bancod's Purok III distance band from the plaza (data/fares.js).
+  const bancod = { name: 'Bancod Purok III', coordinate: { latitude: 14.2186, longitude: 120.87265 } };
   const book = (extra) => request('/rides', passenger.token, { trip: { pickup: plaza, dropoff: bancod }, passengers: 3, note: '',
     idempotencyKey: randomUUID(), fare: 1, ...extra });
-  // Bancod's puroks have different fares, so the rider must say which one.
-  const unchosen = await book({});
-  assert.equal(unchosen.status, 400);
-  assert.match(unchosen.body.error, /Choose which part of Bancod/);
+  // Bancod's puroks have different fares; the stop's distance decides, and an
+  // area the app names is ignored.
   // TARIPA, Purok III from Indang by day: ₱17 regular, ₱14 with a student/senior/PWD ID.
   now = Date.UTC(2026, 9, 2, 2, 0); // 10:00 AM in the Philippines
-  const regular = await book({ fareType: 'regular', discounted: 1, fareAreas: { dropoff: 'bancod-purok-3' } });
+  const regular = await book({ fareType: 'regular', discounted: 1, fareAreas: { dropoff: 'bancod-purok-1' } });
   assert.equal(regular.status, 201, JSON.stringify(regular.body));
   assert.equal(regular.body.ride.fare, 2 * 17 + 14, 'the fare the app sent is ignored');
   assert.equal(regular.body.ride.fareDetails.type, 'regular');
   assert.equal((await action(passenger, regular.body.ride.id, 'cancel')).status, 200);
   // A special trip at night: ₱39 for two passengers, ₱15 for the third.
   now = Date.UTC(2026, 9, 2, 14, 0); // 10:00 PM in the Philippines
-  const special = await book({ fareType: 'special', fareAreas: { dropoff: 'bancod-purok-3' } });
+  const special = await book({ fareType: 'special' });
   assert.equal(special.status, 201, JSON.stringify(special.body));
   assert.equal(special.body.ride.fare, 39 + 15);
   assert.equal(special.body.ride.fareDetails.night, true);
@@ -517,7 +515,7 @@ test('an Indang booking is charged from the taripa by the server, not the app', 
   // Regular fares exist only on the Bancod routes.
   const alulod = { name: 'Alulod Elementary School', coordinate: { latitude: 14.20623, longitude: 120.88944 } };
   const noRegular = await request('/rides', passenger.token, { trip: { pickup: plaza, dropoff: alulod }, passengers: 1, note: '',
-    idempotencyKey: randomUUID(), fareType: 'regular', fareAreas: { dropoff: 'alulod-school' } });
+    idempotencyKey: randomUUID(), fareType: 'regular' });
   assert.equal(noRegular.status, 400);
   now = Date.now();
 });
