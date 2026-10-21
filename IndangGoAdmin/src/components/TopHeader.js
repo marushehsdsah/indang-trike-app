@@ -40,7 +40,7 @@ export default function TopHeader({ title = 'Admin' }) {
         style={styles.avatar}
         accessibilityRole="button"
         accessibilityLabel="Profile"
-      >
+  >
         <Ionicons name="person" size={18} color={colors.textOnDark} />
       </TouchableOpacity>
     </View>
