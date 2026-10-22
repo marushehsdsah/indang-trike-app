@@ -41,7 +41,8 @@ function fakeModels() {
       },
     };
   };
-  return { User: collection(), Session: collection(), EmailCode: collection(), ResetCode: collection() };
+  // Blocked stays empty here; blocked numbers are covered by backend.integration.js.
+  return { User: collection(), Session: collection(), EmailCode: collection(), ResetCode: collection(), Blocked: collection() };
 }
 function setup() {
   let now = Date.parse('2026-10-19T08:00:00Z');

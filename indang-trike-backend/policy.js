@@ -41,8 +41,9 @@ function publicUser(user) {
     email: user.email || '', role: user.role || 'passenger', plate: user.plate, toda: todaName(user.toda), capacity: user.capacity,
     available: Boolean(user.available), createdAt: user.createdAt, rating: ratingSummary(user),
     profileComplete: Boolean(user.firstName && user.lastName && user.email && (user.role !== 'driver' || (user.plate && user.toda && user.capacity))),
-    // Only the TODA tester may pick another TODA in the profile.
-    ...(user.role === 'driver' && user.todaTester ? { todaChoices: TODA_NAMES } : {}),
+    // Only the TODA tester may pick another TODA in the profile, and cancel a
+    // trip at any stage.
+    ...(user.role === 'driver' && user.todaTester ? { todaChoices: TODA_NAMES, tester: true } : {}),
   };
 }
 // The fare is set here from the taripa (data/fares.js) and the server's own

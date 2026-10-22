@@ -7,6 +7,7 @@ import SplashScreen from '../screens/SplashScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
+import HomeScreen from '../screens/HomeScreen';
 import PassengerScreen from '../screens/PassengerScreen';
 import SearchingScreen from '../screens/SearchingScreen';
 import ActiveRideScreen from '../screens/ActiveRideScreen'; 
@@ -14,6 +15,7 @@ import NavigationScreen from '../screens/NavigationScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import DriverScreen from '../screens/DriverScreen';
+import BookingsScreen from '../screens/BookingsScreen';
 import AdminNavigator from './AdminNavigator';
 import { useApp } from '../context/AppContext';
 import { ACTIVE_STATUSES } from '../utils/rideState';
@@ -34,7 +36,7 @@ export default function AppNavigator() {
   if (loading) return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface }}><ActivityIndicator size="large" color={COLORS.brand} /></View>;
   const driver = user?.role === 'driver', admin = user?.role === 'admin';
   // An admin account logs in here like everyone else and gets only the admin interface.
-  const initial = admin ? 'Admin' : !user?.profileComplete ? 'Profile' : ride && ACTIVE_STATUSES.includes(ride.status) ? (ride.status === 'searching' ? 'Searching' : 'ActiveRide') : driver ? 'Driver' : 'Passenger';
+  const initial = admin ? 'Admin' : !user?.profileComplete ? 'Profile' : ride && ACTIVE_STATUSES.includes(ride.status) ? (ride.status === 'searching' ? 'Searching' : 'ActiveRide') : driver ? 'Driver' : 'Home';
   return (
     <Stack.Navigator key={user?.id || 'guest'} initialRouteName={user ? initial : 'Splash'} screenOptions={{ headerShown: false }}>
       {!user ? <>
@@ -43,7 +45,11 @@ export default function AppNavigator() {
       <Stack.Screen name="Register" component={RegisterScreen} />
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
       </> : admin ? <Stack.Screen name="Admin" component={AdminNavigator} /> : <>
-      {driver ? <Stack.Screen name="Driver" component={DriverScreen} /> : <>
+      {driver ? <>
+      <Stack.Screen name="Driver" component={DriverScreen} />
+      <Stack.Screen name="Bookings" component={BookingsScreen} />
+      </> : <>
+      <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="Passenger" component={PassengerScreen} />
       <Stack.Screen name="Searching" component={SearchingScreen} />
       </>}

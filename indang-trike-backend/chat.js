@@ -16,7 +16,7 @@ const messageView = (message) => ({
 // are sent over HTTP like every other write; Socket.IO only delivers them, as
 // "chat:message" and "chat:read", to the two participants' phones.
 function createChat({ models, io, clock }) {
-  const { Ride, Rating, Message } = models;
+  const { Ride, Rating, Message, Report } = models;
   // Both participants get every event, so all of their phones stay in step.
   function emit(ride, event, payload) {
     for (const id of new Set([ride.passengerId, ride.driverId].filter(Boolean))) io.to(`user:${id}`).emit(event, payload);
@@ -97,10 +97,11 @@ function createChat({ models, io, clock }) {
     return state;
   }
   // Pilot admins may read a trip's chat only once someone filed a safety
-  // report (a flagged rating) on that trip.
+  // report on that trip: a flagged rating, or a driver's report of the passenger.
   async function transcript(id) {
     requireValue(/^[a-f0-9]{24}$/.test(id), 404, 'Ride not found.');
-    requireValue(await Rating.exists({ rideId: id, flagged: true }), 403, "A trip's chat is shown only after a safety report on it.");
+    const reported = await Rating.exists({ rideId: id, flagged: true }) || await Report.exists({ rideId: id });
+    requireValue(reported, 403, "A trip's chat is shown only after a safety report on it.");
     return { rideId: id, messages: await messagesOf(id) };
   }
   return { list, send, markRead, addUnread, transcript };

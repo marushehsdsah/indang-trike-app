@@ -8,12 +8,13 @@ import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n';
 
 const PASSENGER_TABS = [
-  { key: 'home', label: 'nav.home', icon: 'map-marker-radius', route: 'Passenger' },
+  { key: 'home', label: 'nav.home', icon: 'map-marker-radius', route: 'Home' },
   { key: 'history', label: 'nav.rides', icon: 'history', route: 'History' },
   { key: 'profile', label: 'nav.profile', icon: 'account-circle', route: 'Profile' },
 ];
 const DRIVER_TABS = [
   { key: 'home', label: 'nav.drive', icon: 'steering', route: 'Driver' },
+  { key: 'bookings', label: 'nav.bookings', icon: 'clipboard-list-outline', route: 'Bookings' },
   { key: 'history', label: 'nav.trips', icon: 'history', route: 'History' },
   { key: 'profile', label: 'nav.profile', icon: 'account-circle', route: 'Profile' },
 ];

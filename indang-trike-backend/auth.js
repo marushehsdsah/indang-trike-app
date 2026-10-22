@@ -1,6 +1,7 @@
 const { randomBytes, randomInt, createHash } = require('node:crypto');
 const bcrypt = require('bcryptjs');
 const { HttpError, requireValue, normalizePhilippinePhone, profileFields, publicUser } = require('./policy');
+const { suspensionOf, suspensionMessage } = require('../utils/reports');
 
 const hashToken = (token) => createHash('sha256').update(token).digest('hex');
 const hashCode = (email, code) => createHash('sha256').update(`${email}:${code}`).digest('hex');
@@ -19,7 +20,7 @@ function maskEmail(email) {
 }
 
 function createAuth(models, clock, { sendEmail } = {}) {
-  const { User, Session, EmailCode, ResetCode } = models;
+  const { User, Session, EmailCode, ResetCode, Blocked } = models;
   // Stores a new code in `Codes` (EmailCode or ResetCode) and emails it.
   async function issueCode(Codes, email, purpose, extra = {}) {
     requireValue(sendEmail, 503, 'Email verification is not set up on this server.');
@@ -66,6 +67,8 @@ function createAuth(models, clock, { sendEmail } = {}) {
     requireValue(['passenger', 'driver'].includes(role), 400, 'Choose passenger or driver.');
     const fields = profileFields(body, role);
     // Also check the legacy national format so normalization cannot duplicate an account.
+    // A number or email from an account disabled for fake bookings cannot sign up again.
+    requireValue(!await Blocked.exists({ $or: [{ phone }, { email: fields.email }] }), 403, 'This mobile number or email cannot be used to create an account.');
     requireValue(!await User.exists({ phone: { $in: [phone, `0${phone.slice(3)}`, phone.slice(1), phone.slice(3)] } }), 409, 'Phone number already registered.');
     // One account per email, so one inbox cannot verify a pile of accounts.
     requireValue(!await User.exists({ email: fields.email }), 409, 'This email already has an account.');
@@ -92,6 +95,9 @@ function createAuth(models, clock, { sendEmail } = {}) {
     requireValue(phone && typeof body.password === 'string' && Buffer.byteLength(body.password) <= 72, 401, 'Invalid phone number or password.');
     const user = await User.findOne({ phone: { $in: [phone, `0${phone.slice(3)}`, phone.slice(1), phone.slice(3)] } });
     requireValue(user && await bcrypt.compare(body.password, user.password), 401, 'Invalid phone number or password.');
+    // Only after the password, so the message tells nothing to someone guessing.
+    const suspension = suspensionOf(user, clock());
+    requireValue(!suspension, 403, suspensionMessage(suspension));
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date(clock() + 7 * 24 * 60 * 60 * 1000);
     await Session.create({ userId: user._id, tokenHash: hashToken(token), expiresAt });
@@ -136,6 +142,9 @@ function createAuth(models, clock, { sendEmail } = {}) {
     requireValue(session, 401, 'Your session has expired. Please log in again.');
     const user = await User.findById(session.userId);
     requireValue(user, 401, 'Please log in again.');
+    // A suspension also ends every session; this covers any that slip through.
+    const suspension = suspensionOf(user, clock());
+    requireValue(!suspension, 401, suspensionMessage(suspension));
     return { user, session };
   }
   async function middleware(req, res, next) {

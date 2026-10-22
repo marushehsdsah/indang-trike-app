@@ -20,6 +20,9 @@ function createModels(connection) {
     // How many times offensive words were censored from what this user sent
     // (utils/profanity.js); shown to admins.
     languageWarnings: { type: Number, default: 0 },
+    // Upheld driver reports against this passenger (utils/reports.js), and the
+    // penalty they brought: barred until suspendedUntil, or disabled for good.
+    offenses: { type: Number, default: 0 }, suspendedUntil: Date, disabled: { type: Boolean, default: false },
   }, { timestamps: true, bufferCommands: false });
   const sessionSchema = new Schema({
     tokenHash: { type: String, unique: true, required: true },
@@ -81,14 +84,32 @@ function createModels(connection) {
   messageSchema.index({ senderId: 1, clientId: 1 }, { unique: true });
   messageSchema.index({ rideId: 1, sentAt: 1 });
   messageSchema.index({ senderId: 1, sentAt: -1 });
+  // A driver's report about the passenger of one of their trips, once per
+  // trip. An admin upholds it (action: the penalty given) or dismisses it.
+  const reportSchema = new Schema({
+    rideId: { type: String, required: true }, reporterId: { type: String, required: true }, passengerId: { type: String, required: true, index: true },
+    reason: { type: String, required: true }, details: { type: String, default: '' },
+    status: { type: String, enum: ['pending', 'upheld', 'dismissed'], default: 'pending' },
+    reviewedBy: String, reviewedAt: Date, penalty: Schema.Types.Mixed,
+  }, { timestamps: true, bufferCommands: false });
+  reportSchema.index({ rideId: 1, reporterId: 1 }, { unique: true });
+  reportSchema.index({ status: 1, createdAt: -1 });
+  // A mobile number and email that may not sign up again, from an account
+  // disabled on its third offense. phone is stored normalized (+63…).
+  const blockedSchema = new Schema({
+    phone: { type: String, required: true, unique: true }, email: { type: String, index: true },
+    userId: { type: String, required: true }, reason: String,
+  }, { timestamps: true, bufferCommands: false });
   const User = connection.model('User', userSchema);
+  const Report = connection.model('Report', reportSchema);
+  const Blocked = connection.model('Blocked', blockedSchema);
   const Session = connection.model('Session', sessionSchema);
   const Ride = connection.model('Ride', rideSchema);
   const EmailCode = connection.model('EmailCode', emailCodeSchema);
   const ResetCode = connection.model('ResetCode', resetCodeSchema);
   const Rating = connection.model('Rating', ratingSchema);
   const Message = connection.model('Message', messageSchema);
-  return { User, Session, Ride, Rating, Message, EmailCode, ResetCode };
+  return { User, Session, Ride, Rating, Message, EmailCode, ResetCode, Report, Blocked };
 }
 
 module.exports = { createModels };
