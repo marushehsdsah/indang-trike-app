@@ -30,20 +30,20 @@ import { ACTIVE_STATUSES, formatAge, getDriverAction, isFreshFix } from '../util
 import { tapFeedback } from '../utils/feedback';
 import { COLORS, ELEVATION, RADIUS, SPACE, TYPE } from '../theme';
 
-// A ring that grows out of the trike and fades, once every PULSE_MS. The map
-// draws it as a circle layer under the trike, stepped from here every
-// PULSE_FRAME_MS: the trike's ViewAnnotation is a still bitmap on Android, and
+// A ring that grows out of the passenger's dot and fades, once every PULSE_MS.
+// The map draws it as a circle layer under the dot, stepped from here every
+// PULSE_FRAME_MS: the dot's ViewAnnotation is a still bitmap on Android, and
 // adding a Marker (a live view) there makes the map stop hiding the other
 // markers' source views, which then show in its top-left corner.
 const PULSE_MS = 1600, PULSE_FRAME_MS = 40;
-const TRIKE_RADIUS = 21, PULSE_GROWTH = 25;
+const DOT_RADIUS = 9, PULSE_GROWTH = 25;
 // No easing between steps: the map's default transition would lag each one.
 const PULSE_PAINT = {
   'circle-color': COLORS.route,
   'circle-radius-transition': { duration: 0, delay: 0 },
   'circle-opacity-transition': { duration: 0, delay: 0 },
 };
-function DriverPulse({ coordinate }) {
+function PassengerPulse({ coordinate }) {
   const reduced = useReducedMotion();
   const [phase, setPhase] = useState(0);
   useEffect(() => {
@@ -58,9 +58,9 @@ function DriverPulse({ coordinate }) {
   // The searching screen's pulse curve, Easing.out(Easing.exp).
   const grown = 1 - 2 ** (-10 * phase);
   return (
-    <GeoJSONSource id="driver-pulse" data={shape}>
-      <Layer id="driver-pulse-ring" type="circle"
-        paint={{ ...PULSE_PAINT, 'circle-radius': TRIKE_RADIUS + PULSE_GROWTH * grown, 'circle-opacity': 0.45 * (1 - grown) }} />
+    <GeoJSONSource id="passenger-pulse" data={shape}>
+      <Layer id="passenger-pulse-ring" type="circle"
+        paint={{ ...PULSE_PAINT, 'circle-radius': DOT_RADIUS + PULSE_GROWTH * grown, 'circle-opacity': 0.45 * (1 - grown) }} />
     </GeoJSONSource>
   );
 }
@@ -77,7 +77,7 @@ export default function ActiveRideScreen({ navigation, route }) {
   const keyboardHeight = useKeyboardHeight();
   const mapRef = useRef(null);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
-  const driver = user.role === 'driver', home = driver ? 'Driver' : 'Passenger';
+  const driver = user.role === 'driver', home = driver ? 'Driver' : 'Home';
   // This phone's own fixes carry its clock; the other side's come through the
   // server stamped on the server's clock.
   const serverNow = now + serverOffset;
@@ -124,7 +124,7 @@ export default function ActiveRideScreen({ navigation, route }) {
   const perform = async (action) => {
     if (busy || !ride) return;
     setBusy(true);
-    try { await rideAction(ride.id, action, action === 'cancel' ? { reason: 'Cancelled before pickup' } : {}); }
+    try { await rideAction(ride.id, action, action === 'cancel' ? { reason: riding ? 'Cancelled by the test driver' : 'Cancelled before pickup' } : {}); }
     catch (failure) { Alert.alert(t('active.unableToUpdate'), failure.message); }
     finally { setBusy(false); }
   };
@@ -142,7 +142,8 @@ export default function ActiveRideScreen({ navigation, route }) {
   useEffect(() => { if (nearStop) setReachedStage(stageKey); }, [nearStop, stageKey]);
   const atStop = !target || nearStop || reachedStage === stageKey;
   const terminal = !ride || !ACTIVE_STATUSES.includes(ride.status);
-  const cancellable = !terminal && ['accepted', 'arrived', 'searching'].includes(ride.status);
+  // The TODA tester can cancel mid-trip too, to run test rides back to back.
+  const cancellable = !terminal && (['accepted', 'arrived', 'searching'].includes(ride.status) || (driver && user.tester && riding));
 
   // The pill says whether the position the user is watching is live: the
   // driver's own GPS, or for a passenger, the driver's.
@@ -183,8 +184,8 @@ export default function ActiveRideScreen({ navigation, route }) {
     <RouteMap ref={mapRef} pickup={toPickup || leg?.live ? null : ride?.trip.pickup} destination={toPickup ? ride?.trip.pickup : ride?.trip.dropoff}
       route={terminal ? null : leg?.route} fitKey={ride ? `${ride.id}:${ride.status}:${leg?.route ? 'route' : 'none'}` : undefined}
       bottomInset={bottomHeight}>
-      {/* The passenger sees the trike pulse while it is on its way on live GPS. */}
-      {position && !driver && fresh && ride.status === 'accepted' && <DriverPulse coordinate={position} />}
+      {/* The passenger's own dot pulses on live GPS while the trike is on its way. */}
+      {passengerPosition && !driver && passengerFresh && ride.status === 'accepted' && <PassengerPulse coordinate={passengerPosition} />}
       {/* A fixed-size frame: MapLibre draws markers into bitmaps and crashes on a zero-width one.
           The bitmap is drawn once, so the key redraws it when the fix turns live or stale. */}
       {position && !terminal && <ViewAnnotation key={fresh ? 'live' : 'stale'} lngLat={[position.longitude, position.latitude]}

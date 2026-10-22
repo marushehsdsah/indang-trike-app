@@ -4,6 +4,7 @@ import RouteMap from '../components/RouteMap';
 import StatusPill from '../components/StatusPill';
 import { TripFacts } from '../components/RideDetails';
 import LiveLocationMarker from '../components/LiveLocationMarker';
+import MapSearchPulse from '../components/SearchPulse';
 import { FloatingCard, MapBottom, MapTop } from '../components/map/MapChrome';
 import { BleedScreen } from '../components/ui/Screen';
 import Button from '../components/ui/Button';
@@ -46,7 +47,7 @@ export default function SearchingScreen({ navigation }) {
   // Leaving this screen does not silently cancel a persisted booking.
   useEffect(() => {
     const handler = BackHandler.addEventListener('hardwareBackPress', () => {
-      navigation.navigate('Passenger'); return true;
+      navigation.navigate('Home'); return true;
     });
     return () => handler.remove();
   }, [navigation]);
@@ -58,7 +59,8 @@ export default function SearchingScreen({ navigation }) {
     finally { setBusy(false); }
   };
   const searching = ride?.status === 'searching';
-  const home = () => navigation.navigate('Passenger');
+  const liveFix = gps.status === 'ready' ? gps.fix : null;
+  const home = () => navigation.navigate('Home');
   const bookAgain = () => {
     const destination = ride?.trip.dropoff;
     dismissRide();
@@ -67,7 +69,9 @@ export default function SearchingScreen({ navigation }) {
 
   return <BleedScreen>
     <RouteMap pickup={ride?.trip.pickup} destination={ride?.trip.dropoff} route={ride?.route} bottomInset={bottomHeight}>
-      {gps.status === 'ready' && gps.fix && <LiveLocationMarker coordinate={gps.fix} title={t('map.yourLocation')} />}
+      {/* Pulses where the passenger is: live GPS, or the pickup without it. */}
+      {searching && <MapSearchPulse coordinate={liveFix ?? ride.trip.pickup.coordinate} />}
+      {liveFix && <LiveLocationMarker coordinate={liveFix} title={t('map.yourLocation')} />}
     </RouteMap>
     <MapTop>
       <View style={styles.topRow}>

@@ -91,6 +91,7 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   app.post('/api/passenger/location', async (req, res) => res.json(await dispatch.run(() => dispatch.passengerLocation(req.user, req.body))));
   app.post('/api/passenger/location/unavailable', async (req, res) => res.json(await dispatch.run(() => dispatch.passengerLocationUnavailable(req.user))));
   app.post('/api/driver/location/unavailable', async (req, res) => res.json(await dispatch.run(() => dispatch.locationUnavailable(req.user))));
+  app.get('/api/driver/bookings', async (req, res) => res.json(await dispatch.run(() => dispatch.bookings(req.user))));
   app.post('/api/driver/availability', async (req, res) => res.json(await dispatch.run(() => dispatch.availability(req.user, req.body.available))));
   app.post('/api/rides', async (req, res) => {
     const result = await dispatch.run(() => dispatch.book(req.user, req.body));
@@ -137,6 +138,7 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
     if (!presence.has(id)) presence.set(id, new Set());
     presence.get(id).add(socket.id);
     socket.join(`user:${id}`); socket.join(`session:${session._id}`);
+    if (user.role === 'driver') socket.join('drivers');
     // No client-controlled room subscription or unauthenticated trip-write event.
     const expiry = setTimeout(() => socket.disconnect(true), Math.max(0, +session.expiresAt - clock()));
     expiry.unref();

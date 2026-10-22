@@ -7,7 +7,6 @@ import LiveLocationMarker from '../components/LiveLocationMarker';
 import StatusPill from '../components/StatusPill';
 import ChatNotice from '../components/ChatNotice';
 import TripStops from '../components/TripStops';
-import BottomNav from '../components/BottomNav';
 import { FloatingCard, MapBottom, MapTop } from '../components/map/MapChrome';
 import { BleedScreen } from '../components/ui/Screen';
 import Button from '../components/ui/Button';
@@ -383,8 +382,9 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
               </View>
             </View>
           ) : (
-            <View onLayout={({ nativeEvent }) => setTopHeight(Math.round(nativeEvent.layout.y + nativeEvent.layout.height))}>
-              <StatusPill {...status} />
+            <View style={styles.homeTop} onLayout={({ nativeEvent }) => setTopHeight(Math.round(nativeEvent.layout.y + nativeEvent.layout.height))}>
+              <IconButton icon="arrow-left" label={t('common.home')} onPress={() => navigation.navigate('Home')} />
+              <StatusPill {...status} style={styles.homeStatus} />
             </View>
           )}
           {(stage === 'trip' || stage === 'pick') && status.tone !== 'live' && <StatusPill {...status} style={styles.tripStatus} />}
@@ -397,7 +397,6 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
 
         {stage !== 'search' && (
           <MapBottom
-            edge={false}
             onHeight={setBottomHeight}
             rail={stage === 'trip' ? <>
               <IconButton icon="navigation-variant" tone="route" label={t('trip.previewGuide')} onPress={handlePreviewRoute} disabled={!routeState.canConfirm} />
@@ -565,7 +564,6 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
           />
         )}
       </View>
-      {stage !== 'search' && <BottomNav active="home" navigation={navigation} />}
     </BleedScreen>
   );
 }
@@ -573,6 +571,8 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
 const styles = StyleSheet.create({
   mapArea: { flex: 1 },
   chatNotice: { marginTop: SPACE.sm },
+  homeTop: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACE.sm },
+  homeStatus: { flexShrink: 1 },
   pressed: { opacity: 0.7 },
   muted: { color: COLORS.inkMuted },
   danger: { color: COLORS.danger },

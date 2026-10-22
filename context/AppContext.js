@@ -28,6 +28,9 @@ export function AppProvider({ children }) {
   const [online, setOnline] = useState(true);
   // chatNotice is the last message that came in while its chat was closed.
   const [chat, setChat] = useState(NO_CHAT), [chatNotice, setChatNotice] = useState(null);
+  // Counts the server's "bookings changed" signals, so a driver's list of
+  // available bookings knows to reload.
+  const [bookingsVersion, setBookingsVersion] = useState(0);
   const tokenRef = useRef(null), socketRef = useRef(null), refreshSequence = useRef(0), current = useRef(null);
   const sessionGeneration = useRef(0), configRef = useRef(null), expiresAtRef = useRef(null), persistedRef = useRef(null);
   // The ride whose chat is on screen; messages arriving there are read at once.
@@ -209,6 +212,7 @@ export function AppProvider({ children }) {
     socket.on('disconnect', (reason) => { setConnected(false); if (reason === 'io server disconnect') refresh(); });
     socket.on('connect_error', () => { setConnected(false); refresh(); });
     socket.on('state:changed', refresh);
+    socket.on('bookings:changed', () => setBookingsVersion((value) => value + 1));
     socket.on('driver:location', ({ rideId, location, connected: driverConnected }) => {
       setRide((previous) => previous?.id === rideId && ACTIVE_STATUSES.includes(previous.status) && (previous.driverLocation?.timestamp ?? 0) <= location.timestamp
         ? { ...previous, driverLocation: location, driverConnected, driverLocationAvailable: true } : previous);
@@ -307,7 +311,7 @@ export function AppProvider({ children }) {
   const dismissRide = useCallback(() => setRide((previous) => previous && ACTIVE_STATUSES.includes(previous.status) ? previous : null), []);
 
   return <Context.Provider value={{ user, ride, offer, token, loading, error, connected, online, syncing, config, gps, foreground, serverOffset,
-    chat, chatNotice, loadChat, viewChat, sendChat, retryChat, dismissChatNotice,
+    chat, chatNotice, bookingsVersion, loadChat, viewChat, sendChat, retryChat, dismissChatNotice,
     request, refresh, restore, signIn, signOut, setAvailable, bookRide, rideAction, rateRide, dismissRide, clearError: () => setError(null) }}>{children}</Context.Provider>;
 }
 export const useApp = () => useContext(Context);

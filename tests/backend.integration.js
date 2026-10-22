@@ -413,6 +413,40 @@ test('real passenger/driver flow persists exclusive assignment, authorized actio
   await request('/driver/availability', driver.token, { available: false });
 });
 
+test('drivers see every open booking and can take one that is offered to someone else', async () => {
+  const passenger = await account(), d1 = await account('driver'), d2 = await account('driver');
+  await online(d1, 14.1979); await online(d2, 14.2000);
+  const { body: { ride } } = await book(passenger);
+  const offer = (await state(d1)).offer;
+  assert.equal(offer.id, ride.id, 'the nearest driver still gets the offer');
+  const [own, other] = await Promise.all([request('/driver/bookings', d1.token), request('/driver/bookings', d2.token)]);
+  assert.equal(own.body.bookings[0].offerId, offer.offerId, 'the list marks the booking offered to this driver');
+  const listed = other.body.bookings.find((entry) => entry.id === ride.id);
+  assert.ok(listed, 'other drivers in the area see it too');
+  assert.equal(listed.offerId, undefined);
+  assert.equal(listed.passenger.phone, undefined, 'contacts are private until acceptance');
+  assert.ok(listed.distanceMeters >= 0);
+  assert.equal((await request('/driver/bookings', passenger.token)).status, 403);
+  const taken = await action(d2, ride.id, 'claim');
+  assert.equal(taken.status, 200, JSON.stringify(taken.body));
+  assert.equal(taken.body.ride.status, 'accepted');
+  assert.equal(taken.body.ride.driver.id, d2.user.id);
+  assert.equal((await action(d1, ride.id, 'accept', { offerId: offer.offerId })).status, 409, 'the offer is gone');
+  assert.equal((await action(d1, ride.id, 'claim')).status, 409);
+  assert.equal((await state(d1)).offer, null);
+  assert.ok(!(await request('/driver/bookings', d1.token)).body.bookings.some((entry) => entry.id === ride.id));
+  assert.equal((await action(d2, ride.id, 'arrive')).status, 200);
+  assert.equal((await action(d2, ride.id, 'start')).status, 200);
+  assert.equal((await action(d2, ride.id, 'cancel')).status, 409, 'only the TODA tester cancels a trip under way');
+  await backend.models.User.updateOne({ _id: d2.user.id }, { $set: { todaTester: true } });
+  const cancelled = await action(d2, ride.id, 'cancel', { reason: 'Test ride' });
+  assert.equal(cancelled.body.ride.status, 'cancelled', JSON.stringify(cancelled.body));
+  assert.equal((await state(d2)).lastRide.status, 'cancelled');
+  await backend.models.User.updateOne({ _id: d2.user.id }, { $set: { todaTester: false } });
+  await request('/driver/availability', d1.token, { available: false });
+  await request('/driver/availability', d2.token, { available: false });
+});
+
 test('retrying a booking is idempotent and cannot create a second active request', async () => {
   const passenger = await account();
   const key = randomUUID();

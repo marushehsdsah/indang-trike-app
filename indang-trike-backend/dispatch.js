@@ -4,6 +4,7 @@ const { getMunicipalityAt } = require('../data/indangMap');
 const { findToda, todaCovers, todaName } = require('../data/todaZones');
 const { HttpError, requireValue, publicUser, bookingFields, cleanText } = require('./policy');
 const { ratingSummary, validateRating } = require('../utils/rating');
+const { haversineDistance } = require('../utils/pathfinding');
 
 function createDispatch({ models, io, clock, presence, options = {} }) {
   const { User, Ride, Rating } = models;
@@ -58,6 +59,56 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     const last = await Ride.findOne({ active: false, ...(driver ? { driverId: id } : { passengerId: id }) }).sort({ updatedAt: -1 });
     return { user: publicUser(user), ride: offer ? null : await view(active, id), offer: await view(offer, id, true), lastRide: await view(last, id), serverTime: clock() };
   }
+  // Whether a driver may pick up a ride at all. Drivers share GPS from
+  // anywhere, but only those in the pickup's town get it: the towns' roads do
+  // not connect. An Indang TODA's drivers pick up only inside its barangays;
+  // the drop-off may be anywhere in town.
+  function inScope(user, ride) {
+    const town = getMunicipalityAt(ride.trip.pickup.coordinate), toda = findToda(user.toda);
+    return Boolean(publicUser(user).profileComplete && user.locationAvailable && user.location && town &&
+      getMunicipalityAt(user.location) === town && (!toda || todaCovers(toda, ride.trip.pickup.coordinate)));
+  }
+  // Every booking still looking for a driver that this driver could take,
+  // nearest pickup first, whoever it is being offered to right now.
+  async function bookings(user) {
+    requireValue(user.role === 'driver', 403, 'Driver account required.');
+    const current = await User.findById(user._id), id = String(user._id);
+    const searches = await Ride.find({ status: 'searching', active: true, searchExpiresAt: { $gt: new Date(clock()) } });
+    const open = searches.filter((ride) => inScope(current, ride) && (current.capacity ?? 4) >= ride.passengers);
+    const listed = await Promise.all(open.map(async (ride) => ({
+      ...await view(ride, id, true),
+      distanceMeters: Math.round(haversineDistance(current.location, ride.trip.pickup.coordinate)),
+    })));
+    return { bookings: listed.sort((a, b) => a.distanceMeters - b.distanceMeters || String(a.id).localeCompare(String(b.id))), serverTime: clock() };
+  }
+  // A driver takes a booking from the list. It is theirs if it is still
+  // searching, even while it is offered to someone else; an offer this driver
+  // holds for another booking is given back first.
+  async function claim(user, ride) {
+    const userId = String(user._id);
+    requireValue(user.role === 'driver', 403, 'Driver account required.');
+    if (ride.driverId === userId && ride.status === 'accepted') return { ride: await view(ride, userId) };
+    requireValue(ride.active && ride.status === 'searching' && +ride.searchExpiresAt > clock(), 409, 'This booking is no longer available.');
+    const current = await User.findById(user._id);
+    requireValue(current.available && current.locationAvailable && connected(userId) && isFreshFix(current.location, clock()), 409, 'Reconnect with a fresh GPS location before accepting.');
+    requireValue(inScope(current, ride), 409, 'This pickup is outside your area.');
+    requireValue((current.capacity ?? 4) >= ride.passengers, 409, 'Your trike has too few seats for this booking.');
+    requireValue(!await Ride.exists({ driverId: userId, active: true }), 409, 'Finish your active trip first.');
+    const held = await Ride.findOne({ active: true, status: 'searching', driverSlot: userId, _id: { $ne: ride._id } });
+    if (held) await release(held);
+    let updated;
+    try {
+      updated = await Ride.findOneAndUpdate({ _id: ride._id, version: ride.version, status: 'searching' }, {
+        $set: { status: 'accepted', acceptedAt: new Date(clock()), driverId: userId, driverSlot: userId },
+        $unset: { offerId: 1, offerExpiresAt: 1 }, $addToSet: { attemptedDrivers: userId }, $inc: { version: 1 },
+      }, { returnDocument: 'after' });
+    } catch (error) { if (error.code === 11000) throw new HttpError(409, 'Finish or decline your current request first.'); throw error; }
+    requireValue(updated, 409, 'Another driver just took this booking.');
+    notifyRide(ride); notifyRide(updated); bookingsChanged(); await tickUnsafe();
+    return { ride: await view(updated, userId) };
+  }
+  // Drivers' booking lists reload when a booking appears or stops searching.
+  function bookingsChanged() { io.to('drivers').emit('bookings:changed'); }
   async function release(ride) {
     const updated = await Ride.findOneAndUpdate({ _id: ride._id, status: 'searching', version: ride.version }, {
       $unset: { driverSlot: 1, offerId: 1, offerExpiresAt: 1 }, $inc: { version: 1 },
@@ -72,7 +123,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
         const expired = await Ride.findOneAndUpdate({ _id: ride._id, version: ride.version, status: 'searching' }, {
           $set: { status: 'no_driver', active: false }, $unset: { driverSlot: 1, offerId: 1, offerExpiresAt: 1 }, $inc: { version: 1 },
         }, { returnDocument: 'after' });
-        if (expired) notifyRide(ride);
+        if (expired) { notifyRide(ride); bookingsChanged(); }
         continue;
       }
       if (ride.driverSlot) {
@@ -83,17 +134,8 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
       }
       const [users, occupied] = await Promise.all([User.find({ role: 'driver', available: true }), Ride.find({ active: true, driverSlot: { $exists: true } }).select('driverSlot')]);
       const slots = new Set(occupied.map((entry) => entry.driverSlot));
-      // Drivers share GPS from anywhere, but only those in the pickup's town get
-      // its offers, within that town's radius: the towns' roads do not connect.
       const town = getMunicipalityAt(ride.trip.pickup.coordinate);
-      // An Indang TODA's drivers pick up only inside its barangays; the
-      // drop-off may be anywhere in town.
-      const inTodaScope = (user) => {
-        const toda = findToda(user.toda);
-        return !toda || todaCovers(toda, ride.trip.pickup.coordinate);
-      };
-      const candidates = rankDrivers(users.filter((user) => publicUser(user).profileComplete && user.locationAvailable &&
-        user.location && town && getMunicipalityAt(user.location) === town && !ride.attemptedDrivers.includes(String(user._id)) && inTodaScope(user))
+      const candidates = rankDrivers(users.filter((user) => inScope(user, ride) && !ride.attemptedDrivers.includes(String(user._id)))
         .map((user) => ({ id: String(user._id), available: user.available, capacity: user.capacity, location: user.location, connected: connected(user._id), busy: slots.has(String(user._id)) })),
       ride.trip.pickup.coordinate, ride.passengers, clock(), options.radius ?? town?.matchRadiusMeters ?? 0);
       for (const candidate of candidates) {
@@ -118,7 +160,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     let ride;
     try { ride = await Ride.create({ ...bookingFields(body, clock()), passengerId: String(user._id), searchExpiresAt: new Date(clock() + searchMs) }); }
     catch (error) { if (error.code === 11000) throw new HttpError(409, 'You already have an active booking.'); throw error; }
-    await tickUnsafe(); notify(user._id);
+    await tickUnsafe(); notify(user._id); bookingsChanged();
     return { ride: await view(await Ride.findById(ride._id), user._id), reused: false };
   }
   async function action(user, id, actionName, body = {}) {
@@ -126,6 +168,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     await tickUnsafe();
     const ride = await Ride.findById(id), userId = String(user._id);
     requireValue(ride, 404, 'Ride not found.');
+    if (actionName === 'claim') return claim(user, ride);
     if (['accept', 'decline'].includes(actionName)) {
       requireValue(user.role === 'driver', 403, 'Only the offered driver can respond.');
       if (actionName === 'accept' && ride.driverId === userId && ride.status === 'accepted') return { ride: await view(ride, userId) };
@@ -140,7 +183,10 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     const completedAction = { arrive: 'arrived', start: 'in_progress', complete: 'completed', cancel: 'cancelled', accept: 'accepted' }[actionName];
     if (ride.status === completedAction) return { ride: await view(ride, userId) };
     let status;
-    try { status = nextRideStatus(ride.status, actionName, user.role || 'passenger'); } catch (error) { throw new HttpError(409, error.message); }
+    // The TODA tester can also cancel a trip already under way, to free
+    // themselves for the next test ride.
+    if (actionName === 'cancel' && ride.status === 'in_progress' && user.todaTester && ride.driverId === userId) status = 'cancelled';
+    else try { status = nextRideStatus(ride.status, actionName, user.role || 'passenger'); } catch (error) { throw new HttpError(409, error.message); }
     const set = { status }, unset = {};
     set[{ accept: 'acceptedAt', arrive: 'arrivedAt', start: 'startedAt', complete: 'completedAt', cancel: 'cancelledAt' }[actionName]] = new Date(clock());
     if (actionName === 'accept') { set.driverId = userId; unset.offerId = 1; unset.offerExpiresAt = 1; }
@@ -150,7 +196,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
       $set: set, $inc: { version: 1 }, ...(Object.keys(unset).length ? { $unset: unset } : {}),
     }, { returnDocument: 'after' });
     requireValue(updated, 409, 'The trip changed. Refresh and try again.');
-    notifyRide(ride); notifyRide(updated); await tickUnsafe();
+    notifyRide(ride); notifyRide(updated); if (ride.status === 'searching') bookingsChanged(); await tickUnsafe();
     return { ride: await view(updated, userId) };
   }
   // A participant rates the other one, once, after the ride is completed.
@@ -230,7 +276,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     if (ride) notifyRide(ride);
     await tickUnsafe(); notify(user._id); return { ok: true };
   }
-  return { run, view, snapshot, book, action, rate, location, passengerLocation, passengerLocationUnavailable, locationUnavailable, availability, disconnect, notify, tick: () => run(tickUnsafe), connected };
+  return { run, view, snapshot, bookings, book, action, rate, location, passengerLocation, passengerLocationUnavailable, locationUnavailable, availability, disconnect, notify, tick: () => run(tickUnsafe), connected };
 }
 
 module.exports = { createDispatch };

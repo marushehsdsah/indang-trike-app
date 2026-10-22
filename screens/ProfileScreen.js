@@ -37,7 +37,7 @@ export default function ProfileScreen({ navigation }) {
     try {
       await request('/me', { ...form, capacity: Number(form.capacity) }, 'PATCH');
       await refresh(); setEditing(false);
-      if (!user.profileComplete) navigation.navigate(driver ? 'Driver' : 'Passenger');
+      if (!user.profileComplete) navigation.navigate(driver ? 'Driver' : 'Home');
     } catch (failure) { Alert.alert(t('profile.unableToSave'), failure.message); }
     finally { setBusy(false); }
   };
