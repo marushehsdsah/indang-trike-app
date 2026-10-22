@@ -2,7 +2,7 @@ const { randomUUID } = require('node:crypto');
 const { ASSIGNED_STATUSES, GPS_MAX_AGE_MS, isFreshFix, rankDrivers, validateFix, nextRideStatus } = require('../utils/rideState');
 const { getMunicipalityAt } = require('../data/indangMap');
 const { findToda, todaCovers, todaName } = require('../data/todaZones');
-const { HttpError, requireValue, publicUser, bookingFields, cleanText } = require('./policy');
+const { HttpError, requireValue, publicUser, bookingFields, cleanText, awaitingApproval, AWAITING_APPROVAL } = require('./policy');
 const { ratingSummary, validateRating } = require('../utils/rating');
 const { REPORTABLE_STATUSES, validateReport } = require('../utils/reports');
 const { haversineDistance } = require('../utils/pathfinding');
@@ -69,10 +69,11 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
   // Whether a driver may pick up a ride at all. Drivers share GPS from
   // anywhere, but only those in the pickup's town get it: the towns' roads do
   // not connect. An Indang TODA's drivers pick up only inside its barangays;
-  // the drop-off may be anywhere in town.
+  // the drop-off may be anywhere in town. A driver still waiting for an
+  // admin's approval, or one an admin terminated, gets nothing.
   function inScope(user, ride) {
     const town = getMunicipalityAt(ride.trip.pickup.coordinate), toda = findToda(user.toda);
-    return Boolean(publicUser(user).profileComplete && user.locationAvailable && user.location && town &&
+    return Boolean(!awaitingApproval(user) && !user.disabled && publicUser(user).profileComplete && user.locationAvailable && user.location && town &&
       getMunicipalityAt(user.location) === town && (!toda || todaCovers(toda, ride.trip.pickup.coordinate)));
   }
   // Every booking still looking for a driver that this driver could take,
@@ -97,6 +98,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     if (ride.driverId === userId && ride.status === 'accepted') return { ride: await view(ride, userId) };
     requireValue(ride.active && ride.status === 'searching' && +ride.searchExpiresAt > clock(), 409, 'This booking is no longer available.');
     const current = await User.findById(user._id);
+    requireValue(!awaitingApproval(current), 403, AWAITING_APPROVAL);
     requireValue(current.available && current.locationAvailable && connected(userId) && isFreshFix(current.location, clock()), 409, 'Reconnect with a fresh GPS location before accepting.');
     requireValue(inScope(current, ride), 409, 'This pickup is outside your area.');
     requireValue((current.capacity ?? 4) >= ride.passengers, 409, 'Your trike has too few seats for this booking.');
@@ -181,6 +183,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
       if (actionName === 'accept' && ride.driverId === userId && ride.status === 'accepted') return { ride: await view(ride, userId) };
       requireValue(ride.status === 'searching' && ride.driverSlot === userId && ride.offerId === body.offerId && +ride.offerExpiresAt > clock(), 409, 'This offer is no longer available.');
       const currentUser = await User.findById(user._id);
+      if (actionName === 'accept') requireValue(!awaitingApproval(currentUser), 403, AWAITING_APPROVAL);
       requireValue(currentUser.available && currentUser.locationAvailable && connected(userId) && isFreshFix(currentUser.location, clock()), 409, 'Reconnect with a fresh GPS location before accepting.');
       if (actionName === 'decline') { await release(ride); await tickUnsafe(); return { ride: null, state: await snapshot(userId) }; }
     } else {
@@ -228,18 +231,25 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     notify(userId);
     return { ride: await view(ride, userId) };
   }
-  // A passenger suspended by an admin: their active booking or trip is
-  // cancelled, and their app is cut off at once.
-  async function suspended(userId) {
-    const ride = await Ride.findOne({ active: true, passengerId: String(userId) });
+  // An account an admin cut off: a suspended passenger, or a driver who was
+  // terminated or deleted. A request offered to the driver goes to the next
+  // one; their active booking or trip is cancelled with `reason`; their app is
+  // cut off at once.
+  async function suspended(userId, reason = 'Passenger account suspended') {
+    const id = String(userId);
+    await User.updateOne({ _id: id, role: 'driver' }, { $set: { available: false, locationAvailable: false } });
+    const offered = await Ride.findOne({ active: true, status: 'searching', driverSlot: id });
+    if (offered) await release(offered);
+    const ride = await Ride.findOne({ active: true, $or: [{ passengerId: id }, { driverId: id }] });
     if (ride) {
       const ended = await Ride.findOneAndUpdate({ _id: ride._id, version: ride.version }, {
-        $set: { status: 'cancelled', active: false, cancelledAt: new Date(clock()), cancelledBy: 'admin', cancellationReason: 'Passenger account suspended' },
+        $set: { status: 'cancelled', active: false, cancelledAt: new Date(clock()), cancelledBy: 'admin', cancellationReason: reason },
         $unset: { driverSlot: 1, offerId: 1, offerExpiresAt: 1 }, $inc: { version: 1 },
       }, { returnDocument: 'after' });
       if (ended) { notifyRide(ride); if (ride.status === 'searching') bookingsChanged(); }
     }
-    io.in(`user:${userId}`).disconnectSockets(true);
+    io.in(`user:${id}`).disconnectSockets(true);
+    await tickUnsafe();
   }
   // The driver reports the passenger of a trip they were assigned to, once,
   // after it was completed or cancelled. Admins review it in God view.
@@ -290,6 +300,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     requireValue(typeof available === 'boolean', 400, 'Choose online or offline.');
     if (available) {
       const current = await User.findById(user._id);
+      requireValue(!awaitingApproval(current), 403, AWAITING_APPROVAL);
       requireValue(publicUser(current).profileComplete && current.locationAvailable && connected(user._id) && isFreshFix(current.location, clock()), 409, 'Complete your profile and connect with a fresh GPS location.');
       requireValue(!await Ride.exists({ driverId: String(user._id), active: true }), 409, 'Finish your active trip first.');
     }

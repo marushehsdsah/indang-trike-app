@@ -30,6 +30,9 @@ function profileFields(body, role, current) {
   }
   return fields;
 }
+// A driver who signed up gets no bookings until an admin approves them.
+const awaitingApproval = (user) => user?.role === 'driver' && user.approval === 'pending';
+const AWAITING_APPROVAL = 'Your driver account is waiting for admin approval.';
 // A TODA saved under a former name ("ITODA PITODA") is shown by its current one.
 function publicUser(user) {
   if (!user) return null;
@@ -38,6 +41,7 @@ function publicUser(user) {
     email: user.email || '', role: user.role || 'passenger', plate: user.plate, toda: todaName(user.toda), capacity: user.capacity,
     available: Boolean(user.available), createdAt: user.createdAt, rating: ratingSummary(user),
     profileComplete: Boolean(user.firstName && user.lastName && user.email && (user.role !== 'driver' || (user.plate && user.toda && user.capacity))),
+    ...(awaitingApproval(user) ? { pendingApproval: true } : {}),
     // Only the TODA tester may pick another TODA in the profile, and cancel a
     // trip at any stage.
     ...(user.role === 'driver' && user.todaTester ? { todaChoices: TODA_NAMES, tester: true } : {}),
@@ -78,4 +82,4 @@ function bookingFields(body, now = Date.now()) {
     idempotencyKey: body.idempotencyKey };
 }
 
-module.exports = { HttpError, requireValue, cleanText, profileFields, publicUser, bookingFields, normalizePhilippinePhone };
+module.exports = { HttpError, requireValue, cleanText, profileFields, publicUser, bookingFields, normalizePhilippinePhone, awaitingApproval, AWAITING_APPROVAL };

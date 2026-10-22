@@ -16,7 +16,7 @@
 body{
   margin:0
 }
-button,input{
+button,input,select{
   font:inherit
 }
 button,a,input{
@@ -29,7 +29,7 @@ button:disabled{
   cursor:default;
   opacity:.55
 }
-button:focus-visible,a:focus-visible,input:focus-visible{
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{
   outline:3px solid #69b899;
   outline-offset:3px
 }
@@ -857,6 +857,9 @@ input::placeholder{
   margin:0;
   flex:0 1 250px
 }
+.accounts-toolbar #account-types{
+  flex-basis:380px
+}
 .accounts-toolbar .count-pill{
   margin-left:auto
 }
@@ -995,10 +998,15 @@ input::placeholder{
 .back-link:hover{
   text-decoration:underline
 }
+/* The avatar lines up with the name, not with the whole block, which a
+   driver's approval buttons make taller. */
 .history-profile{
   display:flex;
-  align-items:center;
+  align-items:flex-start;
   gap:16px
+}
+.history-profile .avatar.large{
+  margin-top:13px
 }
 .avatar.large{
   width:54px;
@@ -1026,6 +1034,28 @@ input::placeholder{
 }
 .accounts-toolbar #history-statuses{
   flex-basis:330px
+}
+/* The trip history's period, above its totals on the right. */
+.period-bar{
+  display:flex;
+  justify-content:flex-end;
+  margin:0 34px 14px
+}
+#history-period{
+  appearance:none;
+  min-width:150px;
+  padding:9px 34px 9px 13px;
+  border:1px solid #dce4df;
+  border-radius:8px;
+  background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23246646' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 13px center/10px 6px;
+  color:var(--ink);
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
+  transition:border-color .15s
+}
+#history-period:hover{
+  border-color:#b9cbbf
 }
 .trip-id{
   font-size:11px;
@@ -1084,6 +1114,12 @@ input::placeholder{
   .metrics{
     margin:0 20px 18px;
     gap:9px
+  }
+  .period-bar{
+    margin:0 20px 14px
+  }
+  .history-profile .avatar.large{
+    margin-top:10px
   }
   .metric{
     padding:14px
@@ -1386,6 +1422,9 @@ input::placeholder{
   .accounts-toolbar #history-statuses{
     flex:1 1 auto
   }
+  .period-bar{
+    margin:0 16px 12px
+  }
 }
 @media(prefers-reduced-motion:reduce){
   *{
@@ -1525,6 +1564,32 @@ input::placeholder{
 .status-pill.pending{
   background:#fbf3e2;
   color:#a17836
+}
+/* A driver's approval (Accounts and an account's page). */
+.status-pill.terminated{
+  background:#fcebe8;
+  color:#b4443a
+}
+.cell-type .status-pill{
+  margin-left:8px
+}
+.tab-badge.pending{
+  background:#d07a2c
+}
+.report-button.approve{
+  background:#1c825f;
+  color:white
+}
+.report-button.approve:hover:not(:disabled){
+  background:#156a4c
+}
+.profile-actions{
+  margin:10px 0 6px
+}
+.notice.success{
+  border-color:#bfe0cc;
+  background:#eef8f2;
+  color:#1c6b4c
 }
 .status-pill.upheld{
   background:#fcebe8;

@@ -16,9 +16,10 @@ const sockets = [];
 // Atlas allows database names of at most 38 bytes.
 const dbName = `indang_test_${randomUUID().replaceAll('-', '').slice(0, 24)}`;
 const adminPhone = '09179999999';
-// Stands in for Brevo: the last code emailed to each address.
-const emailedCodes = new Map();
-const sendEmail = async ({ to, code }) => { emailedCodes.set(to, code); };
+// Stands in for Brevo: the last code emailed to each address, and every
+// notice to a driver about an admin's decision.
+const emailedCodes = new Map(), notices = [];
+const sendEmail = async ({ to, code, ...notice }) => { if (code) emailedCodes.set(to, code); else notices.push({ to, ...notice }); };
 const fix = (latitude = 14.197805) => ({ latitude, longitude: 120.881639, accuracy: 5, timestamp: now, speed: 0, heading: 0 });
 
 before(async () => {
@@ -50,17 +51,20 @@ async function signup(body) {
   if (sent.status !== 200) return sent;
   return request('/register', null, { ...body, code: emailedCodes.get(body.email) });
 }
-async function account(role = 'passenger', phoneOverride) {
+// A driver is approved as if an admin did it, unless `approved` is false.
+async function account(role = 'passenger', phoneOverride, { approved = true } = {}) {
   const phone = phoneOverride || `0917${sequence++}`;
   const result = await signup({
     phone, password: 'strong-password', firstName: 'Test', lastName: role, email: `${phone}@example.com`, role,
     ...(role === 'driver' ? { plate: `TEST-${sequence}`, toda: 'Test TODA', capacity: 4 } : {}),
   });
   assert.equal(result.status, 201, JSON.stringify(result.body));
+  if (role === 'driver' && approved) await approve(result.body.user.id);
   const login = await request('/login', null, { phone, password: 'strong-password' });
   assert.equal(login.status, 200);
   return login.body;
 }
+const approve = (id) => backend.models.User.updateOne({ _id: id }, { $set: { approval: 'approved' } });
 async function connect(token) {
   const socket = io(base, { auth: { token }, transports: ['websocket'], reconnection: false });
   sockets.push(socket);
@@ -179,7 +183,7 @@ test('the admin interface lists the accounts and trips in the database, for admi
   assert.deepEqual(accounts.find((item) => item.key === passenger.user.id),
     { key: passenger.user.id, id: passenger.user.phone.replace('+63', '0'), name: 'Test passenger', email: passenger.user.email, role: 'PASSENGER', status: 'Offline' });
   assert.deepEqual(accounts.find((item) => item.key === driver.user.id),
-    { key: driver.user.id, id: driver.user.phone.replace('+63', '0'), name: 'Test driver', email: driver.user.email, role: 'RIDER', status: 'Online', toda: 'Test TODA', plate: driver.user.plate });
+    { key: driver.user.id, id: driver.user.phone.replace('+63', '0'), name: 'Test driver', email: driver.user.email, role: 'RIDER', status: 'Online', toda: 'Test TODA', plate: driver.user.plate, approval: 'Approved' });
   assert.equal(accounts.some((item) => item.name === 'Pilot Admin'), false, 'admin accounts are not listed');
   assert.equal(accounts.length, await backend.models.User.countDocuments({ role: { $ne: 'admin' } }));
 
@@ -207,8 +211,109 @@ test('the admin interface lists the accounts and trips in the database, for admi
   for (const id of [adminAccount, '0123456789abcdef01234567', 'not-an-id']) assert.equal((await request(`/admin/accounts/${id}`, admin.token)).status, 404, id);
 
   const dashboard = (await request('/admin/dashboard', admin.token)).body;
-  assert.deepEqual(dashboard, { totalAccounts: accounts.length, onlineNow: 1, ongoingTrips: 1, recentTrips: trips.slice(0, 3) });
+  assert.deepEqual(dashboard, { totalAccounts: accounts.length, onlineNow: 1, ongoingTrips: 1, recentTrips: trips.slice(0, 3), pendingDrivers: await backend.models.User.countDocuments({ role: 'driver', approval: 'pending' }) });
+
+  // A trip history of the last 7 days leaves out the completed trip, booked 10 days ago.
+  const day = 24 * 3600000, booked = await backend.models.Ride.findById(completed.id).lean();
+  await backend.models.Ride.collection.updateOne({ _id: booked._id }, { $set: { createdAt: new Date(now - 10 * day) } });
+  const lastWeek = (await request(`/admin/accounts/${passenger.user.id}?days=7`, admin.token)).body;
+  assert.deepEqual(lastWeek.period, { days: 7, since: new Date(now - 7 * day).toISOString() });
+  assert.deepEqual(lastWeek.trips.map(({ key }) => key), [searching.id, cancelled.id]);
+  assert.deepEqual(lastWeek.summary, { trips: 2, completed: 0, cancelled: 1, noDriver: 0, ongoing: 1, fares: 0 }, 'the totals cover the period too');
+  const lastFortnight = (await request(`/admin/accounts/${passenger.user.id}?days=14`, admin.token)).body;
+  assert.deepEqual([lastFortnight.trips.length, lastFortnight.summary.completed], [3, 1]);
+  assert.equal((await request(`/admin/accounts/${passenger.user.id}`, admin.token)).body.period, null, 'every trip');
+  for (const days of ['0', '31', 'week']) assert.equal((await request(`/admin/accounts/${passenger.user.id}?days=${days}`, admin.token)).status, 400, days);
+  await backend.models.Ride.collection.updateOne({ _id: booked._id }, { $set: { createdAt: booked.createdAt } });
   await action(passenger, searching.id, 'cancel');
+  socket.disconnect();
+  await request('/logout', admin.token, {});
+});
+
+test('a driver who signs up gets no bookings until an admin approves them, and an admin can terminate, unblock or delete a driver', async () => {
+  const passenger = await account(), phone = `0917${sequence++}`, email = `${phone}@example.com`;
+  const form = { phone, password: 'strong-password', firstName: 'Nora', lastName: 'Driver', email, role: 'driver', plate: 'NEW-1', toda: 'Test TODA', capacity: 3 };
+  const registered = await signup(form);
+  assert.equal(registered.status, 201, JSON.stringify(registered.body));
+  assert.equal(registered.body.user.pendingApproval, true);
+  assert.match(registered.body.message, /An admin will check your details against your TODA's list/);
+  const id = registered.body.user.id;
+  let driver = (await request('/login', null, { phone, password: 'strong-password' })).body;
+  assert.equal(driver.user.pendingApproval, true, 'a pending driver can log in');
+  const socket = await connect(driver.token);
+  assert.equal((await request('/driver/location', driver.token, fix())).status, 200);
+
+  // The three checks: a pending driver cannot go online, is never offered a
+  // booking (even if marked available some other way), and cannot take one.
+  assert.deepEqual(await request('/driver/availability', driver.token, { available: true }), { status: 403, body: { error: 'Your driver account is waiting for admin approval.' } });
+  await backend.models.User.updateOne({ _id: id }, { $set: { available: true } });
+  const ride = (await book(passenger)).body.ride;
+  assert.equal((await backend.models.Ride.findById(ride.id)).driverSlot, undefined, 'not offered to the pending driver');
+  assert.deepEqual((await request('/driver/bookings', driver.token)).body.bookings, [], 'no bookings listed');
+  assert.deepEqual(await action(driver, ride.id, 'claim'), { status: 403, body: { error: 'Your driver account is waiting for admin approval.' } });
+  assert.equal((await action(passenger, ride.id, 'cancel')).status, 200);
+  await backend.models.User.updateOne({ _id: id }, { $set: { available: false } });
+
+  // Account Approval lists the pending driver, for admins only.
+  const admin = (await request('/login', null, { phone: adminPhone, password: 'strong-password' })).body;
+  for (const [path, body] of [['/admin/approvals'], [`/admin/drivers/${id}`], [`/admin/drivers/${id}/approve`, {}]]) assert.equal((await request(path, driver.token, body)).status, 403, path);
+  const listed = (await request('/admin/approvals', admin.token)).body.drivers.find((item) => item.key === id);
+  assert.deepEqual({ ...listed, joined: typeof listed.joined }, { key: id, id: phone, name: 'Nora Driver', email, role: 'RIDER', status: 'Online', toda: 'Test TODA', plate: 'NEW-1',
+    approval: 'Pending', capacity: 3, joined: 'string', approvedAt: null, terminatedAt: null, terminationReason: '' });
+  assert.equal((await request('/admin/dashboard', admin.token)).body.pendingDrivers, await backend.models.User.countDocuments({ role: 'driver', approval: 'pending' }));
+  assert.ok((await request('/admin/overview', admin.token)).body.pendingDrivers >= 1, 'the count on the Accounts tab of God view');
+  assert.equal((await request('/admin/accounts', admin.token)).body.accounts.find((item) => item.key === id).approval, 'Pending');
+
+  // Approving updates the driver's app at once and lets them go online.
+  const changed = new Promise((resolve) => socket.once('state:changed', resolve));
+  const approved = await request(`/admin/drivers/${id}/approve`, admin.token, {});
+  assert.equal(approved.status, 200, JSON.stringify(approved.body));
+  assert.deepEqual([approved.body.driver.approval, approved.body.emailed], ['Approved', true]);
+  assert.deepEqual(notices.at(-1), { to: email, purpose: 'driverApproved', name: 'Nora', reason: undefined });
+  await changed;
+  assert.equal((await state(driver)).user.pendingApproval, undefined);
+  assert.equal((await request(`/admin/drivers/${id}/approve`, admin.token, {})).status, 409, 'only once');
+  await online(driver);
+
+  // Terminating cancels the trip the driver is on, signs them out and blocks
+  // their number and email from signing up again.
+  const trip = (await book(passenger)).body.ride;
+  assert.equal((await action(driver, trip.id, 'accept', { offerId: (await state(driver)).offer.offerId })).status, 200);
+  const terminated = await request(`/admin/drivers/${id}/terminate`, admin.token, { reason: '  Plate not on the TODA list  ' });
+  assert.equal(terminated.status, 200, JSON.stringify(terminated.body));
+  assert.deepEqual([terminated.body.driver.approval, terminated.body.driver.terminationReason, terminated.body.emailed], ['Terminated', 'Plate not on the TODA list', true]);
+  assert.deepEqual(notices.at(-1), { to: email, purpose: 'driverTerminated', name: 'Nora', reason: 'Plate not on the TODA list' });
+  const ended = await backend.models.Ride.findById(trip.id);
+  assert.deepEqual([ended.status, ended.active, ended.cancelledBy, ended.cancellationReason], ['cancelled', false, 'admin', 'Driver account removed']);
+  assert.equal((await state(driver)).error, 'Your session has expired. Please log in again.');
+  assert.deepEqual(await request('/login', null, { phone, password: 'strong-password' }), { status: 403, body: { error: 'This driver account was terminated by an IndangGO admin.' } });
+  assert.equal((await signup({ ...form, phone: `0917${sequence++}` })).status, 403, 'the email is blocked');
+  assert.equal((await request('/register/code', null, { ...form, email: `other${phone}@example.com` })).status, 403, 'the number is blocked');
+  assert.equal((await request(`/admin/drivers/${id}/terminate`, admin.token, {})).status, 409);
+  assert.deepEqual(await request(`/admin/drivers/${id}/delete`, admin.token, {}), { status: 409, body: { error: 'Unblock this driver before deleting the account.' } });
+  assert.equal((await request('/admin/approvals', admin.token)).body.drivers.find((item) => item.key === id).approval, 'Terminated');
+
+  // Unblocking frees the number and email; the driver waits for approval again.
+  const unblocked = await request(`/admin/drivers/${id}/unblock`, admin.token, {});
+  assert.deepEqual([unblocked.status, unblocked.body.driver.approval, unblocked.body.driver.terminatedAt], [200, 'Pending', null]);
+  assert.equal(await backend.models.Blocked.countDocuments({ userId: id }), 0);
+  driver = (await request('/login', null, { phone, password: 'strong-password' })).body;
+  assert.equal(driver.user.pendingApproval, true);
+  assert.equal((await request(`/admin/drivers/${id}/unblock`, admin.token, {})).status, 409, 'not terminated now');
+
+  // Deleting removes the account; the same number and email can sign up again.
+  const deleted = await request(`/admin/drivers/${id}/delete`, admin.token, { reason: 'Wrong plate number' });
+  assert.deepEqual([deleted.status, deleted.body.emailed], [200, true]);
+  assert.deepEqual(notices.at(-1), { to: email, purpose: 'driverDeleted', name: 'Nora', reason: 'Wrong plate number' });
+  assert.equal(await backend.models.User.exists({ _id: id }), null);
+  assert.equal((await state(driver)).error, 'Your session has expired. Please log in again.');
+  assert.equal((await request(`/admin/drivers/${id}`, admin.token)).status, 404);
+  assert.equal((await request(`/admin/drivers/${id}/delete`, admin.token, {})).status, 404);
+  for (const other of [passenger.user.id, 'not-an-id']) assert.equal((await request(`/admin/drivers/${other}/approve`, admin.token, {})).status, 404, other);
+  const again = await signup(form);
+  assert.equal(again.status, 201, JSON.stringify(again.body));
+  assert.equal(again.body.user.pendingApproval, true);
+  await backend.models.User.deleteOne({ _id: again.body.user.id });
   socket.disconnect();
   await request('/logout', admin.token, {});
 });
@@ -327,6 +432,7 @@ test('an Indang TODA driver is offered only trips that pick up inside its TODA\'
     email: `${phone}@example.com`, role: 'driver', plate: 'PCH-1', toda: 'pchti toda', capacity: 4 });
   assert.equal(registered.status, 201, JSON.stringify(registered.body));
   assert.equal(registered.body.user.toda, 'PCHTI-TODA', 'stored under the official name');
+  await approve(registered.body.user.id);
   const pchti = (await request('/login', null, { phone, password: 'strong-password' })).body;
   const unzoned = await account('driver'); // "Test TODA": not an Indang TODA, so no barangay limit
   for (const [driver, spot] of [[pchti, pulo], [unzoned, harasan]]) {

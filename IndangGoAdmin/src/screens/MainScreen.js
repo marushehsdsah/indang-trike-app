@@ -9,13 +9,16 @@
 //
 // HOW TO EDIT:
 // - activeTab: which of 'dashboard' | 'accounts' | 'trips' shows.
+// - Dashboard in the hamburger menu (components/TopHeader.js) comes
+//   here with route params { tab: 'dashboard', at }, which switch
+//   to that tab; `at` changes with every choice from the menu.
 // - If you'd rather each tab have its own navigation history
 //   (e.g. drilling into a trip and pressing back), swap BottomNav
 //   here for @react-navigation/bottom-tabs' createBottomTabNavigator
 //   and nest it as a screen inside the Stack in App.js instead.
 // =============================================================
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 
 import DashboardScreen from './DashboardScreen';
@@ -24,9 +27,11 @@ import TripsScreen from './TripsScreen';
 import BottomNav from '../components/BottomNav';
 import colors from '../theme/colors';
 
-export default function MainScreen() {
+export default function MainScreen({ route }) {
   // 'dashboard' | 'accounts' | 'trips'
   const [activeTab, setActiveTab] = useState('dashboard');
+  const { tab, at } = route?.params ?? {};
+  useEffect(() => { if (tab) setActiveTab(tab); }, [tab, at]);
 
   const goToTripsTab = () => setActiveTab('trips');
 

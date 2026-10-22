@@ -4,7 +4,7 @@ const { calculateRoute } = require('../utils/roadGraph');
 const { SERVICE_AREA_NAME, INDANG_BOUNDS, isInIndangServiceArea } = require('../data/indangMap');
 const { getRoadGraph } = require('../data/roadNetwork');
 const { todaName } = require('../data/todaZones');
-const { requireValue } = require('./policy');
+const { HttpError, requireValue, cleanText } = require('./policy');
 const { ratingSummary } = require('../utils/rating');
 const { REPORT_REASON_LABELS, penaltyFor, suspensionOf } = require('../utils/reports');
 
@@ -92,6 +92,8 @@ function buildOverview(users, rides, connectedIds, now, findRoute = roadRoute, r
 // The admin interface's lists (IndangGoAdmin), shaped as its screens show them.
 // The newest come first, up to these many.
 const ACCOUNT_LIMIT = 500, TRIP_LIMIT = 300, HISTORY_LIMIT = 500;
+// A trip history can show only the trips booked in the last 1 to 30 days.
+const HISTORY_MAX_DAYS = 30, DAY_MS = 24 * 60 * 60 * 1000;
 const fullName = (user, fallback) => [user.firstName, user.lastName].filter(Boolean).join(' ') || fallback;
 // An account's ID on the admin screens: its mobile number as people type it (09…).
 function localPhone(phone) {
@@ -105,6 +107,14 @@ function accountStatus(user, connected) {
   return user.role === 'driver' && user.available ? 'Available' : 'Online';
 }
 
+// A driver's approval: Pending until an admin checks them against their
+// TODA's list of registered drivers, Terminated once an admin cut them off,
+// otherwise Approved (as are the drivers from before approval).
+function driverApproval(user) {
+  if (user.terminatedAt) return 'Terminated';
+  return user.approval === 'pending' ? 'Pending' : 'Approved';
+}
+
 // connectedIds: the ids of users with the app open. key is unique for lists.
 function buildAccounts(users, connectedIds) {
   return users.map((user) => {
@@ -112,9 +122,18 @@ function buildAccounts(users, connectedIds) {
     return {
       key: id, id: localPhone(user.phone), name: fullName(user, driver ? 'Driver' : 'Passenger'), email: user.email || '',
       role: driver ? 'RIDER' : 'PASSENGER', status: accountStatus(user, connectedIds.has(id)),
-      ...(driver ? { toda: todaName(user.toda) || '', plate: user.plate || '' } : {}),
+      ...(driver ? { toda: todaName(user.toda) || '', plate: user.plate || '', approval: driverApproval(user) } : {}),
     };
   });
+}
+
+// A driver as the approval screens show them: what they signed up with, and
+// the admin's decision so far.
+function buildDriver(user, connectedIds) {
+  return {
+    ...buildAccounts([user], connectedIds)[0], capacity: user.capacity ?? null, joined: user.createdAt,
+    approvedAt: user.approvedAt || null, terminatedAt: user.terminatedAt || null, terminationReason: user.terminationReason || '',
+  };
 }
 
 const REPORT_LIMIT = 300;
@@ -203,7 +222,21 @@ function historySummary(groups) {
   return summary;
 }
 
-function createAdmin({ models, presence, clock, adminPhones, onSuspended = async () => {} }) {
+// days (from the address): absent for every trip, or 1 to 30 for the trips
+// booked in that many days up to now.
+function historyPeriod(days, now) {
+  if (days === undefined || days === '') return null;
+  requireValue(/^\d{1,2}$/.test(days) && days >= 1 && days <= HISTORY_MAX_DAYS, 400, `Choose a period of 1 to ${HISTORY_MAX_DAYS} days.`);
+  return { days: Number(days), since: new Date(now - Number(days) * DAY_MS) };
+}
+
+// The drivers waiting for approval.
+const PENDING_DRIVERS = { role: 'driver', approval: 'pending', terminatedAt: { $exists: false } };
+const DRIVER_FIELDS = 'phone firstName lastName email role available toda plate capacity createdAt approval approvedAt terminatedAt terminationReason';
+
+// onSuspended(id, reason): an account was cut off, so its rides end and its
+// app disconnects; onApproved(id): a driver was approved, so their app updates.
+function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, onSuspended = async () => {}, onApproved = async () => {} }) {
   const allowed = parseAdminPhones(adminPhones);
   // The ids of users with the app open.
   const connectedIds = () => new Set([...presence].filter(([, sockets]) => sockets.size).map(([id]) => id));
@@ -228,37 +261,41 @@ function createAdmin({ models, presence, clock, adminPhones, onSuspended = async
     const ids = [...presence.keys()];
     // Admins signed in on the app are watching, not riding, so they are not shown.
     // Safety reports: flagged ratings, and drivers' reports that were not dismissed.
-    const [users, rides, reports] = await Promise.all([
+    const [users, rides, reports, pendingDrivers] = await Promise.all([
       models.User.find({ _id: { $in: ids }, role: { $ne: 'admin' } }).select('firstName lastName role plate toda available location locationAvailable ratingSum ratingCount').lean(),
       models.Ride.find({ active: true, $or: [{ passengerId: { $in: ids } }, { driverSlot: { $in: ids } }] }).select('passengerId driverId driverSlot status trip route').lean(),
       models.Rating.aggregate([{ $match: { flagged: true, rateeId: { $in: ids } } }, { $group: { _id: '$rateeId', count: { $sum: 1 } } }]),
       models.Report.aggregate([{ $match: { passengerId: { $in: ids }, status: { $ne: 'dismissed' } } }, { $group: { _id: '$passengerId', count: { $sum: 1 } } }]),
-    ]).then(([found, active, flagged, filed]) => {
+      models.User.countDocuments(PENDING_DRIVERS),
+    ]).then(([found, active, flagged, filed, waiting]) => {
       const counts = new Map();
       for (const { _id, count } of [...flagged, ...filed]) counts.set(String(_id), (counts.get(String(_id)) || 0) + count);
-      return [found, active, counts];
+      return [found, active, counts, waiting];
     });
     // A phone can disconnect while the database reads are in flight.
-    return buildOverview(users, rides, connectedIds(), clock(), cachedRoute, reports);
+    // pendingDrivers: God view's Accounts tab shows how many wait for approval.
+    return { ...buildOverview(users, rides, connectedIds(), clock(), cachedRoute, reports), pendingDrivers };
   }
   // Passengers and drivers, newest first; admin accounts are not listed. total
   // counts them all, in case there are more than the list holds.
   async function accounts() {
     const [users, total] = await Promise.all([
       models.User.find({ role: { $ne: 'admin' } }).sort({ createdAt: -1, _id: -1 }).limit(ACCOUNT_LIMIT)
-        .select('phone firstName lastName email role available toda plate').lean(),
+        .select('phone firstName lastName email role available toda plate approval terminatedAt').lean(),
       models.User.countDocuments({ role: { $ne: 'admin' } }),
     ]);
     return { accounts: buildAccounts(users, connectedIds()), total };
   }
   // One passenger's or driver's account and every trip they booked or
-  // accepted, newest first; summary covers all of them.
-  async function history(id) {
+  // accepted (or only those booked in the last days), newest first; summary
+  // covers all of them.
+  async function history(id, days) {
     requireValue(/^[a-f\d]{24}$/i.test(id), 404, 'No account has this ID.');
+    const period = historyPeriod(days, clock());
     const user = await models.User.findOne({ _id: id, role: { $ne: 'admin' } })
-      .select('phone firstName lastName email role available toda plate ratingSum ratingCount createdAt').lean();
+      .select('phone firstName lastName email role available toda plate ratingSum ratingCount createdAt approval terminatedAt terminationReason').lean();
     requireValue(user, 404, 'No account has this ID.');
-    const mine = { $or: [{ passengerId: id }, { driverId: id }] };
+    const mine = { $or: [{ passengerId: id }, { driverId: id }], ...(period ? { createdAt: { $gte: period.since } } : {}) };
     const [rides, groups] = await Promise.all([
       models.Ride.find(mine).sort({ createdAt: -1, _id: -1 }).limit(HISTORY_LIMIT)
         .select('passengerId driverId status trip route passengers fare createdAt completedAt cancelledAt cancelledBy cancellationReason').lean(),
@@ -270,8 +307,9 @@ function createAdmin({ models, presence, clock, adminPhones, onSuspended = async
       models.Rating.find({ rateeId: id, rideId: { $in: rides.map((ride) => String(ride._id)) } }).select('rideId stars tags comment flagged').lean(),
     ]);
     return {
-      account: { ...buildAccounts([user], connectedIds())[0], joined: user.createdAt, rating: ratingSummary(user) },
-      summary: historySummary(groups),
+      account: { ...buildAccounts([user], connectedIds())[0], joined: user.createdAt, rating: ratingSummary(user),
+        ...(user.terminatedAt ? { terminatedAt: user.terminatedAt, terminationReason: user.terminationReason || '' } : {}) },
+      period, summary: historySummary(groups),
       trips: buildHistory(id, rides, new Map(people.map((person) => [String(person._id), person])), new Map(ratings.map((rating) => [rating.rideId, rating]))),
     };
   }
@@ -282,13 +320,88 @@ function createAdmin({ models, presence, clock, adminPhones, onSuspended = async
     return buildTrips(rides, new Map(people.map((person) => [String(person._id), person])));
   }
   async function dashboard() {
-    const [totalAccounts, onlineNow, ongoingTrips, recentTrips] = await Promise.all([
+    const [totalAccounts, onlineNow, ongoingTrips, recentTrips, pendingDrivers] = await Promise.all([
       models.User.countDocuments({ role: { $ne: 'admin' } }),
       models.User.countDocuments({ _id: { $in: [...connectedIds()] }, role: { $ne: 'admin' } }),
       models.Ride.countDocuments({ status: { $in: ACTIVE_STATUSES } }),
       trips(3),
+      models.User.countDocuments(PENDING_DRIVERS),
     ]);
-    return { totalAccounts, onlineNow, ongoingTrips, recentTrips };
+    return { totalAccounts, onlineNow, ongoingTrips, recentTrips, pendingDrivers };
+  }
+  // Account Approval: the drivers waiting for approval, and those terminated
+  // (who can be unblocked), newest first.
+  async function approvals() {
+    const drivers = await models.User.find({ role: 'driver', $or: [{ approval: 'pending' }, { terminatedAt: { $exists: true } }] })
+      .sort({ createdAt: -1, _id: -1 }).limit(ACCOUNT_LIMIT).select(DRIVER_FIELDS).lean();
+    const ids = connectedIds();
+    return { drivers: drivers.map((user) => buildDriver(user, ids)) };
+  }
+  const checkDriverId = (id) => requireValue(/^[a-f\d]{24}$/i.test(id), 404, 'No driver has this ID.');
+  async function driver(id) {
+    checkDriverId(id);
+    const user = await models.User.findOne({ _id: id, role: 'driver' }).select(DRIVER_FIELDS).lean();
+    requireValue(user, 404, 'No driver has this ID.');
+    return { driver: buildDriver(user, connectedIds()) };
+  }
+  // Why a decision changed nothing: the driver is gone, or was already decided on.
+  async function undecided(id, message) {
+    requireValue(await models.User.exists({ _id: id, role: 'driver' }), 404, 'No driver has this ID.');
+    throw new HttpError(409, message);
+  }
+  // Emails the driver the admin's decision. The decision stands even when the
+  // email cannot be sent; emailed says whether it was.
+  async function tell(user, purpose, reason) {
+    if (!sendEmail || !user.email) return false;
+    try { await sendEmail({ to: user.email, purpose, name: user.firstName, reason }); return true; }
+    catch (error) { console.error(`${purpose} email failed:`, error.message); return false; }
+  }
+  // The admin found the driver on their TODA's list: they can go online.
+  async function approve(id) {
+    checkDriverId(id);
+    const user = await models.User.findOneAndUpdate({ _id: id, ...PENDING_DRIVERS }, { $set: { approval: 'approved', approvedAt: new Date(clock()) } },
+      { returnDocument: 'after' }).select(DRIVER_FIELDS).lean();
+    if (!user) await undecided(id, 'This driver is no longer waiting for approval.');
+    await onApproved(id);
+    return { driver: buildDriver(user, connectedIds()), emailed: await tell(user, 'driverApproved') };
+  }
+  // Disables a driver for good: their number and email cannot sign up again,
+  // every session ends and any trip they are on is cancelled. Unblock undoes it.
+  async function terminate(id, body) {
+    checkDriverId(id);
+    const reason = cleanText(body?.reason, 200);
+    const user = await models.User.findOneAndUpdate({ _id: id, role: 'driver', terminatedAt: { $exists: false } },
+      { $set: { disabled: true, available: false, locationAvailable: false, terminatedAt: new Date(clock()), terminationReason: reason } },
+      { returnDocument: 'after' }).select(DRIVER_FIELDS).lean();
+    if (!user) await undecided(id, 'This driver was already terminated.');
+    const phone = normalizePhilippinePhone(user.phone) || user.phone;
+    await models.Blocked.updateOne({ phone }, { $set: { email: (user.email || '').toLowerCase(), userId: id, reason: `Driver terminated${reason ? `: ${reason}` : ''}` } }, { upsert: true });
+    await models.Session.deleteMany({ userId: user._id });
+    await onSuspended(id, 'Driver account removed');
+    return { driver: buildDriver(user, connectedIds()), emailed: await tell(user, 'driverTerminated', reason) };
+  }
+  // Removes a driver's account completely, so they can sign up again (with
+  // corrected details). A terminated driver must be unblocked first, so a
+  // blocked number never outlives the account that explains it.
+  async function remove(id, body) {
+    checkDriverId(id);
+    const reason = cleanText(body?.reason, 200);
+    const user = await models.User.findOneAndDelete({ _id: id, role: 'driver', terminatedAt: { $exists: false } }).select(DRIVER_FIELDS).lean();
+    if (!user) await undecided(id, 'Unblock this driver before deleting the account.');
+    await Promise.all([models.Session.deleteMany({ userId: user._id }), models.ResetCode.deleteMany({ userId: user._id })]);
+    await onSuspended(id, 'Driver account removed');
+    return { driver: buildDriver(user, new Set()), emailed: await tell(user, 'driverDeleted', reason) };
+  }
+  // Undoes a termination: the number and email are freed and the driver waits
+  // for approval again.
+  async function unblock(id) {
+    checkDriverId(id);
+    const user = await models.User.findOneAndUpdate({ _id: id, role: 'driver', terminatedAt: { $exists: true } },
+      { $set: { disabled: false, approval: 'pending' }, $unset: { terminatedAt: 1, terminationReason: 1, approvedAt: 1 } },
+      { returnDocument: 'after' }).select(DRIVER_FIELDS).lean();
+    if (!user) await undecided(id, 'This driver is not terminated.');
+    await models.Blocked.deleteMany({ userId: id });
+    return { driver: buildDriver(user, connectedIds()) };
   }
   // Drivers' reports about passengers, newest first, with what each
   // passenger's next upheld report would bring.
@@ -333,7 +446,7 @@ function createAdmin({ models, presence, clock, adminPhones, onSuspended = async
     requireValue(updated, 409, 'This report was already reviewed.');
     return { report: (await reports()).reports.find((item) => item.key === id) };
   }
-  return { middleware, overview, accounts, history, trips, dashboard, reports, uphold, dismiss };
+  return { middleware, overview, accounts, history, trips, dashboard, reports, uphold, dismiss, approvals, driver, approve, terminate, remove, unblock };
 }
 
-module.exports = { createAdmin, parseAdminPhones, buildOverview, buildReports, buildRideRoutes, buildAccounts, buildTrips, buildHistory, historySummary, tripStatus };
+module.exports = { createAdmin, parseAdminPhones, buildOverview, buildReports, buildRideRoutes, buildAccounts, buildDriver, driverApproval, buildTrips, buildHistory, historySummary, historyPeriod, tripStatus };

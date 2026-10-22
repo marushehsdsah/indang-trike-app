@@ -30,10 +30,12 @@ async function main() {
       const response = await fetch(`${base}/api${path}`, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
       const result = await response.json(); assert.ok(response.ok, JSON.stringify(result)); return result;
     }
-    async function account(phone, role, firstName) {
+    // A driver is approved as if an admin did it, unless `approved` is false.
+    async function account(phone, role, firstName, { approved = true } = {}) {
       const form = { phone, role, firstName, lastName: 'Pilot', email: `${phone}@example.com`, password: 'pilot-test-password', ...(role === 'driver' ? { plate: 'TEST-101', toda: 'Test TODA', capacity: 4 } : {}) };
       await request('/register/code', form);
-      await request('/register', { ...form, code: emailedCodes.get(form.email) });
+      const { user } = await request('/register', { ...form, code: emailedCodes.get(form.email) });
+      if (role === 'driver' && approved) await backend.models.User.updateOne({ _id: user.id }, { $set: { approval: 'approved' } });
       return request('/login', { phone, password: 'pilot-test-password' });
     }
     async function connect(account) {
@@ -180,7 +182,7 @@ async function main() {
     // Each account's whole trip history: the trip ends, the driver reports the
     // passenger, then a click on Bea's row opens her trips.
     await request(`/rides/${offer.id}/complete`, {}, driver.token);
-    await request(`/rides/${offer.id}/rating`, { stars: 2, tags: ['Did not pay'], comment: 'Left without paying' }, driver.token);
+    await request(`/rides/${offer.id}/report`, { reason: 'did_not_pay', details: 'Left without paying' }, driver.token);
     await page.locator('.view-tab[data-view=accounts]').click();
     await page.locator('#account-search').fill('Bea');
     await page.locator('#account-rows tr', { hasText: 'Bea Pilot' }).locator('.cell-phone').click();
@@ -189,13 +191,27 @@ async function main() {
     await page.locator('#history-rows tr').first().waitFor();
     assert.equal(await page.locator('#history-rows tr').count(), 1);
     assert.equal(await page.locator('#history-count-completed').textContent(), '1');
-    for (const value of ['Alex Pilot', 'Completed', '★ 2', 'Safety report', `${DEFAULT_TRIP.pickup.name} → ${DEFAULT_TRIP.dropoff.name}`]) {
+    // Drivers report passengers instead of rating them.
+    for (const value of ['Alex Pilot', 'Completed', 'Not rated', `${DEFAULT_TRIP.pickup.name} → ${DEFAULT_TRIP.dropoff.name}`]) {
       await page.locator('#history-rows').getByText(value, { exact: true }).waitFor();
     }
     assert.equal(await page.locator('#history-rows img').count(), 0, 'trip markup stays text');
     await page.locator('#history-statuses [data-trip=cancelled]').click();
     await page.locator('#history-empty').getByText('No cancelled trips', { exact: true }).waitFor();
     await page.locator('#history-statuses [data-trip=all]').click();
+    // The period above the totals: with the trip booked 10 days ago, the last
+    // 7 days have none and the last 14 days have it.
+    const ride = await backend.models.Ride.findById(offer.id).lean();
+    await backend.models.Ride.collection.updateOne({ _id: ride._id }, { $set: { createdAt: new Date(Date.now() - 10 * 24 * 3600000) } });
+    await page.locator('#history-period').selectOption('7');
+    await page.locator('#history-empty').getByText('No trips in the last 7 days', { exact: true }).waitFor();
+    assert.equal(await page.locator('#history-count-total').textContent(), '0');
+    await page.screenshot({ path: '/tmp/indang-god-view-history-week.png', fullPage: true });
+    await page.locator('#history-period').selectOption('14');
+    await page.locator('#history-rows tr').first().waitFor();
+    assert.deepEqual([await page.locator('#history-rows tr').count(), await page.locator('#history-count-completed').textContent()], [1, '1']);
+    await page.locator('#history-period').selectOption({ label: 'All time' });
+    await page.locator('#history-note-total').filter({ hasText: 'Booked as the passenger' }).waitFor();
     await page.screenshot({ path: '/tmp/indang-god-view-history.png', fullPage: true });
     // The driver's side of the same trip, from the list the back button returns to.
     await page.goBack();
@@ -205,6 +221,47 @@ async function main() {
     await page.locator('#history-with-heading').filter({ hasText: 'Passenger' }).waitFor();
     await page.locator('#history-rows').getByText('Bea Pilot', { exact: true }).waitFor();
     assert.equal(await page.locator('#history-fares-label').textContent(), 'Fares earned');
+    // A driver who signs up waits for approval: the Accounts tab counts them,
+    // Pending approval lists them, and their page approves, terminates,
+    // unblocks or deletes them, each after the admin confirms.
+    await account('09179999995', 'driver', 'Cora', { approved: false });
+    await page.locator('#accounts-badge').filter({ hasText: '1' }).waitFor();
+    await page.locator('.view-tab[data-view=accounts]').click();
+    await page.locator('#account-search').fill('');
+    await page.locator('#account-types [data-type=pending]').click();
+    await page.locator('#account-rows tr', { hasText: 'Cora Pilot' }).getByText('Pending', { exact: true }).waitFor();
+    assert.equal(await page.locator('#account-rows tr').count(), 1);
+    await page.screenshot({ path: '/tmp/indang-god-view-pending.png', fullPage: true });
+    await page.locator('#account-rows').getByRole('link', { name: 'Cora Pilot' }).click();
+    await page.locator('#history-profile').getByText('Pending approval', { exact: true }).waitFor();
+    // Cancelling the question changes nothing.
+    page.once('dialog', (dialog) => dialog.dismiss());
+    await page.locator('#history-profile [data-decision=approve]').click();
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('#history-note').isVisible(), false);
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.locator('#history-profile [data-decision=approve]').click();
+    await page.locator('#history-note').filter({ hasText: 'Approved. Cora Pilot was emailed.' }).waitFor();
+    assert.deepEqual(await page.locator('#history-profile [data-decision]').evaluateAll((buttons) => buttons.map((button) => button.dataset.decision)), ['terminate', 'delete']);
+    await page.locator('#accounts-badge').waitFor({ state: 'hidden' });
+    page.once('dialog', (dialog) => { assert.equal(dialog.type(), 'prompt'); dialog.accept('Plate not on the TODA list'); });
+    await page.locator('#history-profile [data-decision=terminate]').click();
+    await page.locator('#history-note').filter({ hasText: 'Terminated. Cora Pilot was emailed.' }).waitFor();
+    await page.locator('#history-profile').getByText(/Terminated .* · Plate not on the TODA list/).waitFor();
+    assert.equal((await backend.models.User.findOne({ phone: '+639179999995' })).terminationReason, 'Plate not on the TODA list');
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.locator('#history-profile [data-decision=unblock]').click();
+    await page.locator('#history-note').filter({ hasText: 'Unblocked. Cora Pilot waits for approval again.' }).waitFor();
+    await page.locator('#history-profile').getByText('Pending approval', { exact: true }).waitFor();
+    await page.screenshot({ path: '/tmp/indang-god-view-approval.png', fullPage: true });
+    page.once('dialog', (dialog) => dialog.accept(''));
+    await page.locator('#history-profile [data-decision=delete]').click();
+    await page.locator('#accounts-note').filter({ hasText: "Cora Pilot's account was deleted. Cora Pilot was emailed." }).waitFor();
+    assert.equal(await page.evaluate(() => location.hash), '#accounts');
+    assert.equal(await backend.models.User.exists({ phone: '+639179999995' }), null);
+    await page.locator('#account-types [data-type=all]').click();
+    await page.locator('#account-rows tr').first().waitFor();
+    assert.equal(await page.locator('#account-rows').getByText('Cora Pilot').count(), 0);
     await page.locator('.view-tab[data-view=live]').click();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.locator('#fit-area').click();
@@ -227,7 +284,7 @@ async function main() {
     assert.equal(await page.locator('#history-rows tr').count(), 0);
     assert.equal(await page.evaluate(() => sessionStorage.getItem('indanggo.god-view.session')), null);
     assert.deepEqual(errors, []);
-    console.log('Browser checks passed: separate-origin site, full-size map, places layer, requested/to-passenger/trip lines, merged trip marker, access control, real GPS markers, missing/stale GPS, safe text, role/search filters, all accounts online and offline, trip histories, disconnect/reconnect, responsive layout and logout.');
+    console.log('Browser checks passed: separate-origin site, full-size map, places layer, requested/to-passenger/trip lines, merged trip marker, access control, real GPS markers, missing/stale GPS, safe text, role/search filters, all accounts online and offline, trip histories and their periods, driver approval, disconnect/reconnect, responsive layout and logout.');
   } finally {
     await browser?.close(); sockets.forEach(socket => socket.disconnect());
     site?.close(); if (siteDir) fs.rmSync(siteDir, { recursive: true, force: true });

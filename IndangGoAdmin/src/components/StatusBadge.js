@@ -28,6 +28,10 @@ const STATUS_COLORS = {
   inactive: colors.statusInactive,
   idle: colors.statusPending,
   'pending docs': colors.statusPending,
+  // A driver's approval (screens/AccountApprovalScreen.js).
+  pending: colors.statusPending,
+  approved: colors.statusVerified,
+  terminated: colors.statusBlocked,
   rider: colors.roleRider,
   passenger: colors.rolePassenger,
 };

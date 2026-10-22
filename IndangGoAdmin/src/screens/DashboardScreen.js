@@ -11,10 +11,14 @@
 // - "Online Now" counts passengers and drivers with the app open.
 // - "View All" jumps to the Trips tab via the onViewAllTrips prop
 //   (wired up in App.js).
+// - While drivers wait for approval, a card says how many and
+//   opens Account Approval (also in the hamburger menu).
 // =============================================================
 
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import useAdminData from '../useAdminData';
 import StatusBadge from '../components/StatusBadge';
@@ -22,6 +26,7 @@ import TopHeader from '../components/TopHeader';
 import LoadState, { RefreshError } from '../components/LoadState';
 
 export default function DashboardScreen({ onViewAllTrips }) {
+  const navigation = useNavigation();
   const { data, loading, refreshing, error, reload, refresh } = useAdminData('dashboard');
 
   return (
@@ -54,6 +59,25 @@ export default function DashboardScreen({ onViewAllTrips }) {
             <Text style={styles.statLabel}>Ongoing Trips</Text>
           </View>
         </View>
+
+        {/* ---- Drivers waiting for approval ---- */}
+        {data.pendingDrivers > 0 && (
+          <TouchableOpacity
+            style={styles.approvalCard}
+            onPress={() => navigation.navigate('AccountApproval')}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+          >
+            <Ionicons name="person-add-outline" size={22} color={colors.brandGreenDark} />
+            <View style={styles.approvalCopy}>
+              <Text style={styles.approvalTitle}>
+                {data.pendingDrivers} driver{data.pendingDrivers === 1 ? '' : 's'} waiting for approval
+              </Text>
+              <Text style={styles.approvalNote}>Check them against their TODA’s list</Text>
+            </View>
+            <Text style={styles.viewAllText}>Review</Text>
+          </TouchableOpacity>
+        )}
 
         {/* ---- Recent trips card ---- */}
         <View style={styles.card}>
@@ -129,6 +153,28 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
     textAlign: 'center',
+  },
+  approvalCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.brandYellowSoft,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 18,
+  },
+  approvalCopy: {
+    flex: 1,
+  },
+  approvalTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.brandGreenDark,
+  },
+  approvalNote: {
+    fontSize: 11,
+    color: colors.brandGreenDark,
+    marginTop: 2,
   },
   card: {
     backgroundColor: colors.card,

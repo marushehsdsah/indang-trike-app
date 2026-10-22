@@ -93,7 +93,8 @@ export default function RegisterScreen({ navigation }) {
       const result = await submitRegistration({ ...form, code }, { apiBaseUrl: API_BASE_URL, fetchImpl: fetch });
 
       successFeedback();
-      Alert.alert(t('register.createdTitle'), result.message || t('register.createdMessage'), [
+      // A new driver waits for an admin's approval before taking bookings.
+      Alert.alert(t('register.createdTitle'), role === 'driver' ? t('register.driverPendingMessage') : result.message || t('register.createdMessage'), [
         { text: t('register.continueToLogin'), onPress: () => navigation.replace('Login') },
       ]);
     } catch (error) {

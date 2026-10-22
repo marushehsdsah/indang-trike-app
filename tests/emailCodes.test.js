@@ -194,6 +194,20 @@ test('the reset email says it is for a password reset', async () => {
   assert.match(body.textContent, /did not ask to reset your password/);
 });
 
+test('a driver is emailed the admin\'s decision on their account, with the reason as plain text', async () => {
+  const bodies = [];
+  const send = createBrevoMailer({ apiKey: 'key', senderEmail: 'me@gmail.com', fetchImpl: async (url, options) => { bodies.push(JSON.parse(options.body)); return { ok: true }; } });
+  await send({ to: 'ben@gmail.com', purpose: 'driverApproved', name: 'Ben' });
+  await send({ to: 'ben@gmail.com', purpose: 'driverTerminated', name: 'Ben', reason: 'Plate <b>ABC</b> is not on the list' });
+  await send({ to: 'ben@gmail.com', purpose: 'driverDeleted', name: 'Ben' });
+  assert.deepEqual(bodies.map((body) => body.subject), ['Your IndangGO driver account is approved', 'Your IndangGO driver account was terminated', 'Your IndangGO driver account was deleted']);
+  assert.match(bodies[0].textContent, /^Hi Ben,\n\n.*approved your driver account\.\n\nOpen the app and go online/);
+  assert.match(bodies[1].textContent, /cannot be used to sign up again\.\n\nReason: Plate <b>ABC<\/b> is not on the list$/);
+  assert.match(bodies[1].htmlContent, /Reason: Plate &lt;b&gt;ABC&lt;\/b&gt; is not on the list/, 'the admin\'s text is never HTML');
+  assert.match(bodies[2].textContent, /sign up again with the correct ones\.$/, 'no reason line without a reason');
+  assert.deepEqual(bodies[0].to, [{ email: 'ben@gmail.com' }]);
+});
+
 test('guesses sent in parallel still get only five tries between them', async () => {
   const { auth, sent } = await signedUp();
   await auth.sendResetCode({ phone: form.phone });

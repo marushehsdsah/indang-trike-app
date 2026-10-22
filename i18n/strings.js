@@ -290,6 +290,8 @@ const en = {
   'driver.action.complete': 'Complete trip',
   'driver.offline': 'You’re offline',
   'driver.offlineHint': 'Go online to get trip requests near you.',
+  'driver.pending': 'Waiting for approval',
+  'driver.pendingHint': 'An admin is checking your details against your TODA’s list of registered drivers. You can go online once you’re approved.',
   'driver.online': 'You’re online',
   'driver.onlineHint': 'Keep the app open. New requests appear here.',
   'driver.waitingGps': 'Waiting for GPS',
@@ -328,6 +330,7 @@ const en = {
   'bookings.toDrive': 'Go to Drive',
   'bookings.waitingGps': 'Bookings show once your GPS location is live.',
   'bookings.onTrip': 'Finish your current trip before taking another booking.',
+  'bookings.pending': 'Bookings show once an admin approves your driver account.',
 
   'guide.arrived': 'You have arrived',
   'guide.arrive': 'Arrive at destination',
@@ -525,6 +528,7 @@ const en = {
   'register.logIn': 'Log in',
   'register.createdTitle': 'Account created',
   'register.createdMessage': 'Your account was created.',
+  'register.driverPendingMessage': 'Your driver account was created. An admin will check your details against your TODA’s list of registered drivers before you can take bookings.',
   'register.continueToLogin': 'Continue to log in',
   'register.unable': 'Unable to sign up',
 };
@@ -816,6 +820,8 @@ const fil = {
   'driver.action.complete': 'Tapusin ang biyahe',
   'driver.offline': 'Offline ka',
   'driver.offlineHint': 'Mag-online para makatanggap ng request na malapit sa iyo.',
+  'driver.pending': 'Hinihintay ang pag-apruba',
+  'driver.pendingHint': 'Sinusuri ng admin ang mga detalye mo sa listahan ng mga rehistradong driver ng TODA mo. Makakapag-online ka kapag naaprubahan ka na.',
   'driver.online': 'Online ka',
   'driver.onlineHint': 'Panatilihing bukas ang app. Dito lalabas ang bagong request.',
   'driver.waitingGps': 'Hinihintay ang GPS',
@@ -854,6 +860,7 @@ const fil = {
   'bookings.toDrive': 'Pumunta sa Magmaneho',
   'bookings.waitingGps': 'Lalabas ang mga booking kapag live na ang GPS mo.',
   'bookings.onTrip': 'Tapusin muna ang biyahe mo bago kumuha ng ibang booking.',
+  'bookings.pending': 'Lalabas ang mga booking kapag naaprubahan na ng admin ang driver account mo.',
 
   'guide.arrived': 'Nakarating ka na',
   'guide.arrive': 'Dumating sa destinasyon',
@@ -1051,6 +1058,7 @@ const fil = {
   'register.logIn': 'Mag-log in',
   'register.createdTitle': 'Nagawa na ang account',
   'register.createdMessage': 'Nagawa na ang account mo.',
+  'register.driverPendingMessage': 'Nagawa na ang driver account mo. Susuriin ng admin ang mga detalye mo sa listahan ng mga rehistradong driver ng TODA mo bago ka makakuha ng booking.',
   'register.continueToLogin': 'Magpatuloy sa log in',
   'register.unable': 'Hindi makapag-sign up',
 };

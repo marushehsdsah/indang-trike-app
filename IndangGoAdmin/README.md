@@ -17,13 +17,28 @@ below).
 - **Accounts** — search by name/ID, filter by Driver/Passenger, list of accounts.
 - **Trips** — search by trip ID, Toda ID, passenger or driver, filter by
   Ongoing / Finished / Cancelled, list of trip records.
+- **Hamburger menu** (top left) — switch between **Dashboard** (the
+  Dashboard / Accounts / Trips tabs) and **Account Approval**.
+- **Account Approval** — drivers who signed up wait here (Pending) until
+  an admin checks their details against their TODA's list of registered
+  drivers; a Terminated filter lists the drivers an admin cut off. Until
+  approved, a driver can't go online or get bookings.
+- **Driver Review** — opened from Account Approval or a driver in
+  Accounts: the driver's sign-up details and the decisions open to them
+  (Approve, Terminate, Delete, or Unblock for a terminated driver). Each
+  asks for confirmation; the driver is emailed when approved, terminated
+  or deleted, with the optional reason typed here.
 - **Profile** — opened from the avatar at the top right: the admin's name,
   Admin ID and role, and a Logout button.
 
-Inside the IndangGO app, Dashboard, Accounts and Trips load real data
-from the API (`GET /api/admin/dashboard`, `/accounts`, `/trips`), and
-pulling down refreshes them. Run on its own, this folder shows the fake
-data in `src/data/mockData.js` instead, in the same shape.
+Inside the IndangGO app, Dashboard, Accounts, Trips and Account Approval
+load real data from the API (`GET /api/admin/dashboard`, `/accounts`,
+`/trips`, `/approvals`, `/drivers/<id>`), pulling down refreshes them,
+and a driver's review sends the admin's decision (`POST
+/api/admin/drivers/<id>/approve`, `/terminate`, `/delete`, `/unblock`).
+Run on its own, this folder shows the fake data in
+`src/data/mockData.js` instead, in the same shape, and the decisions
+change that fake data.
 
 ## How to run it
 
@@ -63,7 +78,8 @@ The app-level navigator is a **Stack Navigator**
 
 ```
 Login  ->  Welcome  ->  Main
-                          └─>  Profile
+                          ├─>  Profile
+                          └─>  AccountApproval  ->  DriverReview
 ```
 
 Each screen moves forward with `navigation.replace(...)` (not
@@ -75,6 +91,13 @@ Profile is the exception: the avatar in `TopHeader` opens it with
 `navigation.navigate('Profile')`, so back returns to the tab you
 were on. Its Logout button resets the stack to Login alone, so
 back can't return to the dashboard after logging out.
+
+Account Approval is opened from the hamburger menu in `TopHeader`
+the same way, and Driver Review from a driver in Account Approval
+or Accounts, so back returns to where you were. Dashboard in the
+menu goes back to `Main` with `navigation.popTo('Main', { tab:
+'dashboard', at })`, which `MainScreen` turns into its Dashboard
+tab.
 
 Inside the IndangGO app the same stack, without Login, is set up
 again in `../navigation/AdminNavigator.js` — add any new admin screen
@@ -102,8 +125,10 @@ src/
     AccountsScreen.js
     TripsScreen.js
     ProfileScreen.js         <- admin profile + Logout (opened from the avatar)
+    AccountApprovalScreen.js <- drivers waiting for approval, and terminated ones
+    DriverReviewScreen.js    <- one driver's details + Approve/Terminate/Delete/Unblock
   components/
-    TopHeader.js            <- shared top bar (hamburger + title + avatar -> Profile)
+    TopHeader.js            <- shared top bar (hamburger menu + title + avatar -> Profile)
     BottomNav.js             <- shared bottom tab bar
     StatusBadge.js            <- colored status/role pill used everywhere
     LoadState.js              <- spinner / error + Retry while a screen's data loads
@@ -111,8 +136,9 @@ src/
     colors.js                 <- ALL colors live here — edit this to re-skin
   data/
     mockData.js                <- fake accounts + trips data (when run on its own)
-  session.js                   <- signed-in admin, Logout, and where data comes from
-  useAdminData.js              <- loads a screen's data (API or mock)
+  session.js                   <- signed-in admin, Logout, where data comes from and decisions go
+  useAdminData.js              <- loads a screen's data (API or mock), again on coming back
+  formatDate.js                <- dates in Philippine time
 ```
 
 ## Where to make common edits
@@ -121,6 +147,9 @@ src/
 |--------------------------------------------------|------------------------------------------|
 | Change any color / the whole palette              | `src/theme/colors.js`                     |
 | Change the real accounts/trips the screens get   | `../indang-trike-backend/admin.js` (`buildAccounts`, `buildTrips`) |
+| Change the hamburger menu's items                  | `src/components/TopHeader.js` (`MENU_ITEMS`) |
+| Change what a driver decision asks or says         | `src/screens/DriverReviewScreen.js` (`DECISIONS`, `ACTIONS`) |
+| Change what a decision does on the server          | `../indang-trike-backend/admin.js` (`approve`, `terminate`, `remove`, `unblock`) |
 | Add, remove, or change mock accounts              | `src/data/mockData.js` (`accounts` array) |
 | Add, remove, or change mock trips                 | `src/data/mockData.js` (`trips` array)    |
 | Add a new status (e.g. "On Hold")                 | `src/components/StatusBadge.js` (`STATUS_COLORS`) |
@@ -137,11 +166,11 @@ src/
 
 - Login doesn't check the Admin ID/password — any tap on "Login" succeeds.
 - Logout doesn't end a real session — it just returns to Login.
-- "Forgot?", the hamburger menu, and the
-  floating add-account button don't do anything yet (`onPress={() => {}}`).
+- "Forgot?" doesn't do anything yet (`onPress={() => {}}`).
   Search for `TODO` comments in the code — those mark exactly where to
   plug in real behavior later.
-- Tapping an account or trip row doesn't open a details screen yet.
+- Tapping a passenger or trip row doesn't open a details screen yet
+  (a driver opens Driver Review).
 - Bottom navigation is a simple custom component (not
   `@react-navigation`), so there's very little setup. If you later
   want real screen transitions/animations or deep linking, swap it

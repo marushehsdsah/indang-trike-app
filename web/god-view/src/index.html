@@ -35,7 +35,7 @@
 
   <main id="dashboard" class="dashboard" hidden>
     <header class="topbar"><a class="brand" href="./"><span class="brand-mark">iG</span>IndangGO</a><span class="topbar-divider"></span><span class="workspace-name">God view</span><span class="pilot-tag">PILOT</span><div class="topbar-right"><span id="admin-name"></span><button id="sign-out" class="quiet light">Sign out</button></div></header>
-    <nav class="view-tabs" aria-label="God view"><a class="view-tab" href="#live" data-view="live" aria-current="page">Live map</a><a class="view-tab" href="#accounts" data-view="accounts">Accounts</a><a class="view-tab" href="#reports" data-view="reports">Reports<span id="reports-badge" class="tab-badge" hidden></span></a></nav>
+    <nav class="view-tabs" aria-label="God view"><a class="view-tab" href="#live" data-view="live" aria-current="page">Live map</a><a class="view-tab" href="#accounts" data-view="accounts">Accounts<span id="accounts-badge" class="tab-badge pending" hidden></span></a><a class="view-tab" href="#reports" data-view="reports">Reports<span id="reports-badge" class="tab-badge" hidden></span></a></nav>
     <div id="live-view">
     <section class="page-heading"><div><span class="eyebrow">PILOT OPERATIONS</span><h1>Live overview <span id="area-name" class="area-chip">Service area</span></h1><p class="muted">The people moving through your city, right now.</p></div><div class="sync-panel"><span id="connection-status" class="connection" role="status">Connecting</span><span id="last-updated" class="small muted">Waiting for the first update</span><button id="refresh" class="quiet">Refresh now</button></div></section>
     <section class="metrics" aria-label="Online user summary">
@@ -73,10 +73,11 @@
       <div class="metric"><span class="metric-label"><i class="legend-dot stale"></i> Offline</span><strong id="account-count-offline">—</strong><span id="account-note-offline" class="metric-note">Loading…</span></div>
     </section>
     <p id="accounts-error" class="notice" role="alert" hidden></p>
+    <p id="accounts-note" class="notice success" role="status" hidden></p>
     <section class="accounts-panel" aria-label="Accounts">
       <div class="accounts-toolbar">
         <label class="search-label" for="account-search">Search accounts</label><input id="account-search" type="search" placeholder="Search a name, mobile number, email, plate or TODA…" autocomplete="off">
-        <div id="account-types" class="filters" role="group" aria-label="Filter by account type"><button data-type="all" aria-pressed="true">Everyone</button><button data-type="driver" aria-pressed="false">Drivers</button><button data-type="passenger" aria-pressed="false">Passengers</button></div>
+        <div id="account-types" class="filters" role="group" aria-label="Filter by account type"><button data-type="all" aria-pressed="true">Everyone</button><button data-type="driver" aria-pressed="false">Drivers</button><button data-type="passenger" aria-pressed="false">Passengers</button><button data-type="pending" aria-pressed="false">Pending approval</button></div>
         <div id="account-statuses" class="filters" role="group" aria-label="Filter by online or offline"><button data-status="all" aria-pressed="true">All</button><button data-status="online" aria-pressed="false">Online</button><button data-status="offline" aria-pressed="false">Offline</button></div>
         <span id="account-result-count" class="count-pill">0 shown</span>
       </div>
@@ -115,6 +116,10 @@
 
     <div id="history-view" hidden>
     <section class="page-heading history-heading"><div><a class="back-link" href="#accounts">← All accounts</a><div id="history-profile" class="history-profile"></div></div><div class="sync-panel"><span id="history-updated" class="small muted">Loading trips…</span><button id="history-refresh" class="quiet">Refresh now</button></div></section>
+    <div class="period-bar">
+      <label class="search-label" for="history-period">Show the trips booked in</label>
+      <select id="history-period" autocomplete="off"><option value="0" selected>All time</option><option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30">Last 30 days</option></select>
+    </div>
     <section class="metrics" aria-label="Trip summary">
       <div class="metric"><span class="metric-label">Trips</span><strong id="history-count-total">—</strong><span id="history-note-total" class="metric-note">Loading…</span></div>
       <div class="metric"><span class="metric-label"><i class="legend-dot online"></i> Completed</span><strong id="history-count-completed">—</strong><span class="metric-note">Reached the destination</span></div>
@@ -122,6 +127,7 @@
       <div class="metric"><span id="history-fares-label" class="metric-label">Fares</span><strong id="history-fares">—</strong><span class="metric-note">From completed trips</span></div>
     </section>
     <p id="history-error" class="notice" role="alert" hidden></p>
+    <p id="history-note" class="notice success" role="status" hidden></p>
     <section class="accounts-panel" aria-labelledby="history-title">
       <div class="accounts-toolbar">
         <h2 id="history-title" class="panel-title">Trip history</h2>

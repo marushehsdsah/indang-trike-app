@@ -92,6 +92,8 @@ async function main() {
   travel(-7 * DAY);
   const admin = await account(ADMIN_PHONE, 'Pilot', 'Admin');
   const [dante, rosa] = [await account('09170000011', 'Dante', 'Reyes', 'driver'), await account('09170000012', 'Rosa', 'Mendoza', 'driver')];
+  // Drivers who sign up wait for an admin's approval before taking bookings.
+  for (const driver of [dante, rosa]) await call(`/admin/drivers/${driver.user.id}/approve`, admin.token, {});
   const pedro = await account('09170000021', 'Pedro', 'Santos'), maria = await account('09170000022', 'Maria', 'Cruz');
   const juan = await account('09170000023', 'Juan', 'Dela Cruz'), ana = await account('09170000024', 'Ana', 'Lopez');
   const log = (line) => console.log(`  [${stamp()}] ${line}`);

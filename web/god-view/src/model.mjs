@@ -103,14 +103,19 @@ export function formatPhone(phone) {
   return /^09\d{9}$/.test(phone) ? `${phone.slice(0, 4)} ${phone.slice(4, 7)} ${phone.slice(7)}` : phone;
 }
 
-// role: all, driver or passenger; status: all, online or offline. A number
-// matches with or without its spaces.
+// role: all, driver, passenger or pending (drivers waiting for approval);
+// status: all, online or offline. A number matches with or without its spaces.
 export function filterAccounts(accounts, role, status, query) {
   const needle = query.trim().toLocaleLowerCase(), digits = needle.replace(/[\s-]/g, '');
-  return accounts.filter(account => (role === 'all' || accountRole(account) === role) &&
+  return accounts.filter(account => (role === 'all' || (role === 'pending' ? account.approval === 'Pending' : accountRole(account) === role)) &&
     (status === 'all' || (status === 'online') === isOnline(account)) &&
     ([account.name, account.email, account.plate, account.toda].filter(Boolean).join(' ').toLocaleLowerCase().includes(needle) || account.id.includes(digits)));
 }
+
+// A driver's approval (indang-trike-backend/admin.js): Pending until an admin
+// checks them against their TODA's list of registered drivers, Approved, or
+// Terminated. The decisions open to each, in the order their buttons show.
+export const DRIVER_ACTIONS = { Pending: ['approve', 'terminate', 'delete'], Approved: ['terminate', 'delete'], Terminated: ['unblock'] };
 
 // Online accounts first, then by name.
 export function sortAccounts(accounts) {

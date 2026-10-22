@@ -84,7 +84,8 @@ function createAuth(models, clock, { sendEmail } = {}) {
     const { phone, role, fields } = await checkSignup(body);
     await useCode(EmailCode, await checkCode(EmailCode, fields.email, body.code));
     try {
-      return publicUser(await User.create({ phone, password: await bcrypt.hash(body.password, 10), role, ...fields }));
+      // A new driver waits for an admin to check them against their TODA's list.
+      return publicUser(await User.create({ phone, password: await bcrypt.hash(body.password, 10), role, ...fields, ...(role === 'driver' ? { approval: 'pending' } : {}) }));
     } catch (error) {
       if (error.code === 11000) throw new HttpError(409, 'Phone number already registered.');
       throw error;

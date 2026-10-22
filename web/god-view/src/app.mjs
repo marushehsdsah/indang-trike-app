@@ -1,5 +1,5 @@
 import { API_BASE_URL } from './config.mjs';
-import { accountCounts, accountRole, cancellationLabel, filterAccounts, filterTrips, filterUsers, formatDistance, formatFare, formatPhone, isLive, isOnline, locationLabel, mapPeople, ratingLabel, roleCountLabel, routeSummary, safetyReportLabel, sortAccounts, statusLabel, snapshotTiming, tripOf } from './model.mjs';
+import { DRIVER_ACTIONS, accountCounts, accountRole, cancellationLabel, filterAccounts, filterTrips, filterUsers, formatDistance, formatFare, formatPhone, isLive, isOnline, locationLabel, mapPeople, ratingLabel, roleCountLabel, routeSummary, safetyReportLabel, sortAccounts, statusLabel, snapshotTiming, tripOf } from './model.mjs';
 
 const $ = id => document.getElementById(id);
 const tokenKey = 'indanggo.god-view.session';
@@ -8,8 +8,12 @@ let connected = false, timer, pending = false, controller, fleetMap = null, mapS
 // The Accounts view: every passenger and driver account, online or offline.
 let accounts = null, accountsTotal = 0, accountsUpdated = 0, accountsTimer, accountsPending = false;
 const accountFilters = { type: 'all', status: 'all' };
-// One account's trip history (#accounts/<id>).
-let historyId = null, history = null, historyUpdated = 0, historyTimer, historyPending = false, historyFilter = 'all', listScroll = 0;
+// One account's trip history (#accounts/<id>), of every trip or of the
+// trips booked in the last historyDays (7, 14 or 30).
+let historyId = null, history = null, historyUpdated = 0, historyTimer, historyPending = false, historyFilter = 'all', historyDays = 0, listScroll = 0;
+// A decision on a driver being sent (approve, terminate, delete or unblock),
+// and how many were made, so a trip history asked for before one is dropped.
+let deciding = null, decisions = 0;
 // The Reports view (#reports): drivers' reports about passengers.
 let reports = null, reportsUpdated = 0, reportsTimer, reportsPending = false, reportFilter = 'pending', reviewing = null;
 const now = () => Date.now() + serverOffset;
@@ -45,6 +49,7 @@ function endSession(message = '') {
   clearTimeout(accountsTimer); accountsPending = false; accounts = null; accountsUpdated = 0; showError('accounts-error', ''); renderAccounts();
   clearTimeout(historyTimer); historyPending = false; history = null; historyUpdated = 0; showError('history-error', ''); renderHistory();
   clearTimeout(reportsTimer); reportsPending = false; reports = null; reportsUpdated = 0; showError('reports-error', ''); renderReports();
+  deciding = null; showError('accounts-note', ''); showError('history-note', ''); $('accounts-badge').hidden = true;
   $('user-list').replaceChildren(); $('person-details').replaceChildren(); $('person-details').hidden = true;
   $('dashboard').hidden = true; $('login').hidden = false;
   $('password').value = ''; showError('login-error', message);
@@ -71,6 +76,8 @@ function applySnapshot(data, requestStarted) {
   if (selected && !data.users.some(user => user.id === selected)) selected = null;
   $('area-name').textContent = data.serviceArea.name;
   $('last-updated').textContent = `Updated ${new Date(data.serverTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+  // Drivers waiting for approval, on the Accounts tab.
+  $('accounts-badge').textContent = data.pendingDrivers || ''; $('accounts-badge').hidden = !data.pendingDrivers;
   showError('connection-error', connected ? '' : 'Updates are delayed. Displayed positions are last known while we reconnect.'); render(); startMap();
 }
 
@@ -184,6 +191,8 @@ function showView() {
   if (previous === 'accounts' && view === 'history') listScroll = scrollY;
   const changed = account !== historyId;
   if (changed) { historyId = account; history = null; historyUpdated = 0; showError('history-error', ''); }
+  // A decision's note stays only while its page does.
+  if (previous !== view || changed) { showError('history-note', ''); if (view !== 'accounts') showError('accounts-note', ''); }
   $('live-view').hidden = view !== 'live'; $('accounts-view').hidden = view !== 'accounts'; $('history-view').hidden = view !== 'history'; $('reports-view').hidden = view !== 'reports';
   for (const tab of document.querySelectorAll('.view-tab')) {
     if (tab.dataset.view === (view === 'history' ? 'accounts' : view)) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
@@ -245,7 +254,9 @@ function accountRow(account) {
     const button = text('button', 'Show on map', 'quiet'); button.type = 'button'; button.dataset.accountKey = account.key;
     button.addEventListener('click', () => showOnMap(account.key)); action.push(button);
   }
-  row.append(cell('cell-who', who), cell('cell-type', text('span', kind === 'driver' ? 'Driver' : 'Passenger', `role-tag ${kind}`)),
+  const type = [text('span', kind === 'driver' ? 'Driver' : 'Passenger', `role-tag ${kind}`)];
+  if (account.approval && account.approval !== 'Approved') type.push(text('span', account.approval, `status-pill ${account.approval.toLowerCase()}`));
+  row.append(cell('cell-who', who), cell('cell-type', ...type),
     cell('cell-phone', formatPhone(account.id)), cell(`cell-vehicle${kind === 'driver' ? '' : ' is-empty'}`, ...vehicle), cell('cell-status', ...status), cell('cell-action', ...action));
   return row;
 }
@@ -275,24 +286,29 @@ function renderAccounts() {
 async function loadHistory() {
   if (!token || view !== 'history' || historyPending || document.hidden) return;
   clearTimeout(historyTimer); historyPending = true;
-  const run = generation, id = historyId;
+  const run = generation, id = historyId, days = historyDays, seen = decisions;
   try {
-    const data = await request(`/admin/accounts/${id}`);
-    if (run !== generation || id !== historyId) return;
-    history = data; historyUpdated = Date.now(); showError('history-error', '');
+    const data = await request(`/admin/accounts/${id}${days ? `?days=${days}` : ''}`);
+    if (run !== generation || id !== historyId || days !== historyDays || seen !== decisions) return;
+    history = data; historyUpdated = Date.now();
+    // An older API ignores the period and sends every trip.
+    showError('history-error', days && !data.period ? 'This server cannot filter trips by date yet. Deploy the latest API, then refresh.' : '');
   } catch (error) {
-    if (run !== generation || id !== historyId) return;
+    if (run !== generation || id !== historyId || days !== historyDays || seen !== decisions) return;
     if (error.status === 401 || error.status === 403) { endSession(error.message); return; }
-    showError('history-error', error.missingRoute ? 'This server cannot show trip histories yet. Deploy the latest API, then refresh.' : `${error.message}${history ? ' Showing the trips last loaded.' : ''}`);
+    showError('history-error', error.missingRoute ? 'This server cannot show trip histories yet. Deploy the latest API, then refresh.' : `${error.message}${historyFor(days) ? ' Showing the trips last loaded.' : ''}`);
   } finally {
     if (run === generation) {
       historyPending = false; renderHistory();
-      // Another account may have been opened while this one loaded.
-      if (view === 'history' && !document.hidden) historyTimer = setTimeout(loadHistory, id === historyId ? 10000 : 0);
+      // Another account or period may have been chosen, or a decision made, while this one loaded.
+      if (view === 'history' && !document.hidden) historyTimer = setTimeout(loadHistory, id === historyId && days === historyDays && seen === decisions ? 10000 : 0);
     }
   }
 }
 
+// The trip history loaded for this period, or null while it loads; the
+// account's details show from any period's.
+const historyFor = days => history && (history.period?.days ?? 0) === days ? history : null;
 const shortDate = date => date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
 
 function renderProfile(account) {
@@ -301,15 +317,77 @@ function renderProfile(account) {
   const kind = accountRole(account), online = isOnline(account);
   const heading = document.createElement('h1');
   heading.append(text('span', account.name, 'profile-name'), text('span', online ? 'Online' : 'Offline', `status-pill ${online ? 'online' : 'offline'}`));
+  if (account.approval && account.approval !== 'Approved') heading.append(text('span', account.approval === 'Pending' ? 'Pending approval' : account.approval, `status-pill ${account.approval.toLowerCase()}`));
   const copy = document.createElement('div'); copy.className = 'profile-copy';
   const details = [formatPhone(account.id), account.email, kind === 'driver' ? [account.plate, account.toda].filter(Boolean).join(' · ') : '',
     account.joined ? `Joined ${shortDate(new Date(account.joined))}` : '', ratingLabel(account)];
   copy.append(text('span', `${kind === 'driver' ? 'DRIVER' : 'PASSENGER'} ACCOUNT`, `eyebrow ${kind}-text`), heading, text('p', details.filter(Boolean).join(' · '), 'muted'));
+  if (account.terminatedAt) copy.append(text('p', `Terminated ${shortDate(new Date(account.terminatedAt))}${account.terminationReason ? ` · ${account.terminationReason}` : ''}`, 'outside-label'));
   if (online) {
     const button = text('button', 'Show on map', 'quiet'); button.type = 'button';
     button.addEventListener('click', () => showOnMap(account.key)); copy.append(button);
   }
+  // A driver's approval: check them against their TODA's list, then decide.
+  const decisions = DRIVER_ACTIONS[account.approval] || [];
+  if (decisions.length) {
+    const actions = document.createElement('div'); actions.className = 'report-actions profile-actions';
+    for (const decision of decisions) {
+      const button = text('button', deciding === decision ? 'Saving…' : DRIVER_DECISIONS[decision].label, `report-button ${DRIVER_DECISIONS[decision].className}`);
+      button.type = 'button'; button.disabled = Boolean(deciding); button.dataset.decision = decision;
+      button.addEventListener('click', () => decideDriver(account, decision)); actions.append(button);
+    }
+    copy.append(actions);
+    if (account.approval === 'Pending') copy.append(text('p', `Check these details against ${account.toda || 'the TODA'}'s list of registered drivers. Until approved, this driver gets no bookings.`, 'muted small'));
+  }
   profile.replaceChildren(text('span', initials(account.name), `avatar large ${kind}`), copy);
+}
+
+// What each decision on a driver asks and says. Terminate and Delete ask for
+// an optional reason, which goes in the email to the driver.
+const DRIVER_DECISIONS = {
+  approve: { label: 'Approve', className: 'approve', done: 'Approved.',
+    ask: name => `Approve ${name}?\n\nThey can go online and get bookings right away.` },
+  terminate: { label: 'Terminate', className: 'severe', done: 'Terminated.', reason: true,
+    ask: name => `Terminate ${name}'s account?\n\nThey are signed out at once, any trip they are on is cancelled, and their mobile number and email cannot sign up again unless you unblock them.\n\nReason for the email to the driver (optional):` },
+  delete: { label: 'Delete', className: 'dismiss', done: 'Deleted.', reason: true,
+    ask: name => `Delete ${name}'s account?\n\nIt is removed for good and they are signed out at once. They can sign up again with corrected details.\n\nReason for the email to the driver (optional):` },
+  unblock: { label: 'Unblock', className: 'approve', done: 'Unblocked.',
+    ask: name => `Unblock ${name}?\n\nTheir mobile number and email are freed, and they wait for approval again.` },
+};
+
+async function decideDriver(account, decision) {
+  if (deciding) return;
+  const choice = DRIVER_DECISIONS[decision];
+  let body = {};
+  if (choice.reason) {
+    const reason = prompt(choice.ask(account.name), '');
+    if (reason === null) return;
+    body = { reason };
+  } else if (!confirm(choice.ask(account.name))) return;
+  deciding = decision; showError('history-note', ''); renderHistory();
+  const run = generation;
+  try {
+    const { driver, emailed } = await request(`/admin/drivers/${account.key}/${decision}`, { body });
+    if (run !== generation) return;
+    // A trip history loading now was asked for before the decision.
+    decisions += 1;
+    const told = decision === 'unblock' ? `${account.name} waits for approval again.`
+      : emailed ? `${account.name} was emailed.` : `The email to ${account.name} could not be sent; let them know yourself.`;
+    showError('history-error', '');
+    if (decision === 'delete') {
+      // The account is gone: back to the list, with the note there.
+      location.hash = 'accounts'; showView(); showError('accounts-note', `${account.name}'s account was deleted. ${told}`);
+    } else {
+      if (history?.account?.key === account.key) history = { ...history, account: { ...history.account, approval: driver.approval, terminatedAt: driver.terminatedAt, terminationReason: driver.terminationReason } };
+      showError('history-note', `${choice.done} ${told}`);
+    }
+  } catch (error) {
+    if (run !== generation) return;
+    if (error.status === 401 || error.status === 403) { endSession(error.message); return; }
+    showError('history-error', error.missingRoute ? 'This server cannot approve drivers yet. Deploy the latest API, then refresh.' : error.message);
+  } finally {
+    if (run === generation) { deciding = null; renderHistory(); if (view === 'history') loadHistory(); }
+  }
 }
 
 function tripRow(trip) {
@@ -336,8 +414,9 @@ function tripRow(trip) {
 }
 
 function renderHistory() {
-  const account = history?.account, summary = history?.summary, driver = Boolean(account) && accountRole(account) === 'driver';
+  const loaded = historyFor(historyDays), account = history?.account, summary = loaded?.summary, driver = Boolean(account) && accountRole(account) === 'driver';
   renderProfile(account);
+  const within = historyDays ? ` in the last ${historyDays} days` : '';
   const counts = { total: summary?.trips, completed: summary?.completed, cancelled: summary && summary.cancelled + summary.noDriver };
   for (const [key, value] of Object.entries(counts)) $(`history-count-${key}`).textContent = summary ? value : '—';
   $('history-note-total').textContent = !summary ? 'Loading…' : summary.ongoing ? `${summary.ongoing} ongoing now` : driver ? 'Accepted as the driver' : 'Booked as the passenger';
@@ -347,15 +426,15 @@ function renderHistory() {
   $('history-with-heading').textContent = driver ? 'Passenger' : 'Driver';
   $('history-rating-heading').textContent = driver ? 'Passenger’s rating' : 'Driver’s rating';
   $('history-updated').textContent = historyUpdated ? `Updated ${new Date(historyUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Loading trips…';
-  const trips = history?.trips || [], shown = filterTrips(trips, historyFilter);
+  const trips = loaded?.trips || [], shown = filterTrips(trips, historyFilter);
   $('history-result-count').textContent = `${shown.length} shown`;
   $('history-rows').replaceChildren(...shown.map(tripRow));
   $('history-table').hidden = !shown.length;
-  const failed = !history && !$('history-error').hidden, empty = $('history-empty');
+  const failed = !loaded && !$('history-error').hidden, empty = $('history-empty');
   empty.hidden = shown.length > 0;
-  empty.querySelector('h3').textContent = failed ? 'Trip history unavailable' : !history ? 'Loading trips' : trips.length ? `No ${historyFilter} trips` : 'No trips yet';
-  empty.querySelector('p').textContent = failed ? 'Use Refresh now to try again.' : !history ? 'Getting every trip this account booked or drove.' : trips.length ? 'Try another status.'
-    : driver ? 'Trips appear here once this driver accepts a request.' : 'Trips appear here once this passenger books a ride.';
+  empty.querySelector('h3').textContent = failed ? 'Trip history unavailable' : !loaded ? 'Loading trips' : trips.length ? `No ${historyFilter} trips${within}` : historyDays ? `No trips${within}` : 'No trips yet';
+  empty.querySelector('p').textContent = failed ? 'Use Refresh now to try again.' : !loaded ? `Getting every trip this account booked or drove${within}.` : trips.length ? 'Try another status.'
+    : historyDays ? 'Choose All time to see older trips.' : driver ? 'Trips appear here once this driver accepts a request.' : 'Trips appear here once this passenger books a ride.';
   $('history-footnote').textContent = summary && summary.trips > trips.length
     ? `Showing the newest ${trips.length} of ${summary.trips} trips; the totals above cover them all.`
     : 'Times are when each trip was booked. Refreshes every 10 seconds.';
@@ -518,6 +597,7 @@ $('history-statuses').addEventListener('click', event => {
   for (const item of $('history-statuses').querySelectorAll('button')) item.setAttribute('aria-pressed', String(item === button));
   renderHistory();
 });
+$('history-period').addEventListener('change', event => { historyDays = Number(event.target.value); renderHistory(); loadHistory(); });
 $('history-refresh').addEventListener('click', loadHistory);
 $('reports-refresh').addEventListener('click', loadReports);
 $('report-statuses').addEventListener('click', event => {

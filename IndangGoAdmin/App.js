@@ -4,7 +4,9 @@
 // Uses @react-navigation/native-stack as the app-level navigator:
 //
 //   Login  ->  Welcome  ->  Main (bottom-tab screens)
-//                             └─>  Profile (from the avatar in TopHeader)
+//                             ├─>  Profile (from the avatar in TopHeader)
+//                             └─>  AccountApproval (from the hamburger menu
+//                                  in TopHeader)  ->  DriverReview
 //
 // Each screen calls navigation.replace(...) to move forward
 // (not navigation.navigate) so the user can't swipe/back-button
@@ -29,6 +31,8 @@ import LoginScreen from './src/screens/LoginScreen';
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import MainScreen from './src/screens/MainScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import AccountApprovalScreen from './src/screens/AccountApprovalScreen';
+import DriverReviewScreen from './src/screens/DriverReviewScreen';
 import colors from './src/theme/colors';
 
 const Stack = createNativeStackNavigator();
@@ -50,6 +54,8 @@ export default function App() {
             <Stack.Screen name="Welcome" component={WelcomeScreen} />
             <Stack.Screen name="Main" component={MainScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="AccountApproval" component={AccountApprovalScreen} />
+            <Stack.Screen name="DriverReview" component={DriverReviewScreen} />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaView>

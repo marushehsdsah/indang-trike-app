@@ -55,7 +55,8 @@ export default function BookingsScreen({ navigation }) {
   };
 
   // Why the list cannot be used yet, if it cannot.
-  const blocked = active ? { icon: 'rickshaw', title: t('driver.onTrip'), message: t('bookings.onTrip'), action: t('driver.returnToTrip'), onPress: () => navigation.navigate('ActiveRide') }
+  const blocked = user.pendingApproval ? { icon: 'account-clock-outline', title: t('driver.pending'), message: t('bookings.pending'), action: t('bookings.toDrive'), onPress: () => navigation.navigate('Driver') }
+    : active ? { icon: 'rickshaw', title: t('driver.onTrip'), message: t('bookings.onTrip'), action: t('driver.returnToTrip'), onPress: () => navigation.navigate('ActiveRide') }
     : !user.available ? { icon: 'power-plug-off-outline', title: t('driver.offline'), message: t('bookings.offline'), action: t('bookings.toDrive'), onPress: () => navigation.navigate('Driver') }
     : !connected || !fresh ? { icon: 'crosshairs-question', title: t('driver.waitingGps'), message: t('bookings.waitingGps'), action: t('common.retryGps'), onPress: gps.retry }
     : null;

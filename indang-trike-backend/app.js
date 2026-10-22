@@ -26,7 +26,8 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   const io = new Server(server, { cors: { origin: process.env.CORS_ORIGIN || '*' }, maxHttpBufferSize: 20000 });
   const presence = new Map(), auth = createAuth(models, clock, { sendEmail });
   const dispatch = createDispatch({ models, io, clock, presence, options: dispatchOptions });
-  const admin = createAdmin({ models, presence, clock, adminPhones, onSuspended: (id) => dispatch.run(() => dispatch.suspended(id)) });
+  const admin = createAdmin({ models, presence, clock, adminPhones, sendEmail,
+    onSuspended: (id, reason) => dispatch.run(() => dispatch.suspended(id, reason)), onApproved: (id) => dispatch.notify(id) });
   const chat = createChat({ models, io, clock });
   app.disable('x-powered-by');
   // The God view website (web/god-view) is hosted separately and calls this
@@ -47,7 +48,12 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   // Signing up takes two calls: the form gets an emailed code, then the form
   // with that code creates the account.
   app.post('/api/register/code', async (req, res) => res.json(await auth.sendSignupCode(req.body)));
-  app.post('/api/register', async (req, res) => res.status(201).json({ user: await auth.register(req.body), message: 'Account created successfully.' }));
+  app.post('/api/register', async (req, res) => {
+    const user = await auth.register(req.body);
+    res.status(201).json({ user, message: user.pendingApproval
+      ? "Your driver account was created. An admin will check your details against your TODA's list of registered drivers before you can take bookings."
+      : 'Account created successfully.' });
+  });
   app.post('/api/login', async (req, res) => res.json(await auth.login(req.body)));
   // Forgot password: email a code, check it, then set the new password with it.
   app.post('/api/password/code', async (req, res) => res.json(await auth.sendResetCode(req.body)));
@@ -64,13 +70,21 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   app.get('/api/admin/dashboard', async (req, res) => res.json(await admin.dashboard()));
   app.get('/api/admin/accounts', async (req, res) => res.json(await admin.accounts()));
   // One account's trip history (God view).
-  app.get('/api/admin/accounts/:id', async (req, res) => res.json(await admin.history(req.params.id)));
+  app.get('/api/admin/accounts/:id', async (req, res) => res.json(await admin.history(req.params.id, req.query.days)));
   app.get('/api/admin/trips', async (req, res) => res.json({ trips: await admin.trips() }));
   // Drivers' reports about passengers (God view's Reports tab): upholding one
   // suspends the passenger, longer each time, then disables the account.
   app.get('/api/admin/reports', async (req, res) => res.json(await admin.reports()));
   app.post('/api/admin/reports/:id/uphold', async (req, res) => res.json(await admin.uphold(req.params.id, req.user)));
   app.post('/api/admin/reports/:id/dismiss', async (req, res) => res.json(await admin.dismiss(req.params.id, req.user)));
+  // Drivers who sign up wait for an admin to check them against their TODA's
+  // list of registered drivers (the app's Account Approval, and God view).
+  app.get('/api/admin/approvals', async (req, res) => res.json(await admin.approvals()));
+  app.get('/api/admin/drivers/:id', async (req, res) => res.json(await admin.driver(req.params.id)));
+  app.post('/api/admin/drivers/:id/approve', async (req, res) => res.json(await admin.approve(req.params.id)));
+  app.post('/api/admin/drivers/:id/terminate', async (req, res) => res.json(await admin.terminate(req.params.id, req.body)));
+  app.post('/api/admin/drivers/:id/delete', async (req, res) => res.json(await admin.remove(req.params.id, req.body)));
+  app.post('/api/admin/drivers/:id/unblock', async (req, res) => res.json(await admin.unblock(req.params.id)));
   // Admin accounts oversee the service; they do not book, drive or chat on trips.
   app.use(['/api/rides', '/api/driver', '/api/passenger'], (req, res, next) => {
     requireValue(req.user.role !== 'admin', 403, 'Admin accounts cannot book or drive.');

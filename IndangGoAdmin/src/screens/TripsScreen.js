@@ -31,6 +31,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import useAdminData from '../useAdminData';
+import formatDate from '../formatDate';
 import StatusBadge from '../components/StatusBadge';
 import TopHeader from '../components/TopHeader';
 import LoadState, { RefreshError } from '../components/LoadState';
@@ -47,13 +48,6 @@ const STATUS_FILTERS = [
 
 // Trip fields the search bar matches against (case-insensitive).
 const SEARCH_FIELDS = ['id', 'todaId', 'passenger', 'driver'];
-
-// When a trip was booked, in Philippine time like the rest of the app.
-function formatDate(value) {
-  return new Date(value).toLocaleString('en-PH', {
-    timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
-  });
-}
 
 export default function TripsScreen() {
   const [searchText, setSearchText] = useState('');

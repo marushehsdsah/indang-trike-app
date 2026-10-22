@@ -50,7 +50,7 @@ function OfferCountdown({ offerId, seconds }) {
 }
 
 export default function DriverScreen({ navigation }) {
-  const { user, ride, offer, setAvailable, rideAction, gps, connected, serverOffset } = useApp();
+  const { user, ride, offer, setAvailable, rideAction, gps, connected, serverOffset, signOut } = useApp();
   const { t } = useI18n();
   const { stats } = useAccountHistory();
   const connection = useConnectionStatus();
@@ -60,6 +60,9 @@ export default function DriverScreen({ navigation }) {
   const [zoneOpen, setZoneOpen] = useState(false);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const active = ride && ACTIVE_STATUSES.includes(ride.status);
+  // A driver who signed up waits for an admin to check them against their
+  // TODA's list; until then they cannot go online. Approval updates `user`.
+  const pending = Boolean(user.pendingApproval);
   const seconds = offer ? Math.max(0, Math.ceil((new Date(offer.offerExpiresAt).getTime() - now - serverOffset) / 1000)) : 0;
   const fresh = gps.status === 'ready' && isFreshFix(gps.fix, now), available = user.available && connected && fresh;
   // Location is still shared outside the service area; requests stay inside it.
@@ -94,12 +97,13 @@ export default function DriverScreen({ navigation }) {
 
   // The card's coloured band: green when requests can reach the driver.
   const band = active ? { tone: 'live', title: t('driver.onTrip') }
+    : pending ? { tone: 'wait', title: t('driver.pending') }
     : !user.available ? { tone: 'off', title: t('driver.offline') }
     : !connected || !fresh ? { tone: 'wait', title: t('driver.waitingGps') }
     : outside ? { tone: 'alert', title: t('driver.outsideArea') }
     : { tone: 'live', title: t('driver.online') };
   const bandColors = { live: [COLORS.brand, COLORS.onBrand], off: [COLORS.ink, '#FFFFFF'], wait: [COLORS.accent, COLORS.onAccent], alert: [COLORS.danger, '#FFFFFF'] }[band.tone];
-  const subtitle = active ? t('driver.onTripHint') : !user.available ? t('driver.offlineHint')
+  const subtitle = active ? t('driver.onTripHint') : pending ? t('driver.pendingHint') : !user.available ? t('driver.offlineHint')
     : !connected || !fresh ? t(`gps.${gps.status}`) : outside ? t('driver.outsideAreaHint') : t('driver.onlineHint');
 
   return <BleedScreen>
@@ -164,7 +168,8 @@ export default function DriverScreen({ navigation }) {
             </View>
             <View style={styles.homeBody}>
               <Text style={TYPE.body}>{subtitle}</Text>
-              {!active && <View style={styles.today}>
+              {pending && <Text style={[TYPE.bodyStrong, styles.pendingDetails]}>{t('plate.label', { plate: user.plate, toda: user.toda })}</Text>}
+              {!active && !pending && <View style={styles.today}>
                 <Text style={[TYPE.caption, styles.todayLabel]}>{t('driver.today')}</Text>
                 <Text style={styles.todayValue}>{stats?.todayTrips ?? '—'}</Text>
                 <Text style={[TYPE.caption, styles.todayUnit]}>{t('driver.tripsUnit')}</Text>
@@ -184,6 +189,8 @@ export default function DriverScreen({ navigation }) {
                   : t('driver.zoneList', { barangays: toda.areas.join(', ') })}</Text>}
               </>}
               {active ? <Button label={t('driver.returnToTrip')} variant="brand" onPress={() => navigation.navigate('ActiveRide')} style={styles.mainAction} />
+                : pending ? <Button label={t('profile.logOut')} variant="outline" size="md" style={styles.mainAction}
+                  onPress={() => signOut().catch(() => Alert.alert(t('profile.loggedOutTitle'), t('profile.loggedOutMessage')))} />
                 : <View style={styles.homeActions}>
                   {user.available && !fresh && <Button label={t('common.retryGps')} variant="tonal" size="md" onPress={gps.retry} style={styles.flex} />}
                   <Button label={t(user.available ? 'driver.goOffline' : 'driver.goOnline')} variant={user.available ? 'outline' : 'brand'}
@@ -216,6 +223,7 @@ const styles = StyleSheet.create({
   band: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SPACE.lg, paddingVertical: SPACE.md },
   bandDot: { width: 10, height: 10, borderRadius: 5, marginRight: SPACE.sm },
   homeBody: { padding: SPACE.lg },
+  pendingDetails: { marginTop: SPACE.md },
   today: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', marginTop: SPACE.md },
   todayLabel: { marginRight: SPACE.sm },
   todayValue: { fontFamily: FONTS.bold, fontSize: 22, lineHeight: 26, color: COLORS.ink },

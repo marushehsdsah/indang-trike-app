@@ -13,8 +13,10 @@
 //   its own. Pull down to refresh.
 // - Filter options live in ROLE_FILTERS below — add a new one
 //   there if you introduce another role.
-// - Tapping an account row is non-functional right now (onPress
-//   is a no-op) — hook up a details screen there later.
+// - Tapping a driver opens their review (DriverReviewScreen.js),
+//   where they can be approved, terminated, deleted or unblocked;
+//   a driver who isn't approved shows a Pending or Terminated
+//   badge. Tapping a passenger does nothing yet.
 // =============================================================
 
 import React, { useMemo, useState } from 'react';
@@ -26,6 +28,7 @@ import {
   FlatList,
   StyleSheet,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import useAdminData from '../useAdminData';
@@ -41,6 +44,7 @@ const ROLE_FILTERS = [
 ];
 
 export default function AccountsScreen() {
+  const navigation = useNavigation();
   const [searchText, setSearchText] = useState('');
   const [activeRoleFilter, setActiveRoleFilter] = useState('ALL');
   const { data, loading, refreshing, error, reload, refresh } = useAdminData('accounts');
@@ -118,7 +122,11 @@ export default function AccountsScreen() {
             </Text>
           }
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.accountCard} onPress={() => {}} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={styles.accountCard}
+              onPress={item.role === 'RIDER' && item.key ? () => navigation.navigate('DriverReview', { key: item.key, name: item.name }) : () => {}}
+              activeOpacity={0.7}
+            >
               <View style={styles.avatar}>
                 <Ionicons name="person" size={20} color={colors.textSecondary} />
               </View>
@@ -128,6 +136,7 @@ export default function AccountsScreen() {
                   <Text style={styles.accountName} numberOfLines={1}>
                     {item.name}
                   </Text>
+                  {item.approval && item.approval !== 'Approved' ? <StatusBadge label={item.approval} /> : null}
                   <StatusBadge label={item.role} />
                 </View>
                 <Text style={styles.accountId}>Mobile No#: {item.id}</Text>
@@ -163,11 +172,6 @@ export default function AccountsScreen() {
         />
         )}
       </View>
-
-      {/* ---- Floating "add account" button (non-functional) ---- */}
-      <TouchableOpacity style={styles.fab} onPress={() => {}} activeOpacity={0.85}>
-        <Ionicons name="person-add" size={22} color={colors.textOnDark} />
-      </TouchableOpacity>
     </View>
   );
 }
@@ -243,7 +247,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingTop: 12,
-    paddingBottom: 100, // leave room above the bottom nav + FAB
+    paddingBottom: 30,
   },
   emptyText: {
     textAlign: 'center',
@@ -315,21 +319,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textSecondary,
     fontWeight: '600',
-  },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 100, // sits above the bottom nav
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: colors.brandYellow,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 5,
   },
 });
