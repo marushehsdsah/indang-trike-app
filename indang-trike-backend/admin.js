@@ -6,6 +6,7 @@ const { getRoadGraph } = require('../data/roadNetwork');
 const { todaName } = require('../data/todaZones');
 const { requireValue } = require('./policy');
 const { ratingSummary } = require('../utils/rating');
+const { REPORT_REASON_LABELS, penaltyFor, suspensionOf } = require('../utils/reports');
 
 function parseAdminPhones(value = '') {
   return new Set(String(value).split(',').map(phone => normalizePhilippinePhone(phone.trim())).filter(Boolean));
@@ -116,6 +117,29 @@ function buildAccounts(users, connectedIds) {
   });
 }
 
+const REPORT_LIMIT = 300;
+// God view's Reports tab. people: user id -> passengers and reporting drivers;
+// rides: ride id -> the reported trips.
+function buildReports(list, people, rides, now) {
+  return list.map((report) => {
+    const passenger = people.get(String(report.passengerId)), driver = people.get(String(report.reporterId)), ride = rides.get(String(report.rideId));
+    const suspension = suspensionOf(passenger, now);
+    return {
+      key: String(report._id), status: report.status, reason: report.reason, reasonLabel: REPORT_REASON_LABELS[report.reason] || report.reason,
+      details: report.details || '', date: report.createdAt, reviewedAt: report.reviewedAt || null, penalty: report.penalty || null,
+      passenger: passenger ? {
+        key: String(passenger._id), name: fullName(passenger, 'Passenger'), phone: localPhone(passenger.phone), email: passenger.email || '',
+        offenses: passenger.offenses || 0, suspendedUntil: suspension && !suspension.permanent ? new Date(suspension.until) : null, disabled: Boolean(passenger.disabled),
+        // What upholding a report against them now would do.
+        nextPenalty: penaltyFor((passenger.offenses || 0) + 1).label,
+      } : null,
+      driver: driver ? { key: String(driver._id), name: fullName(driver, 'Driver'), plate: driver.plate || '', toda: todaName(driver.toda) || '' } : null,
+      trip: ride ? { key: String(ride._id), id: tripId(String(ride._id)), status: tripStatus(ride.status), route: `${ride.trip?.pickup?.name || 'Pickup'} → ${ride.trip?.dropoff?.name || 'Destination'}`,
+        date: ride.createdAt, cancelledBy: ride.status !== 'cancelled' ? null : ride.cancelledBy === ride.passengerId ? 'passenger' : ride.cancelledBy === ride.driverId ? 'driver' : null } : null,
+    };
+  });
+}
+
 // A search that found no driver is listed with the cancelled trips.
 function tripStatus(status) {
   if (ACTIVE_STATUSES.includes(status)) return 'Ongoing';
@@ -179,7 +203,7 @@ function historySummary(groups) {
   return summary;
 }
 
-function createAdmin({ models, presence, clock, adminPhones }) {
+function createAdmin({ models, presence, clock, adminPhones, onSuspended = async () => {} }) {
   const allowed = parseAdminPhones(adminPhones);
   // The ids of users with the app open.
   const connectedIds = () => new Set([...presence].filter(([, sockets]) => sockets.size).map(([id]) => id));
@@ -203,11 +227,17 @@ function createAdmin({ models, presence, clock, adminPhones }) {
   async function overview() {
     const ids = [...presence.keys()];
     // Admins signed in on the app are watching, not riding, so they are not shown.
+    // Safety reports: flagged ratings, and drivers' reports that were not dismissed.
     const [users, rides, reports] = await Promise.all([
       models.User.find({ _id: { $in: ids }, role: { $ne: 'admin' } }).select('firstName lastName role plate toda available location locationAvailable ratingSum ratingCount').lean(),
       models.Ride.find({ active: true, $or: [{ passengerId: { $in: ids } }, { driverSlot: { $in: ids } }] }).select('passengerId driverId driverSlot status trip route').lean(),
       models.Rating.aggregate([{ $match: { flagged: true, rateeId: { $in: ids } } }, { $group: { _id: '$rateeId', count: { $sum: 1 } } }]),
-    ]).then(([found, active, flagged]) => [found, active, new Map(flagged.map(({ _id, count }) => [String(_id), count]))]);
+      models.Report.aggregate([{ $match: { passengerId: { $in: ids }, status: { $ne: 'dismissed' } } }, { $group: { _id: '$passengerId', count: { $sum: 1 } } }]),
+    ]).then(([found, active, flagged, filed]) => {
+      const counts = new Map();
+      for (const { _id, count } of [...flagged, ...filed]) counts.set(String(_id), (counts.get(String(_id)) || 0) + count);
+      return [found, active, counts];
+    });
     // A phone can disconnect while the database reads are in flight.
     return buildOverview(users, rides, connectedIds(), clock(), cachedRoute, reports);
   }
@@ -260,7 +290,50 @@ function createAdmin({ models, presence, clock, adminPhones }) {
     ]);
     return { totalAccounts, onlineNow, ongoingTrips, recentTrips };
   }
-  return { middleware, overview, accounts, history, trips, dashboard };
+  // Drivers' reports about passengers, newest first, with what each
+  // passenger's next upheld report would bring.
+  async function reports() {
+    const list = await models.Report.find().sort({ createdAt: -1, _id: -1 }).limit(REPORT_LIMIT).lean();
+    const ids = [...new Set(list.flatMap((item) => [item.passengerId, item.reporterId]).filter((id) => /^[a-f\d]{24}$/i.test(String(id))))];
+    const [people, rides] = await Promise.all([
+      models.User.find({ _id: { $in: ids } }).select('phone firstName lastName email role plate toda offenses suspendedUntil disabled').lean(),
+      models.Ride.find({ _id: { $in: list.map((item) => item.rideId) } }).select('status trip createdAt cancelledBy passengerId driverId cancellationReason').lean(),
+    ]);
+    return { reports: buildReports(list, new Map(people.map((person) => [String(person._id), person])), new Map(rides.map((ride) => [String(ride._id), ride])), clock()), serverTime: clock() };
+  }
+  // Upholds a pending report: the passenger's next offense and its penalty
+  // (utils/reports.js). The third disables the account and blocks its number
+  // and email from signing up again. Every session ends at once.
+  async function uphold(id, admin) {
+    requireValue(/^[a-f\d]{24}$/i.test(id), 404, 'Report not found.');
+    const report = await models.Report.findById(id);
+    requireValue(report, 404, 'Report not found.');
+    requireValue(report.status === 'pending', 409, 'This report was already reviewed.');
+    const passenger = await models.User.findById(report.passengerId);
+    requireValue(passenger, 404, 'The reported account no longer exists.');
+    const penalty = penaltyFor((passenger.offenses || 0) + 1), now = clock();
+    // Only one admin's review counts, even if two press at once.
+    const claimed = await models.Report.findOneAndUpdate({ _id: id, status: 'pending' }, { $set: { status: 'upheld', reviewedBy: String(admin._id), reviewedAt: new Date(now), penalty: {
+      offense: penalty.offense, label: penalty.label, permanent: Boolean(penalty.permanent), until: penalty.permanent ? null : new Date(now + penalty.durationMs) } } }, { returnDocument: 'after' });
+    requireValue(claimed, 409, 'This report was already reviewed.');
+    await models.User.updateOne({ _id: passenger._id }, penalty.permanent
+      ? { $set: { offenses: penalty.offense, disabled: true, available: false, locationAvailable: false } }
+      : { $set: { offenses: penalty.offense, suspendedUntil: new Date(now + penalty.durationMs) } });
+    if (penalty.permanent) {
+      const phone = normalizePhilippinePhone(passenger.phone) || passenger.phone;
+      await models.Blocked.updateOne({ phone }, { $set: { email: (passenger.email || '').toLowerCase(), userId: String(passenger._id), reason: 'Third upheld report' } }, { upsert: true });
+    }
+    await models.Session.deleteMany({ userId: passenger._id });
+    await onSuspended(String(passenger._id));
+    return { report: (await reports()).reports.find((item) => item.key === id) };
+  }
+  async function dismiss(id, admin) {
+    requireValue(/^[a-f\d]{24}$/i.test(id), 404, 'Report not found.');
+    const updated = await models.Report.findOneAndUpdate({ _id: id, status: 'pending' }, { $set: { status: 'dismissed', reviewedBy: String(admin._id), reviewedAt: new Date(clock()) } }, { returnDocument: 'after' });
+    requireValue(updated, 409, 'This report was already reviewed.');
+    return { report: (await reports()).reports.find((item) => item.key === id) };
+  }
+  return { middleware, overview, accounts, history, trips, dashboard, reports, uphold, dismiss };
 }
 
-module.exports = { createAdmin, parseAdminPhones, buildOverview, buildRideRoutes, buildAccounts, buildTrips, buildHistory, historySummary, tripStatus };
+module.exports = { createAdmin, parseAdminPhones, buildOverview, buildReports, buildRideRoutes, buildAccounts, buildTrips, buildHistory, historySummary, tripStatus };

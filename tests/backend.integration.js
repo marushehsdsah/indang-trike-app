@@ -677,35 +677,125 @@ test('after a completed ride each side rates the other once, and the next trip s
   assert.deepEqual(rated.body.ride.myRating, { stars: 5, tags: ['Safe driving'], comment: 'Smooth trip' });
   assert.equal((await rate(passenger, { stars: 1 })).status, 409, 'a ride is rated once per side');
   assert.equal((await state(passenger)).lastRide.myRating.stars, 5, 'the app knows the passenger already rated');
-  assert.equal((await state(driver)).lastRide.myRating, null, 'the driver has not rated yet');
-  // The driver reports a safety concern about the passenger.
-  assert.equal((await rate(driver, { stars: 2, tags: ['Did not pay'] })).status, 200);
+  // Drivers do not rate passengers: they report them instead.
+  assert.equal((await rate(driver, { stars: 2, tags: ['Did not pay'] })).status, 403, 'drivers report rather than rate');
+  const before = (await state(driver)).lastRide;
+  assert.equal(before.myRating, null);
+  assert.deepEqual([before.reportable, before.myReport], [true, null], 'the app offers the driver a report');
+  const report = (who, body) => request(`/rides/${ride.id}/report`, who.token, body);
+  assert.equal((await report(passenger, { reason: 'no_show' })).status, 403, 'only the driver of the trip reports');
+  assert.equal((await report(driver, { reason: 'other' })).status, 400, 'something else needs details');
+  const filed = await report(driver, { reason: 'did_not_pay', details: 'Left without paying' });
+  assert.equal(filed.status, 200, JSON.stringify(filed.body));
+  assert.deepEqual(filed.body.ride.myReport, { reason: 'did_not_pay', details: 'Left without paying', status: 'pending' });
+  assert.equal((await report(driver, { reason: 'no_show' })).status, 409, 'one report per trip');
 
   assert.deepEqual((await state(driver)).user.rating, { average: 5, count: 1 });
-  assert.deepEqual((await state(passenger)).user.rating, { average: 2, count: 1 });
+  assert.deepEqual((await state(passenger)).user.rating, { average: null, count: 0 }, 'a report is not a rating');
   const history = (await request('/history', driver.token)).body.rides;
-  assert.equal(history.find((entry) => entry.id === ride.id).myRating.stars, 2);
-  assert.equal(await backend.models.Rating.countDocuments({ rideId: ride.id }), 2);
-  assert.equal(await backend.models.Rating.countDocuments({ rideId: ride.id, flagged: true }), 1);
+  assert.equal(history.find((entry) => entry.id === ride.id).myReport.reason, 'did_not_pay');
+  assert.equal(await backend.models.Rating.countDocuments({ rideId: ride.id }), 1);
 
   // On the next booking the driver sees the passenger's average on the offer,
   // and the passenger sees the driver's once accepted.
   const next = (await book(passenger)).body.ride;
   offer = (await state(driver)).offer;
   assert.equal(offer.id, next.id);
-  assert.deepEqual(offer.passenger.rating, { average: 2, count: 1 });
+  assert.deepEqual(offer.passenger.rating, { average: null, count: 0 });
   await action(driver, next.id, 'accept', { offerId: offer.offerId });
   assert.deepEqual((await state(passenger)).ride.driver.rating, { average: 5, count: 1 });
 
-  // Admins see both averages and the safety report.
+  // Admins see the driver's average and the passenger's report.
   // The God view test registered the admin earlier in this run.
   const admin = (await request('/login', null, { phone: adminPhone, password: 'strong-password' })).body;
   await connect(passenger.token);
   const people = (await request('/admin/overview', admin.token)).body.users;
   const reported = people.find((person) => person.id === passenger.user.id);
-  assert.deepEqual([reported.rating, reported.safetyReports], [{ average: 2, count: 1 }, 1]);
+  assert.deepEqual([reported.rating, reported.safetyReports], [{ average: null, count: 0 }, 1]);
   assert.equal(people.find((person) => person.id === driver.user.id).safetyReports, 0);
   await action(passenger, next.id, 'cancel');
+  await request('/driver/availability', driver.token, { available: false });
+});
+
+// A driver's finished trip with a passenger, for reports.
+async function finishedTrip(passenger, driver, { cancel = false } = {}) {
+  const ride = (await book(passenger)).body.ride;
+  const offer = (await state(driver)).offer;
+  assert.equal(offer?.id, ride.id);
+  await action(driver, ride.id, 'accept', { offerId: offer.offerId });
+  if (cancel) { await action(driver, ride.id, 'arrive'); assert.equal((await action(driver, ride.id, 'cancel', { reason: 'Passenger did not show' })).status, 200); }
+  else for (const step of ['arrive', 'start', 'complete']) await action(driver, ride.id, step);
+  return ride;
+}
+
+test('upheld reports suspend a passenger for 24 hours, then 3 days, then disable the account and block its number and email', async () => {
+  const passenger = await account(), driver = await account('driver'), stranger = await account();
+  await online(driver);
+  const admin = (await request('/login', null, { phone: adminPhone, password: 'strong-password' })).body;
+  const listed = async (rideId) => (await request('/admin/reports', admin.token)).body.reports.find((entry) => entry.trip?.key === rideId);
+  const fileReport = async (rideId, reason) => {
+    assert.equal((await request(`/rides/${rideId}/report`, driver.token, { reason })).status, 200);
+    return listed(rideId);
+  };
+  // Logging in again keeps the driver live through the simulated days.
+  const keepDriverLive = async () => { await request('/driver/location', driver.token, fix()); await request('/driver/availability', driver.token, { available: true }); };
+  assert.equal((await request('/admin/reports', passenger.token)).status, 403, 'only admins see reports');
+
+  // A no-show: the driver cancels at the pickup, then reports. A dismissed report changes nothing.
+  const first = await fileReport((await finishedTrip(passenger, driver, { cancel: true })).id, 'no_show');
+  assert.deepEqual([first.status, first.reasonLabel, first.passenger.offenses, first.passenger.nextPenalty], ['pending', 'No-show at pickup', 0, '24-hour suspension']);
+  assert.equal(first.trip.cancelledBy, 'driver');
+  assert.equal((await request(`/admin/reports/${first.key}/uphold`, stranger.token, {})).status, 403);
+  assert.equal((await request(`/admin/reports/${first.key}/dismiss`, admin.token, {})).body.report.status, 'dismissed');
+  assert.equal((await request(`/admin/reports/${first.key}/uphold`, admin.token, {})).status, 409, 'a report is reviewed once');
+  assert.equal((await request('/me', passenger.token)).status, 200, 'still signed in');
+
+  // First offense: 24 hours, every session ends, and logging in says until when.
+  const second = await fileReport((await finishedTrip(passenger, driver)).id, 'fake_booking');
+  const upheld = (await request(`/admin/reports/${second.key}/uphold`, admin.token, {})).body.report;
+  assert.deepEqual([upheld.status, upheld.penalty.offense, upheld.penalty.label, upheld.passenger.offenses], ['upheld', 1, '24-hour suspension', 1]);
+  assert.equal(+new Date(upheld.penalty.until), now + 24 * 3600000);
+  assert.equal((await request('/me', passenger.token)).status, 401, 'signed out at once');
+  const login = () => request('/login', null, { phone: passenger.user.phone, password: 'strong-password' });
+  const barred = await login();
+  assert.equal(barred.status, 403);
+  assert.match(barred.body.error, /suspended until/);
+  now += 24 * 3600000 + 1000;
+  let session = await login();
+  assert.equal(session.status, 200, 'back after 24 hours');
+  passenger.token = session.body.token;
+  await keepDriverLive();
+
+  // Second offense: 3 days.
+  const third = await fileReport((await finishedTrip(passenger, driver)).id, 'fake_booking');
+  assert.equal(third.passenger.nextPenalty, '3-day suspension');
+  assert.equal((await request(`/admin/reports/${third.key}/uphold`, admin.token, {})).body.report.penalty.label, '3-day suspension');
+  now += 2 * 24 * 3600000;
+  assert.equal((await login()).status, 403, 'still barred after two days');
+  now += 24 * 3600000 + 1000;
+  session = await login();
+  assert.equal(session.status, 200, 'back after three days');
+  passenger.token = session.body.token;
+  await keepDriverLive();
+
+  // Third offense: disabled for good. An active booking is cancelled, and the
+  // number and email cannot sign up again.
+  const fourth = await fileReport((await finishedTrip(passenger, driver)).id, 'fake_booking');
+  assert.equal(fourth.passenger.nextPenalty, 'Permanently disabled');
+  const pending = (await book(passenger)).body.ride;
+  const final = (await request(`/admin/reports/${fourth.key}/uphold`, admin.token, {})).body.report;
+  assert.deepEqual([final.penalty.permanent, final.passenger.disabled, final.passenger.offenses], [true, true, 3]);
+  const cancelled = await backend.models.Ride.findById(pending.id);
+  assert.deepEqual([cancelled.status, cancelled.cancellationReason], ['cancelled', 'Passenger account suspended']);
+  now += 365 * 24 * 3600000;
+  const refused = await login();
+  assert.equal(refused.status, 403);
+  assert.match(refused.body.error, /permanently disabled/);
+  const again = (fields) => request('/register/code', null, { password: 'strong-password', firstName: 'New', lastName: 'Name', role: 'passenger', ...fields });
+  assert.equal((await again({ phone: `0917${sequence++}`, email: passenger.user.email })).body.error, 'This mobile number or email cannot be used to create an account.');
+  await backend.models.User.deleteOne({ _id: passenger.user.id });
+  assert.equal((await again({ phone: passenger.user.phone, email: 'fresh-start@example.com' })).status, 403, 'the number is blocked even after the account is gone');
+  assert.equal((await again({ phone: `0917${sequence++}`, email: passenger.user.email })).status, 403, 'and so is the email');
   await request('/driver/availability', driver.token, { available: false });
 });
 
@@ -830,7 +920,7 @@ test('pilot admins can read a trip chat only after a safety report on that trip'
   assert.equal((await transcript(admin)).status, 403, 'no safety report yet');
   await request(`/rides/${ride.id}/rating`, passenger.token, { stars: 2, tags: ['Rude'] });
   assert.equal((await transcript(admin)).status, 403, 'a low rating is not a safety report');
-  await request(`/rides/${ride.id}/rating`, driver.token, { stars: 2, tags: ['Unsafe behaviour'] });
+  await request(`/rides/${ride.id}/report`, driver.token, { reason: 'unsafe', details: 'Shouted at me' });
   const shown = await transcript(admin);
   assert.equal(shown.status, 200, JSON.stringify(shown.body));
   assert.deepEqual(shown.body.messages.map((message) => [message.senderRole, message.text]), [['passenger', 'Please slow down']]);

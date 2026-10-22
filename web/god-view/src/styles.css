@@ -1393,3 +1393,172 @@ input::placeholder{
     scroll-behavior:auto!important
   }
 }
+/* Reports: drivers' reports about passengers, and the admin's decision. */
+.tab-badge{
+  margin-left:7px;
+  min-width:18px;
+  padding:1px 6px;
+  border-radius:999px;
+  background:#b4443a;
+  color:white;
+  font-size:10px;
+  font-weight:700;
+  text-align:center
+}
+.legend-dot.report{
+  background:#d07a2c
+}
+.legend-dot.disabled{
+  background:#b4443a
+}
+.penalty-ladder{
+  display:flex;
+  gap:10px;
+  margin:0 34px 18px;
+  padding:0;
+  list-style:none;
+  counter-reset:none
+}
+.penalty-ladder li{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  padding:11px 14px;
+  border-radius:10px;
+  background:#fff;
+  border:1px solid #dce5de;
+  font-size:11px;
+  color:#5e7163
+}
+.penalty-ladder li strong{
+  font-size:10px;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  color:#b4443a
+}
+.reports-table td{
+  vertical-align:top
+}
+.reports-table .cell-date{
+  white-space:nowrap
+}
+.reports-table .cell-what{
+  max-width:300px
+}
+.reports-table .cell-trip{
+  max-width:240px
+}
+.reports-table .cell-decision{
+  min-width:210px
+}
+.reason.fake_booking,.reason.no_show{
+  color:#b4443a
+}
+.cell-quote{
+  display:block;
+  margin-top:4px;
+  font-size:11px;
+  color:#3f554c;
+  font-style:italic
+}
+.standing{
+  display:inline-block;
+  margin-top:5px;
+  padding:2px 8px;
+  border-radius:999px;
+  font-size:10px;
+  font-weight:650;
+  width:max-content
+}
+.standing.clear{
+  background:#eef1ef;
+  color:#6b7a72
+}
+.standing.suspended{
+  background:#fbf3e2;
+  color:#9a6a1d
+}
+.standing.disabled{
+  background:#fcebe8;
+  color:#b4443a
+}
+.report-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap
+}
+.report-button{
+  border:1px solid transparent;
+  border-radius:8px;
+  padding:8px 12px;
+  font-size:12px;
+  font-weight:650;
+  cursor:pointer
+}
+.report-button:disabled{
+  opacity:.5;
+  cursor:default
+}
+.report-button.uphold{
+  background:#d07a2c;
+  color:white
+}
+.report-button.uphold:hover:not(:disabled){
+  background:#b4661f
+}
+.report-button.severe{
+  background:#b4443a;
+  color:white
+}
+.report-button.severe:hover:not(:disabled){
+  background:#963329
+}
+.report-button.dismiss{
+  background:white;
+  border-color:#cfd9d2;
+  color:#4d6157
+}
+.report-button.dismiss:hover:not(:disabled){
+  background:#f3f6f4
+}
+.status-pill.pending{
+  background:#fbf3e2;
+  color:#a17836
+}
+.status-pill.upheld{
+  background:#fcebe8;
+  color:#b4443a
+}
+.status-pill.dismissed{
+  background:#eef1ef;
+  color:#7d8a82
+}
+@media(max-width:850px){
+  .penalty-ladder{
+    margin:0 20px 18px;
+    flex-direction:column
+  }
+  .reports-table tr{
+    grid-template-columns:minmax(0,1fr);
+    grid-template-areas:"who" "what" "trip" "date" "decision"
+  }
+  .reports-table .cell-who{
+    grid-area:who
+  }
+  .reports-table .cell-what{
+    grid-area:what;
+    max-width:none
+  }
+  .reports-table .cell-trip{
+    grid-area:trip;
+    max-width:none
+  }
+  .reports-table .cell-date{
+    grid-area:date
+  }
+  .reports-table .cell-decision{
+    grid-area:decision;
+    min-width:0
+  }
+}

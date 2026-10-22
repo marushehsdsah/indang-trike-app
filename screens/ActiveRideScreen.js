@@ -8,6 +8,7 @@ import Plate from '../components/Plate';
 import LiveLocationMarker from '../components/LiveLocationMarker';
 import { PersonRow, TripFacts } from '../components/RideDetails';
 import RatingPrompt from '../components/RatingPrompt';
+import ReportPrompt from '../components/ReportPrompt';
 import ChatSheet from '../components/ChatSheet';
 import ChatNotice from '../components/ChatNotice';
 import KeyboardAwareScrollView from '../components/ui/KeyboardAwareScrollView';
@@ -224,7 +225,9 @@ export default function ActiveRideScreen({ navigation, route }) {
             <Money amount={ride.fare} size={34} color={COLORS.brand} />
             <Text style={[TYPE.body, styles.paidText]}>{t(driver ? 'active.collected' : 'active.paid')}</Text>
           </View>}
-          {ride?.status === 'completed' && !ratingSkipped && <RatingPrompt ride={ride} asDriver={driver} onSkip={() => setRatingSkipped(true)} style={styles.rating} />}
+          {/* The passenger rates the driver; the driver can report the passenger, also after a cancellation. */}
+          {!driver && ride?.status === 'completed' && !ratingSkipped && <RatingPrompt ride={ride} asDriver={false} onSkip={() => setRatingSkipped(true)} style={styles.rating} />}
+          {driver && <ReportPrompt ride={ride} style={styles.rating} />}
           {ride?.cancellationReason ? <Text style={[TYPE.caption, styles.reason]}>{ride.cancellationReason}</Text> : null}
           {person && messageCount > 0 && <Button label={t('chat.viewMessages', { count: messageCount })} icon="chat-outline"
             variant="tonal" size="md" onPress={() => setChatVisible(true)} style={styles.messages} />}

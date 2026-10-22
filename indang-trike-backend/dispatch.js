@@ -4,10 +4,11 @@ const { getMunicipalityAt } = require('../data/indangMap');
 const { findToda, todaCovers, todaName } = require('../data/todaZones');
 const { HttpError, requireValue, publicUser, bookingFields, cleanText } = require('./policy');
 const { ratingSummary, validateRating } = require('../utils/rating');
+const { REPORTABLE_STATUSES, validateReport } = require('../utils/reports');
 const { haversineDistance } = require('../utils/pathfinding');
 
 function createDispatch({ models, io, clock, presence, options = {} }) {
-  const { User, Ride, Rating } = models;
+  const { User, Ride, Rating, Report } = models;
   const offerMs = options.offerMs ?? 20000, searchMs = options.searchMs ?? 120000;
   let tail = Promise.resolve();
   // Ordered writes plus database uniqueness protect the single-server deployment.
@@ -20,9 +21,13 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
   async function view(ride, viewerId, offered = false, ratings) {
     if (!ride) return null;
     const result = ride.toObject ? ride.toObject() : { ...ride };
-    const rated = result.status === 'completed' && viewerId;
-    const [driver, passenger, myRating] = await Promise.all([result.driverId ? User.findById(result.driverId) : null, User.findById(result.passengerId),
-      !rated ? null : ratings ? ratings.get(String(result._id)) ?? null : Rating.findOne({ rideId: String(result._id), raterId: String(viewerId) })]);
+    // Passengers rate their driver; drivers report a passenger instead.
+    const asDriver = Boolean(viewerId) && result.driverId === String(viewerId);
+    const rated = result.status === 'completed' && viewerId && !asDriver;
+    const reportable = asDriver && REPORTABLE_STATUSES.includes(result.status);
+    const [driver, passenger, myRating, myReport] = await Promise.all([result.driverId ? User.findById(result.driverId) : null, User.findById(result.passengerId),
+      !rated ? null : ratings ? ratings.get(String(result._id)) ?? null : Rating.findOne({ rideId: String(result._id), raterId: String(viewerId) }),
+      reportable ? Report.findOne({ rideId: String(result._id), reporterId: String(viewerId) }) : null]);
     // Each side sees the other's average rating: the driver on the offer, the
     // passenger once a driver is assigned.
     const contact = (user, allowPhone) => user ? {
@@ -45,6 +50,8 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
       passengerLocation,
       // The viewer's own rating of the other participant, once given.
       myRating: myRating ? { stars: myRating.stars, tags: myRating.tags, comment: myRating.comment } : null,
+      // The driver's report about the passenger, once sent; reportable says one can be.
+      ...(reportable ? { reportable: true, myReport: myReport ? { reason: myReport.reason, details: myReport.details, status: myReport.status } : null } : {}),
       createdAt: result.createdAt, completedAt: result.completedAt, cancelledAt: result.cancelledAt,
       cancellationReason: result.cancellationReason, searchExpiresAt: result.searchExpiresAt,
       ...(offered && result.driverSlot === String(viewerId) ? { offerId: result.offerId, offerExpiresAt: result.offerExpiresAt } : {}),
@@ -199,13 +206,14 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     notifyRide(ride); notifyRide(updated); if (ride.status === 'searching') bookingsChanged(); await tickUnsafe();
     return { ride: await view(updated, userId) };
   }
-  // A participant rates the other one, once, after the ride is completed.
+  // The passenger rates the driver, once, after the ride is completed.
   async function rate(user, id, body = {}) {
     requireValue(/^[a-f0-9]{24}$/.test(id), 404, 'Ride not found.');
     const ride = await Ride.findById(id), userId = String(user._id);
     requireValue(ride, 404, 'Ride not found.');
     const asPassenger = ride.passengerId === userId, asDriver = ride.driverId === userId;
     requireValue(asPassenger || asDriver, 403, 'You are not a participant in this ride.');
+    requireValue(asPassenger, 403, 'Drivers report passengers instead of rating them.');
     requireValue(ride.status === 'completed', 409, 'You can rate a ride once it is completed.');
     let fields;
     try { fields = validateRating(body, asPassenger ? 'driver' : 'passenger'); } catch (error) { throw new HttpError(400, error.message); }
@@ -217,6 +225,34 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     // the rating is taken back so the rater can simply try again.
     try { await User.updateOne({ _id: rateeId }, { $inc: { ratingSum: fields.stars, ratingCount: 1 } }); }
     catch (error) { await Rating.deleteOne({ rideId: String(ride._id), raterId: userId }).catch(() => {}); throw error; }
+    notify(userId);
+    return { ride: await view(ride, userId) };
+  }
+  // A passenger suspended by an admin: their active booking or trip is
+  // cancelled, and their app is cut off at once.
+  async function suspended(userId) {
+    const ride = await Ride.findOne({ active: true, passengerId: String(userId) });
+    if (ride) {
+      const ended = await Ride.findOneAndUpdate({ _id: ride._id, version: ride.version }, {
+        $set: { status: 'cancelled', active: false, cancelledAt: new Date(clock()), cancelledBy: 'admin', cancellationReason: 'Passenger account suspended' },
+        $unset: { driverSlot: 1, offerId: 1, offerExpiresAt: 1 }, $inc: { version: 1 },
+      }, { returnDocument: 'after' });
+      if (ended) { notifyRide(ride); if (ride.status === 'searching') bookingsChanged(); }
+    }
+    io.in(`user:${userId}`).disconnectSockets(true);
+  }
+  // The driver reports the passenger of a trip they were assigned to, once,
+  // after it was completed or cancelled. Admins review it in God view.
+  async function report(user, id, body = {}) {
+    requireValue(/^[a-f0-9]{24}$/.test(id), 404, 'Ride not found.');
+    const ride = await Ride.findById(id), userId = String(user._id);
+    requireValue(ride, 404, 'Ride not found.');
+    requireValue(user.role === 'driver' && ride.driverId === userId, 403, 'Only the driver of this trip can report its passenger.');
+    requireValue(REPORTABLE_STATUSES.includes(ride.status), 409, 'You can report a passenger once the trip is completed or cancelled.');
+    let fields;
+    try { fields = validateReport(body); } catch (error) { throw new HttpError(400, error.message); }
+    try { await Report.create({ ...fields, rideId: String(ride._id), reporterId: userId, passengerId: ride.passengerId }); }
+    catch (error) { if (error.code === 11000) throw new HttpError(409, 'You already reported this trip.'); throw error; }
     notify(userId);
     return { ride: await view(ride, userId) };
   }
@@ -276,7 +312,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     if (ride) notifyRide(ride);
     await tickUnsafe(); notify(user._id); return { ok: true };
   }
-  return { run, view, snapshot, bookings, book, action, rate, location, passengerLocation, passengerLocationUnavailable, locationUnavailable, availability, disconnect, notify, tick: () => run(tickUnsafe), connected };
+  return { run, view, snapshot, bookings, book, action, rate, report, suspended, location, passengerLocation, passengerLocationUnavailable, locationUnavailable, availability, disconnect, notify, tick: () => run(tickUnsafe), connected };
 }
 
 module.exports = { createDispatch };

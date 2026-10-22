@@ -50,7 +50,7 @@ export default function LoginScreen({ navigation }) {
           <View style={styles.mark}>
             <MaterialCommunityIcons name="rickshaw" size={34} color={COLORS.brand} />
           </View>
-          <Text style={styles.heroTitle} accessibilityRole="header">IndangGO</Text>
+          <Text style={styles.heroTitle} accessibilityRole="header">Indang<Text style={styles.heroTitleGo}>GO</Text></Text>
           <Text style={styles.heroSub}>{t('login.tagline')}</Text>
         </LinearGradient>
 
@@ -127,6 +127,8 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', marginBottom: SPACE.md,
   },
   heroTitle: { ...TYPE.title, color: COLORS.onBrand },
+  // The splash screen's wordmark: "GO" in the yellow accent.
+  heroTitleGo: { color: COLORS.accent },
   heroSub: { ...TYPE.body, color: 'rgba(255,255,255,0.78)', marginTop: SPACE.xs, textAlign: 'center' },
   cardSub: { marginTop: SPACE.xs, marginBottom: SPACE.xl },
 

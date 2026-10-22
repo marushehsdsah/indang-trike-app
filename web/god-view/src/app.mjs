@@ -10,6 +10,8 @@ let accounts = null, accountsTotal = 0, accountsUpdated = 0, accountsTimer, acco
 const accountFilters = { type: 'all', status: 'all' };
 // One account's trip history (#accounts/<id>).
 let historyId = null, history = null, historyUpdated = 0, historyTimer, historyPending = false, historyFilter = 'all', listScroll = 0;
+// The Reports view (#reports): drivers' reports about passengers.
+let reports = null, reportsUpdated = 0, reportsTimer, reportsPending = false, reportFilter = 'pending', reviewing = null;
 const now = () => Date.now() + serverOffset;
 const visibleUsers = () => filterUsers(snapshot?.users || [], role, $('search').value);
 const routeFor = (user) => user && (snapshot?.routes || []).find(route => route.driverId === user.id || route.passengerId === user.id);
@@ -42,6 +44,7 @@ function endSession(message = '') {
   fleetMap?.remove(); fleetMap = null; mapStarting = false;
   clearTimeout(accountsTimer); accountsPending = false; accounts = null; accountsUpdated = 0; showError('accounts-error', ''); renderAccounts();
   clearTimeout(historyTimer); historyPending = false; history = null; historyUpdated = 0; showError('history-error', ''); renderHistory();
+  clearTimeout(reportsTimer); reportsPending = false; reports = null; reportsUpdated = 0; showError('reports-error', ''); renderReports();
   $('user-list').replaceChildren(); $('person-details').replaceChildren(); $('person-details').hidden = true;
   $('dashboard').hidden = true; $('login').hidden = false;
   $('password').value = ''; showError('login-error', message);
@@ -177,15 +180,16 @@ function render() {
 // the view.
 function showView() {
   const previous = view, account = location.hash.match(/^#accounts\/([a-f\d]{24})$/i)?.[1] ?? null;
-  view = account ? 'history' : location.hash === '#accounts' ? 'accounts' : 'live';
+  view = account ? 'history' : location.hash === '#accounts' ? 'accounts' : location.hash === '#reports' ? 'reports' : 'live';
   if (previous === 'accounts' && view === 'history') listScroll = scrollY;
   const changed = account !== historyId;
   if (changed) { historyId = account; history = null; historyUpdated = 0; showError('history-error', ''); }
-  $('live-view').hidden = view !== 'live'; $('accounts-view').hidden = view !== 'accounts'; $('history-view').hidden = view !== 'history';
+  $('live-view').hidden = view !== 'live'; $('accounts-view').hidden = view !== 'accounts'; $('history-view').hidden = view !== 'history'; $('reports-view').hidden = view !== 'reports';
   for (const tab of document.querySelectorAll('.view-tab')) {
-    if (tab.dataset.view === (view === 'live' ? 'live' : 'accounts')) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
+    if (tab.dataset.view === (view === 'history' ? 'accounts' : view)) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
   }
   if (view === 'live') startMap();
+  else if (view === 'reports') { renderReports(); loadReports(); }
   else if (view === 'accounts') {
     renderAccounts(); loadAccounts();
     // Back from a trip history to where the list was.
@@ -357,6 +361,114 @@ function renderHistory() {
     : 'Times are when each trip was booked. Refreshes every 10 seconds.';
 }
 
+// Reports load every 10 seconds on the Reports view, and every 30 elsewhere
+// for the tab's count of reports waiting for review.
+async function loadReports() {
+  if (!token || reportsPending || document.hidden) return;
+  clearTimeout(reportsTimer); reportsPending = true;
+  const run = generation;
+  try {
+    const data = await request('/admin/reports');
+    if (run !== generation) return;
+    reports = data.reports; reportsUpdated = Date.now(); showError('reports-error', '');
+  } catch (error) {
+    if (run !== generation) return;
+    if (error.status === 401 || error.status === 403) { endSession(error.message); return; }
+    showError('reports-error', error.missingRoute ? 'This server cannot show reports yet. Deploy the latest API, then refresh.' : `${error.message}${reports ? ' Showing the reports last loaded.' : ''}`);
+  } finally {
+    if (run === generation) {
+      reportsPending = false; renderReports();
+      if (!document.hidden) reportsTimer = setTimeout(loadReports, view === 'reports' ? 10000 : 30000);
+    }
+  }
+}
+
+const dateTime = date => `${shortDate(date)}, ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+
+// Where a passenger stands: suspended until when, disabled, or how many offenses so far.
+function standing(passenger) {
+  if (passenger.disabled) return { label: 'Disabled', className: 'disabled' };
+  if (passenger.suspendedUntil) return { label: `Suspended until ${dateTime(new Date(passenger.suspendedUntil))}`, className: 'suspended' };
+  return { label: passenger.offenses ? `${passenger.offenses} upheld report${passenger.offenses === 1 ? '' : 's'}` : 'No upheld reports', className: 'clear' };
+}
+
+async function review(report, decision) {
+  if (reviewing) return;
+  const passenger = report.passenger;
+  const question = decision === 'uphold'
+    ? passenger.nextPenalty === 'Permanently disabled'
+      ? `Uphold this report and permanently disable ${passenger.name}'s account?\n\nThis is their third offense: the account is disabled for good and its mobile number and email can never sign up again.`
+      : `Uphold this report and give ${passenger.name} a ${passenger.nextPenalty.toLowerCase()}?\n\nThey are signed out at once and any booking they have is cancelled.`
+    : `Dismiss this report? ${passenger.name} gets no penalty for it.`;
+  if (!confirm(question)) return;
+  reviewing = report.key; renderReports();
+  try {
+    const { report: updated } = await request(`/admin/reports/${report.key}/${decision}`, { body: {} });
+    // The passenger's standing changed on their other reports too.
+    reports = reports.map(item => item.key === updated.key ? updated : item.passenger?.key === updated.passenger?.key ? { ...item, passenger: updated.passenger } : item);
+    showError('reports-error', '');
+  } catch (error) {
+    if (error.status === 401 || error.status === 403) { endSession(error.message); return; }
+    showError('reports-error', error.message);
+  } finally { reviewing = null; renderReports(); loadReports(); }
+}
+
+function reportRow(report) {
+  const row = document.createElement('tr'), date = new Date(report.date), passenger = report.passenger, driver = report.driver, trip = report.trip;
+  const cell = (className, ...children) => { const node = document.createElement('td'); node.className = className; node.append(...children); return node; };
+  const who = document.createElement('div'); who.className = 'account-who';
+  const copy = document.createElement('span'); copy.className = 'user-copy';
+  if (passenger) {
+    const link = text('a', passenger.name, 'account-link'); link.href = `#accounts/${passenger.key}`;
+    const name = document.createElement('strong'); name.append(link);
+    const state = standing(passenger);
+    copy.append(name, text('span', [formatPhone(passenger.phone), passenger.email].filter(Boolean).join(' · '), 'user-subtitle'), text('span', state.label, `standing ${state.className}`));
+    who.append(text('span', initials(passenger.name), 'avatar passenger'), copy);
+  } else who.append(text('span', 'Deleted account', 'cell-note'));
+  const what = [text('span', report.reasonLabel, `cell-main reason ${report.reason}`)];
+  if (report.details) what.push(text('span', `“${report.details}”`, 'cell-quote'));
+  if (driver) what.push(text('span', `By ${driver.name}${driver.plate ? ` · ${driver.plate}` : ''}${driver.toda ? ` · ${driver.toda}` : ''}`, 'cell-note'));
+  const tripCells = trip ? [text('span', trip.id, 'trip-id'), text('span', trip.route, 'cell-note'),
+    text('span', trip.status === 'Cancelled' && trip.cancelledBy ? `Cancelled by the ${trip.cancelledBy}` : trip.status, 'cell-note')] : [text('span', '—', 'cell-note')];
+  const decision = [];
+  if (report.status === 'pending' && passenger) {
+    const actions = document.createElement('div'); actions.className = 'report-actions';
+    const uphold = text('button', `Uphold · ${passenger.nextPenalty === 'Permanently disabled' ? 'disable' : passenger.nextPenalty.replace(' suspension', '')}`, `report-button ${passenger.nextPenalty === 'Permanently disabled' ? 'severe' : 'uphold'}`);
+    const dismiss = text('button', 'Dismiss', 'report-button dismiss');
+    for (const [button, decisionName] of [[uphold, 'uphold'], [dismiss, 'dismiss']]) {
+      button.type = 'button'; button.disabled = Boolean(reviewing);
+      button.addEventListener('click', () => review(report, decisionName)); actions.append(button);
+    }
+    decision.push(actions, text('span', reviewing === report.key ? 'Saving…' : `Next penalty: ${passenger.nextPenalty}`, 'cell-note'));
+  } else {
+    decision.push(text('span', report.status === 'pending' ? 'Waiting' : report.status === 'upheld' ? 'Upheld' : 'Dismissed', `status-pill ${report.status}`));
+    if (report.penalty) decision.push(text('span', report.penalty.permanent ? 'Disabled · number and email blocked' : `${report.penalty.label} · until ${dateTime(new Date(report.penalty.until))}`, 'cell-flag'));
+    if (report.reviewedAt) decision.push(text('span', `Reviewed ${dateTime(new Date(report.reviewedAt))}`, 'cell-note'));
+  }
+  row.append(cell('cell-date', text('span', shortDate(date), 'cell-main'), text('span', date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), 'cell-note')),
+    cell('cell-who', who), cell('cell-what', ...what), cell('cell-trip', ...tripCells), cell('cell-decision', ...decision));
+  return row;
+}
+
+function renderReports() {
+  const list = reports || [], pending = list.filter(item => item.status === 'pending');
+  const passengers = new Map(list.filter(item => item.passenger).map(item => [item.passenger.key, item.passenger]));
+  $('report-count-pending').textContent = reports ? pending.length : '—';
+  $('report-note-pending').textContent = !reports ? 'Loading…' : pending.length ? `About ${new Set(pending.map(item => item.passenger?.key)).size} passenger${new Set(pending.map(item => item.passenger?.key)).size === 1 ? '' : 's'}` : 'All caught up';
+  $('report-count-suspended').textContent = reports ? [...passengers.values()].filter(item => item.suspendedUntil && !item.disabled).length : '—';
+  $('report-count-disabled').textContent = reports ? [...passengers.values()].filter(item => item.disabled).length : '—';
+  $('reports-badge').textContent = pending.length; $('reports-badge').hidden = !pending.length;
+  $('reports-updated').textContent = reportsUpdated ? `Updated ${new Date(reportsUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Loading reports…';
+  const shown = list.filter(item => reportFilter === 'all' || item.status === reportFilter);
+  $('report-result-count').textContent = `${shown.length} shown`;
+  $('report-rows').replaceChildren(...shown.map(reportRow));
+  $('reports-table').hidden = !shown.length;
+  const failed = !reports && !$('reports-error').hidden, empty = $('reports-empty');
+  empty.hidden = shown.length > 0;
+  empty.querySelector('h3').textContent = failed ? 'Reports unavailable' : !reports ? 'Loading reports' : reportFilter === 'pending' ? 'No reports waiting' : list.length ? 'No reports here' : 'No reports yet';
+  empty.querySelector('p').textContent = failed ? 'Use Refresh now to try again.' : !reports ? "Getting drivers' reports about passengers." : reportFilter === 'pending' ? 'New reports from drivers appear here for review.' : 'Try another filter.';
+}
+
 $('login-form').addEventListener('submit', async event => {
   event.preventDefault(); const run = ++generation;
   $('sign-in').disabled = true; $('login-progress').hidden = false; showError('login-error', '');
@@ -369,7 +481,7 @@ $('login-form').addEventListener('submit', async event => {
     storeToken(candidate.token); $('password').value = '';
     $('admin-name').textContent = candidate.user.firstName || 'Pilot admin';
     $('login').hidden = true; $('dashboard').hidden = false;
-    applySnapshot(data, requestStarted); timer = setTimeout(refresh, 3000); showView();
+    applySnapshot(data, requestStarted); timer = setTimeout(refresh, 3000); showView(); loadReports();
   } catch (error) {
     if (candidate?.token) request('/logout', { auth: candidate.token, body: {} }).catch(() => {});
     if (run === generation) showError('login-error', error.message);
@@ -407,9 +519,16 @@ $('history-statuses').addEventListener('click', event => {
   renderHistory();
 });
 $('history-refresh').addEventListener('click', loadHistory);
+$('reports-refresh').addEventListener('click', loadReports);
+$('report-statuses').addEventListener('click', event => {
+  const button = event.target.closest('button[data-report]'); if (!button) return;
+  reportFilter = button.dataset.report;
+  for (const item of $('report-statuses').querySelectorAll('button')) item.setAttribute('aria-pressed', String(item === button));
+  renderReports();
+});
 document.addEventListener('visibilitychange', () => {
-  clearTimeout(timer); clearTimeout(accountsTimer); clearTimeout(historyTimer);
-  if (!document.hidden) { refresh(); loadAccounts(); loadHistory(); }
+  clearTimeout(timer); clearTimeout(accountsTimer); clearTimeout(historyTimer); clearTimeout(reportsTimer);
+  if (!document.hidden) { refresh(); loadAccounts(); loadHistory(); loadReports(); }
 });
 // Age GPS on screen even if the next network request is slow.
 setInterval(() => { if (snapshot && !document.hidden) {
@@ -417,5 +536,5 @@ setInterval(() => { if (snapshot && !document.hidden) {
   render();
 } }, 1000);
 try { token = sessionStorage.getItem(tokenKey) || ''; } catch {}
-if (token) { $('login').hidden = true; $('dashboard').hidden = false; refresh(); }
+if (token) { $('login').hidden = true; $('dashboard').hidden = false; refresh(); loadReports(); }
 showView();

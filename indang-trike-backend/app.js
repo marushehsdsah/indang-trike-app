@@ -26,7 +26,7 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   const io = new Server(server, { cors: { origin: process.env.CORS_ORIGIN || '*' }, maxHttpBufferSize: 20000 });
   const presence = new Map(), auth = createAuth(models, clock, { sendEmail });
   const dispatch = createDispatch({ models, io, clock, presence, options: dispatchOptions });
-  const admin = createAdmin({ models, presence, clock, adminPhones });
+  const admin = createAdmin({ models, presence, clock, adminPhones, onSuspended: (id) => dispatch.run(() => dispatch.suspended(id)) });
   const chat = createChat({ models, io, clock });
   app.disable('x-powered-by');
   // The God view website (web/god-view) is hosted separately and calls this
@@ -66,6 +66,11 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   // One account's trip history (God view).
   app.get('/api/admin/accounts/:id', async (req, res) => res.json(await admin.history(req.params.id)));
   app.get('/api/admin/trips', async (req, res) => res.json({ trips: await admin.trips() }));
+  // Drivers' reports about passengers (God view's Reports tab): upholding one
+  // suspends the passenger, longer each time, then disables the account.
+  app.get('/api/admin/reports', async (req, res) => res.json(await admin.reports()));
+  app.post('/api/admin/reports/:id/uphold', async (req, res) => res.json(await admin.uphold(req.params.id, req.user)));
+  app.post('/api/admin/reports/:id/dismiss', async (req, res) => res.json(await admin.dismiss(req.params.id, req.user)));
   // Admin accounts oversee the service; they do not book, drive or chat on trips.
   app.use(['/api/rides', '/api/driver', '/api/passenger'], (req, res, next) => {
     requireValue(req.user.role !== 'admin', 403, 'Admin accounts cannot book or drive.');
@@ -97,8 +102,9 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
     const result = await dispatch.run(() => dispatch.book(req.user, req.body));
     res.status(result.reused ? 200 : 201).json(result);
   });
-  // Before the generic action route, which would otherwise take "rating" and "messages".
+  // Before the generic action route, which would otherwise take "rating", "report" and "messages".
   app.post('/api/rides/:id/rating', async (req, res) => res.json(await dispatch.run(() => dispatch.rate(req.user, req.params.id, req.body))));
+  app.post('/api/rides/:id/report', async (req, res) => res.json(await dispatch.run(() => dispatch.report(req.user, req.params.id, req.body))));
   app.get('/api/rides/:id/messages', async (req, res) => res.json(await chat.list(req.user, req.params.id)));
   app.post('/api/rides/:id/messages', async (req, res) => res.json(await chat.send(req.user, req.params.id, req.body)));
   app.post('/api/rides/:id/messages/read', async (req, res) => res.json(await chat.markRead(req.user, req.params.id)));

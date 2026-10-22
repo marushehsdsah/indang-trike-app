@@ -308,10 +308,16 @@ export function AppProvider({ children }) {
     if (result.ride) setRide((previous) => previous?.id === result.ride.id ? mergeRide(previous, result.ride) : previous);
     return result.ride;
   }, [request]);
+  // The driver reports the passenger of a finished trip; returns the updated ride.
+  const reportRide = useCallback(async (id, report) => {
+    const result = await request(`/rides/${id}/report`, report);
+    if (result.ride) setRide((previous) => previous?.id === result.ride.id ? mergeRide(previous, result.ride) : previous);
+    return result.ride;
+  }, [request]);
   const dismissRide = useCallback(() => setRide((previous) => previous && ACTIVE_STATUSES.includes(previous.status) ? previous : null), []);
 
   return <Context.Provider value={{ user, ride, offer, token, loading, error, connected, online, syncing, config, gps, foreground, serverOffset,
     chat, chatNotice, bookingsVersion, loadChat, viewChat, sendChat, retryChat, dismissChatNotice,
-    request, refresh, restore, signIn, signOut, setAvailable, bookRide, rideAction, rateRide, dismissRide, clearError: () => setError(null) }}>{children}</Context.Provider>;
+    request, refresh, restore, signIn, signOut, setAvailable, bookRide, rideAction, rateRide, reportRide, dismissRide, clearError: () => setError(null) }}>{children}</Context.Provider>;
 }
 export const useApp = () => useContext(Context);

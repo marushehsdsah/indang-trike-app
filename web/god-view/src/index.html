@@ -35,7 +35,7 @@
 
   <main id="dashboard" class="dashboard" hidden>
     <header class="topbar"><a class="brand" href="./"><span class="brand-mark">iG</span>IndangGO</a><span class="topbar-divider"></span><span class="workspace-name">God view</span><span class="pilot-tag">PILOT</span><div class="topbar-right"><span id="admin-name"></span><button id="sign-out" class="quiet light">Sign out</button></div></header>
-    <nav class="view-tabs" aria-label="God view"><a class="view-tab" href="#live" data-view="live" aria-current="page">Live map</a><a class="view-tab" href="#accounts" data-view="accounts">Accounts</a></nav>
+    <nav class="view-tabs" aria-label="God view"><a class="view-tab" href="#live" data-view="live" aria-current="page">Live map</a><a class="view-tab" href="#accounts" data-view="accounts">Accounts</a><a class="view-tab" href="#reports" data-view="reports">Reports<span id="reports-badge" class="tab-badge" hidden></span></a></nav>
     <div id="live-view">
     <section class="page-heading"><div><span class="eyebrow">PILOT OPERATIONS</span><h1>Live overview <span id="area-name" class="area-chip">Service area</span></h1><p class="muted">The people moving through your city, right now.</p></div><div class="sync-panel"><span id="connection-status" class="connection" role="status">Connecting</span><span id="last-updated" class="small muted">Waiting for the first update</span><button id="refresh" class="quiet">Refresh now</button></div></section>
     <section class="metrics" aria-label="Online user summary">
@@ -86,6 +86,30 @@
       </table>
       <div id="accounts-empty" class="empty-state"><span aria-hidden="true">◎</span><h3>Loading accounts</h3><p>Getting every driver and passenger account.</p></div>
       <div class="people-footer"><span id="accounts-footnote">Online means the app is open and connected. Refreshes every 10 seconds.</span></div>
+    </section>
+    </div>
+
+    <div id="reports-view" hidden>
+    <section class="page-heading"><div><span class="eyebrow">RIDER REPORTS</span><h1>Passenger reports</h1><p class="muted">Drivers report fake bookings and no-shows here. Upholding a report suspends the passenger.</p></div><div class="sync-panel"><span id="reports-updated" class="small muted">Loading reports…</span><button id="reports-refresh" class="quiet">Refresh now</button></div></section>
+    <section class="metrics three" aria-label="Report summary">
+      <div class="metric"><span class="metric-label"><i class="legend-dot report"></i> Waiting for review</span><strong id="report-count-pending">—</strong><span id="report-note-pending" class="metric-note">Loading…</span></div>
+      <div class="metric"><span class="metric-label"><i class="legend-dot stale"></i> Suspended now</span><strong id="report-count-suspended">—</strong><span class="metric-note">Passengers barred for 24 hours or 3 days</span></div>
+      <div class="metric"><span class="metric-label"><i class="legend-dot disabled"></i> Disabled for good</span><strong id="report-count-disabled">—</strong><span class="metric-note">Number and email blocked from signing up</span></div>
+    </section>
+    <ol class="penalty-ladder" aria-label="Penalties for upheld reports"><li><strong>1st offense</strong><span>24-hour suspension</span></li><li><strong>2nd offense</strong><span>3-day suspension</span></li><li><strong>3rd offense</strong><span>Disabled for good · number and email blocked</span></li></ol>
+    <p id="reports-error" class="notice" role="alert" hidden></p>
+    <section class="accounts-panel" aria-labelledby="reports-title">
+      <div class="accounts-toolbar">
+        <h2 id="reports-title" class="panel-title">Reports</h2>
+        <div id="report-statuses" class="filters" role="group" aria-label="Filter by review"><button data-report="pending" aria-pressed="true">Waiting</button><button data-report="upheld" aria-pressed="false">Upheld</button><button data-report="dismissed" aria-pressed="false">Dismissed</button><button data-report="all" aria-pressed="false">All</button></div>
+        <span id="report-result-count" class="count-pill">0 shown</span>
+      </div>
+      <table id="reports-table" class="accounts-table reports-table">
+        <thead><tr><th scope="col">Reported</th><th scope="col">Passenger</th><th scope="col">What happened</th><th scope="col">Trip</th><th scope="col">Decision</th></tr></thead>
+        <tbody id="report-rows"></tbody>
+      </table>
+      <div id="reports-empty" class="empty-state"><span aria-hidden="true">◎</span><h3>Loading reports</h3><p>Getting drivers' reports about passengers.</p></div>
+      <div class="people-footer"><span>Suspended passengers are signed out at once and cannot log in until it ends. Refreshes every 10 seconds.</span></div>
     </section>
     </div>
 
