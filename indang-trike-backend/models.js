@@ -17,6 +17,9 @@ function createModels(connection) {
     locationAvailable: { type: Boolean, default: false },
     // Running totals of the ratings this user has received; see utils/rating.js.
     ratingSum: { type: Number, default: 0 }, ratingCount: { type: Number, default: 0 },
+    // How many times offensive words were censored from what this user sent
+    // (utils/profanity.js); shown to admins.
+    languageWarnings: { type: Number, default: 0 },
     // Upheld driver reports against this passenger (utils/reports.js), and the
     // penalty they brought: barred until suspendedUntil, or disabled for good.
     offenses: { type: Number, default: 0 }, suspendedUntil: Date, disabled: { type: Boolean, default: false },

@@ -1,5 +1,5 @@
 import { API_BASE_URL } from './config.mjs';
-import { DRIVER_ACTIONS, accountCounts, accountRole, cancellationLabel, filterAccounts, filterTrips, filterUsers, formatDistance, formatFare, formatPhone, isLive, isOnline, locationLabel, mapPeople, ratingLabel, roleCountLabel, routeSummary, safetyReportLabel, sortAccounts, statusLabel, snapshotTiming, tripOf } from './model.mjs';
+import { DRIVER_ACTIONS, accountCounts, accountRole, cancellationLabel, filterAccounts, filterTrips, filterUsers, formatDistance, formatFare, formatPhone, isLive, isOnline, locationLabel, mapPeople, ratingLabel, roleCountLabel, routeSummary, languageWarningLabel, safetyReportLabel, sortAccounts, statusLabel, snapshotTiming, tripOf } from './model.mjs';
 
 const $ = id => document.getElementById(id);
 const tokenKey = 'indanggo.god-view.session';
@@ -121,6 +121,7 @@ function renderTripDetails(panel, { route, driver, passenger }) {
     if (person.plate || person.toda) member.append(text('p', [person.plate, person.toda].filter(Boolean).join(' · '), 'muted small'));
     member.append(text('p', ratingLabel(person), 'muted small'));
     if (safetyReportLabel(person)) member.append(text('p', safetyReportLabel(person), 'outside-label'));
+    if (languageWarningLabel(person)) member.append(text('p', languageWarningLabel(person), 'outside-label'));
     member.append(text('p', locationLabel(person, now(), connected), 'detail-gps'));
     panel.append(member);
   }
@@ -140,6 +141,7 @@ function renderDetails() {
   if (user.plate || user.toda) panel.append(text('p', [user.plate, user.toda].filter(Boolean).join(' · '), 'muted small'));
   panel.append(text('p', ratingLabel(user), 'muted small'));
   if (safetyReportLabel(user)) panel.append(text('p', safetyReportLabel(user), 'outside-label'));
+  if (languageWarningLabel(user)) panel.append(text('p', languageWarningLabel(user), 'outside-label'));
   panel.append(text('p', locationLabel(user, now(), connected), 'detail-gps'));
   if (user.location) {
     panel.append(text('p', `${user.location.latitude.toFixed(5)}, ${user.location.longitude.toFixed(5)} · ±${Math.round(user.location.accuracy)} m`, 'small muted'));

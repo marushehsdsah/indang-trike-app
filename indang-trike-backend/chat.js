@@ -1,5 +1,6 @@
 const { MAX_MESSAGES_PER_RIDE, canChat, validateMessage } = require('../utils/chat');
 const { HttpError, requireValue } = require('./policy');
+const { censorText } = require('../utils/profanity');
 
 // Each person may send at most SEND_LIMIT messages in SEND_WINDOW_MS.
 const SEND_LIMIT = 10, SEND_WINDOW_MS = 30 * 1000;
@@ -41,6 +42,9 @@ function createChat({ models, io, clock }) {
     const { ride, rideId, userId, role } = await participantRide(user, id);
     let fields;
     try { fields = validateMessage(body, role); } catch (error) { throw new HttpError(400, error.message); }
+    // Offensive words are hidden before the other person sees the message.
+    const censored = fields.text !== undefined && censorText(fields.text);
+    if (censored?.censored) fields.text = censored.text;
     const same = async () => {
       const saved = await Message.findOne({ senderId: userId, clientId: fields.clientId });
       requireValue(!saved || saved.rideId === rideId, 409, 'This message could not be sent. Try again.');
@@ -68,7 +72,9 @@ function createChat({ models, io, clock }) {
     }
     const view = messageView(message);
     emit(ride, 'chat:message', { rideId, message: view });
-    return { message: view };
+    if (!censored?.censored) return { message: view };
+    await models.User.updateOne({ _id: userId }, { $inc: { languageWarnings: 1 } });
+    return { message: view, censored: true };
   }
   // The viewer has now seen every message sent to them in this chat.
   async function markRead(user, id) {

@@ -5,6 +5,7 @@ const { findToda, todaName, TODA_NAMES } = require('../data/todaZones');
 const { fareDetails, quoteTrip } = require('../data/fares');
 const { resolveBookingRoute, createBookingPayload } = require('../utils/bookingRoute');
 const { ratingSummary } = require('../utils/rating');
+const { containsProfanity } = require('../utils/profanity');
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -16,6 +17,8 @@ function profileFields(body, role, current) {
   const firstName = cleanText(body.firstName), lastName = cleanText(body.lastName), email = cleanText(body.email, 254).toLowerCase();
   requireValue(firstName && lastName, 400, 'First and last names are required.');
   requireValue(sanitizeName(firstName) === firstName && sanitizeName(lastName) === lastName, 400, 'Names can only contain letters and spaces.');
+  // A name cannot be partly hidden, so one with offensive words is refused.
+  requireValue(!containsProfanity(`${firstName} ${lastName}`), 400, 'Please use a respectful name.');
   requireValue(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 400, 'Enter a valid email address.');
   const fields = { firstName, lastName, email };
   if (role === 'driver') {

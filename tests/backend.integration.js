@@ -181,9 +181,9 @@ test('the admin interface lists the accounts and trips in the database, for admi
   const { accounts, total } = (await request('/admin/accounts', admin.token)).body;
   assert.equal(total, accounts.length);
   assert.deepEqual(accounts.find((item) => item.key === passenger.user.id),
-    { key: passenger.user.id, id: passenger.user.phone.replace('+63', '0'), name: 'Test passenger', email: passenger.user.email, role: 'PASSENGER', status: 'Offline' });
+    { key: passenger.user.id, id: passenger.user.phone.replace('+63', '0'), name: 'Test passenger', email: passenger.user.email, role: 'PASSENGER', status: 'Offline', languageWarnings: 0 });
   assert.deepEqual(accounts.find((item) => item.key === driver.user.id),
-    { key: driver.user.id, id: driver.user.phone.replace('+63', '0'), name: 'Test driver', email: driver.user.email, role: 'RIDER', status: 'Online', toda: 'Test TODA', plate: driver.user.plate, approval: 'Approved' });
+    { key: driver.user.id, id: driver.user.phone.replace('+63', '0'), name: 'Test driver', email: driver.user.email, role: 'RIDER', status: 'Online', languageWarnings: 0, toda: 'Test TODA', plate: driver.user.plate, approval: 'Approved' });
   assert.equal(accounts.some((item) => item.name === 'Pilot Admin'), false, 'admin accounts are not listed');
   assert.equal(accounts.length, await backend.models.User.countDocuments({ role: { $ne: 'admin' } }));
 
@@ -258,7 +258,7 @@ test('a driver who signs up gets no bookings until an admin approves them, and a
   const admin = (await request('/login', null, { phone: adminPhone, password: 'strong-password' })).body;
   for (const [path, body] of [['/admin/approvals'], [`/admin/drivers/${id}`], [`/admin/drivers/${id}/approve`, {}]]) assert.equal((await request(path, driver.token, body)).status, 403, path);
   const listed = (await request('/admin/approvals', admin.token)).body.drivers.find((item) => item.key === id);
-  assert.deepEqual({ ...listed, joined: typeof listed.joined }, { key: id, id: phone, name: 'Nora Driver', email, role: 'RIDER', status: 'Online', toda: 'Test TODA', plate: 'NEW-1',
+  assert.deepEqual({ ...listed, joined: typeof listed.joined }, { key: id, id: phone, name: 'Nora Driver', email, role: 'RIDER', status: 'Online', languageWarnings: 0, toda: 'Test TODA', plate: 'NEW-1',
     approval: 'Pending', capacity: 3, joined: 'string', approvedAt: null, terminatedAt: null, terminationReason: '' });
   assert.equal((await request('/admin/dashboard', admin.token)).body.pendingDrivers, await backend.models.User.countDocuments({ role: 'driver', approval: 'pending' }));
   assert.ok((await request('/admin/overview', admin.token)).body.pendingDrivers >= 1, 'the count on the Accounts tab of God view');
@@ -1031,5 +1031,42 @@ test('pilot admins can read a trip chat only after a safety report on that trip'
   assert.equal(shown.status, 200, JSON.stringify(shown.body));
   assert.deepEqual(shown.body.messages.map((message) => [message.senderRole, message.text]), [['passenger', 'Please slow down']]);
   assert.equal((await request('/admin/rides/not-a-ride/messages', admin.token)).status, 404);
+  await request('/driver/availability', driver.token, { available: false });
+});
+
+test('offensive words are hidden in chat, notes and ratings, each one warns the sender, and offensive names are refused', async () => {
+  const passenger = await account(), driver = await account('driver');
+  await online(driver);
+  const booked = await request('/rides', passenger.token, { trip: DEFAULT_TRIP, passengers: 1, note: 'bilisan mo gago', idempotencyKey: randomUUID() });
+  assert.equal(booked.status, 201, JSON.stringify(booked.body));
+  assert.equal(booked.body.censored, true);
+  const ride = booked.body.ride;
+  assert.equal((await state(driver)).offer.note, 'bilisan mo g***', 'the driver sees the hidden note');
+  await action(driver, ride.id, 'accept', { offerId: (await state(driver)).offer.offerId });
+
+  const send = (who, text) => request(`/rides/${ride.id}/messages`, who.token, { clientId: randomUUID(), text });
+  const rude = await send(driver, 'Nasaan ka na, t4nga?');
+  assert.equal(rude.status, 200, JSON.stringify(rude.body));
+  assert.deepEqual([rude.body.message.text, rude.body.censored], ['Nasaan ka na, t****?', true]);
+  const polite = await send(passenger, 'Papunta na po, salamat!');
+  assert.deepEqual([polite.body.message.text, polite.body.censored], ['Papunta na po, salamat!', undefined]);
+  const saved = (await request(`/rides/${ride.id}/messages`, passenger.token)).body.messages.map(({ text }) => text);
+  assert.ok(!saved.some((text) => /t4nga/.test(text)), 'only the hidden text is stored');
+
+  for (const step of ['arrive', 'start', 'complete']) await action(driver, ride.id, step);
+  const rated = await request(`/rides/${ride.id}/rating`, passenger.token, { stars: 2, comment: 'Ang bastos, bullshit' });
+  assert.equal(rated.status, 200, JSON.stringify(rated.body));
+  assert.equal(rated.body.censored, true);
+  assert.equal(rated.body.ride.myRating.comment, 'Ang bastos, b*******');
+
+  const users = await backend.models.User.find({ _id: { $in: [passenger.user.id, driver.user.id] } }).select('languageWarnings').lean();
+  const warnings = Object.fromEntries(users.map((user) => [String(user._id), user.languageWarnings]));
+  assert.deepEqual([warnings[passenger.user.id], warnings[driver.user.id]], [2, 1], 'note and rating; one chat message');
+
+  assert.equal((await request('/me', passenger.token, { firstName: 'Juan', lastName: 'Gago', email: passenger.user.email }, 'PATCH')).body.error, 'Please use a respectful name.');
+  const email = `rude-${sequence}@example.com`;
+  const signup = await request('/register/code', null, { phone: `0917${sequence++}`, password: 'strong-password', firstName: 'Putangina', lastName: 'Cruz', email, role: 'passenger' });
+  assert.deepEqual([signup.status, signup.body.error], [400, 'Please use a respectful name.']);
+  assert.equal(emailedCodes.has(email), false);
   await request('/driver/availability', driver.token, { available: false });
 });

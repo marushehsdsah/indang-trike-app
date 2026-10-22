@@ -132,10 +132,10 @@ test('the admin screens list accounts by mobile number and whether the app is op
     { _id: 'd3', phone: '+639201234567', role: 'driver', approval: 'pending', disabled: true, terminatedAt: new Date(now) },
   ], new Set(['d1', 'd2']));
   assert.deepEqual(accounts, [
-    { key: 'p1', id: '09171234567', name: 'Ana Cruz', email: 'ana@example.com', role: 'PASSENGER', status: 'Offline' },
-    { key: 'd1', id: '09181234567', name: 'Ben Reyes', email: 'ben@example.com', role: 'RIDER', status: 'Available', toda: 'ITODA', plate: 'ABC 123', approval: 'Approved' },
-    { key: 'd2', id: '09191234567', name: 'Driver', email: '', role: 'RIDER', status: 'Online', toda: '', plate: '', approval: 'Pending' },
-    { key: 'd3', id: '09201234567', name: 'Driver', email: '', role: 'RIDER', status: 'Offline', toda: '', plate: '', approval: 'Terminated' },
+    { key: 'p1', id: '09171234567', name: 'Ana Cruz', email: 'ana@example.com', role: 'PASSENGER', status: 'Offline', languageWarnings: 0 },
+    { key: 'd1', id: '09181234567', name: 'Ben Reyes', email: 'ben@example.com', role: 'RIDER', status: 'Available', languageWarnings: 0, toda: 'ITODA', plate: 'ABC 123', approval: 'Approved' },
+    { key: 'd2', id: '09191234567', name: 'Driver', email: '', role: 'RIDER', status: 'Online', languageWarnings: 0, toda: '', plate: '', approval: 'Pending' },
+    { key: 'd3', id: '09201234567', name: 'Driver', email: '', role: 'RIDER', status: 'Offline', languageWarnings: 0, toda: '', plate: '', approval: 'Terminated' },
   ]);
 });
 
@@ -144,8 +144,8 @@ test('a driver who signs up waits for approval, and the approval screens show wh
     ['Approved', 'Approved', 'Pending', 'Terminated', 'Terminated'], 'drivers from before approval count as approved');
   const joined = new Date(now), terminatedAt = new Date(now + 1000);
   assert.deepEqual(buildDriver({ _id: 'd1', phone: '+639181234567', firstName: 'Ben', lastName: 'Reyes', email: 'ben@example.com', role: 'driver', toda: 'ITODA PITODA',
-    plate: 'ABC 123', capacity: 3, createdAt: joined, approval: 'pending', terminatedAt, terminationReason: 'Plate not on the list', password: 'hash' }, new Set()), {
-    key: 'd1', id: '09181234567', name: 'Ben Reyes', email: 'ben@example.com', role: 'RIDER', status: 'Offline', toda: 'ITODA', plate: 'ABC 123', approval: 'Terminated',
+    plate: 'ABC 123', capacity: 3, createdAt: joined, approval: 'pending', terminatedAt, terminationReason: 'Plate not on the list', languageWarnings: 2, password: 'hash' }, new Set()), {
+    key: 'd1', id: '09181234567', name: 'Ben Reyes', email: 'ben@example.com', role: 'RIDER', status: 'Offline', languageWarnings: 2, toda: 'ITODA', plate: 'ABC 123', approval: 'Terminated',
     capacity: 3, joined, approvedAt: null, terminatedAt, terminationReason: 'Plate not on the list',
   });
   const driver = { _id: 'd2', phone: '+639191234567', firstName: 'Cy', lastName: 'Lim', email: 'cy@example.com', role: 'driver', plate: 'X 1', toda: 'ITODA', capacity: 4 };

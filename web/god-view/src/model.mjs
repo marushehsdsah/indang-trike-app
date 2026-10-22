@@ -60,6 +60,13 @@ export function ratingLabel(user) {
 }
 
 // "2 safety reports to review", or null when there are none.
+// "3 language warnings", or null: how often offensive words were censored
+// from what they sent (utils/profanity.js).
+export function languageWarningLabel(user) {
+  const count = user.languageWarnings || 0;
+  return count ? `${count} language warning${count === 1 ? '' : 's'}` : null;
+}
+
 export function safetyReportLabel(user) {
   const count = user.safetyReports || 0;
   return count ? `${count} safety report${count === 1 ? '' : 's'} to review` : null;

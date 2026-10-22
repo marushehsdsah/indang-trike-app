@@ -71,7 +71,7 @@ function buildOverview(users, rides, connectedIds, now, findRoute = roadRoute, r
       role: driver ? 'driver' : 'passenger', status,
       available: Boolean(driver && user.available && !active && locationStatus === 'live' && inServiceArea),
       ...(driver ? { plate: user.plate || '', toda: todaName(user.toda) || '' } : {}),
-      rating: ratingSummary(user), safetyReports: reports.get(id) || 0,
+      rating: ratingSummary(user), safetyReports: reports.get(id) || 0, languageWarnings: user.languageWarnings || 0,
       location, locationStatus, inServiceArea,
       ride: active ? { id: String(active._id), status: active.status, pickup: active.trip?.pickup?.name || '', destination: active.trip?.dropoff?.name || '' } : null,
     };
@@ -121,7 +121,7 @@ function buildAccounts(users, connectedIds) {
     const id = String(user._id), driver = user.role === 'driver';
     return {
       key: id, id: localPhone(user.phone), name: fullName(user, driver ? 'Driver' : 'Passenger'), email: user.email || '',
-      role: driver ? 'RIDER' : 'PASSENGER', status: accountStatus(user, connectedIds.has(id)),
+      role: driver ? 'RIDER' : 'PASSENGER', status: accountStatus(user, connectedIds.has(id)), languageWarnings: user.languageWarnings || 0,
       ...(driver ? { toda: todaName(user.toda) || '', plate: user.plate || '', approval: driverApproval(user) } : {}),
     };
   });
@@ -232,7 +232,7 @@ function historyPeriod(days, now) {
 
 // The drivers waiting for approval.
 const PENDING_DRIVERS = { role: 'driver', approval: 'pending', terminatedAt: { $exists: false } };
-const DRIVER_FIELDS = 'phone firstName lastName email role available toda plate capacity createdAt approval approvedAt terminatedAt terminationReason';
+const DRIVER_FIELDS = 'phone firstName lastName email role available toda plate capacity createdAt approval approvedAt terminatedAt terminationReason languageWarnings';
 
 // onSuspended(id, reason): an account was cut off, so its rides end and its
 // app disconnects; onApproved(id): a driver was approved, so their app updates.
@@ -262,7 +262,7 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
     // Admins signed in on the app are watching, not riding, so they are not shown.
     // Safety reports: flagged ratings, and drivers' reports that were not dismissed.
     const [users, rides, reports, pendingDrivers] = await Promise.all([
-      models.User.find({ _id: { $in: ids }, role: { $ne: 'admin' } }).select('firstName lastName role plate toda available location locationAvailable ratingSum ratingCount').lean(),
+      models.User.find({ _id: { $in: ids }, role: { $ne: 'admin' } }).select('firstName lastName role plate toda available location locationAvailable ratingSum ratingCount languageWarnings').lean(),
       models.Ride.find({ active: true, $or: [{ passengerId: { $in: ids } }, { driverSlot: { $in: ids } }] }).select('passengerId driverId driverSlot status trip route').lean(),
       models.Rating.aggregate([{ $match: { flagged: true, rateeId: { $in: ids } } }, { $group: { _id: '$rateeId', count: { $sum: 1 } } }]),
       models.Report.aggregate([{ $match: { passengerId: { $in: ids }, status: { $ne: 'dismissed' } } }, { $group: { _id: '$passengerId', count: { $sum: 1 } } }]),
@@ -281,7 +281,7 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
   async function accounts() {
     const [users, total] = await Promise.all([
       models.User.find({ role: { $ne: 'admin' } }).sort({ createdAt: -1, _id: -1 }).limit(ACCOUNT_LIMIT)
-        .select('phone firstName lastName email role available toda plate approval terminatedAt').lean(),
+        .select('phone firstName lastName email role available toda plate approval terminatedAt languageWarnings').lean(),
       models.User.countDocuments({ role: { $ne: 'admin' } }),
     ]);
     return { accounts: buildAccounts(users, connectedIds()), total };
@@ -293,7 +293,7 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
     requireValue(/^[a-f\d]{24}$/i.test(id), 404, 'No account has this ID.');
     const period = historyPeriod(days, clock());
     const user = await models.User.findOne({ _id: id, role: { $ne: 'admin' } })
-      .select('phone firstName lastName email role available toda plate ratingSum ratingCount createdAt approval terminatedAt terminationReason').lean();
+      .select('phone firstName lastName email role available toda plate ratingSum ratingCount createdAt approval terminatedAt terminationReason languageWarnings').lean();
     requireValue(user, 404, 'No account has this ID.');
     const mine = { $or: [{ passengerId: id }, { driverId: id }], ...(period ? { createdAt: { $gte: period.since } } : {}) };
     const [rides, groups] = await Promise.all([

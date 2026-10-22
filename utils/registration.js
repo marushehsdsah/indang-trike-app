@@ -1,3 +1,5 @@
+const { containsProfanity } = require('./profanity');
+
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Names allow letters (including Ñ and accented letters) and spaces only.
 const NAME_DISALLOWED = /[^A-Za-zÀ-ÖØ-öø-ÿ ]/g;
@@ -28,6 +30,7 @@ function validateRegistration(form) {
   if (sanitizeName(form.firstName) !== form.firstName || sanitizeName(form.lastName) !== form.lastName) {
     return 'Names can only contain letters and spaces.';
   }
+  if (containsProfanity(`${form.firstName} ${form.lastName}`)) return 'Please use a respectful name.';
   if (!EMAIL_PATTERN.test(form.email?.trim() ?? '')) return 'Enter a valid email address.';
   if (!normalizePhilippinePhone(form.phone)) return 'Enter a valid Philippine mobile number.';
   if ((form.password ?? '').length < 8) return 'Password must be at least 8 characters.';

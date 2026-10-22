@@ -8,6 +8,7 @@ import AppNavigator from './navigation/AppNavigator';
 import { AppProvider } from './context/AppContext';
 import { LanguageProvider } from './i18n';
 import OfflineMapSync from './components/OfflineMapSync';
+import LanguageWarning from './components/LanguageWarning';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { COLORS } from './theme';
 
@@ -17,7 +18,7 @@ export default function App() {
   const [fontsLoaded, fontError] = useFonts({ Fredoka_600SemiBold, Fredoka_700Bold });
   if (!fontsLoaded && !fontError) return <View style={{ flex: 1, backgroundColor: COLORS.surface }} />;
   return (
-    <SafeAreaProvider><LanguageProvider><AppProvider><OfflineMapSync /><NavigationContainer>
+    <SafeAreaProvider><LanguageProvider><AppProvider><OfflineMapSync /><LanguageWarning /><NavigationContainer>
       <AppNavigator />
     </NavigationContainer></AppProvider></LanguageProvider></SafeAreaProvider>
   );
