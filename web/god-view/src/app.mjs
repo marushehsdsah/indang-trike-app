@@ -1,16 +1,22 @@
 import { API_BASE_URL } from './config.mjs';
-import { filterUsers, isLive, locationLabel, mapPeople, ratingLabel, routeSummary, safetyReportLabel, statusLabel, snapshotTiming, tripOf } from './model.mjs';
+import { accountCounts, accountRole, cancellationLabel, filterAccounts, filterTrips, filterUsers, formatDistance, formatFare, formatPhone, isLive, isOnline, locationLabel, mapPeople, ratingLabel, roleCountLabel, routeSummary, safetyReportLabel, sortAccounts, statusLabel, snapshotTiming, tripOf } from './model.mjs';
 
 const $ = id => document.getElementById(id);
 const tokenKey = 'indanggo.god-view.session';
-let token = '', generation = 0, snapshot = null, selected = null, role = 'all';
+let token = '', generation = 0, snapshot = null, selected = null, role = 'all', view = 'live';
 let connected = false, timer, pending = false, controller, fleetMap = null, mapStarting = false, serverOffset = 0;
+// The Accounts view: every passenger and driver account, online or offline.
+let accounts = null, accountsTotal = 0, accountsUpdated = 0, accountsTimer, accountsPending = false;
+const accountFilters = { type: 'all', status: 'all' };
+// One account's trip history (#accounts/<id>).
+let historyId = null, history = null, historyUpdated = 0, historyTimer, historyPending = false, historyFilter = 'all', listScroll = 0;
 const now = () => Date.now() + serverOffset;
 const visibleUsers = () => filterUsers(snapshot?.users || [], role, $('search').value);
 const routeFor = (user) => user && (snapshot?.routes || []).find(route => route.driverId === user.id || route.passengerId === user.id);
 // A matched ride's path shows while its driver or passenger is listed.
 const visibleRoutes = (users) => { const ids = new Set(users.map(user => user.id)); return (snapshot?.routes || []).filter(route => ids.has(route.driverId) || ids.has(route.passengerId)); };
 const text = (tag, value, className = '') => { const node = document.createElement(tag); node.textContent = value; node.className = className; return node; };
+const initials = name => name.split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase();
 function storeToken(value) { token = value; try { value ? sessionStorage.setItem(tokenKey, value) : sessionStorage.removeItem(tokenKey); } catch {} }
 function showError(id, message) { $(id).textContent = message; $(id).hidden = !message; }
 
@@ -24,8 +30,9 @@ async function request(path, { auth = token, body, signal } = {}) {
     if (error.name === 'AbortError') throw error;
     throw new Error('Cannot reach the server. Check your connection and try again; a sleeping server can take a minute to wake.');
   }
-  const data = await response.json();
-  if (!response.ok) throw Object.assign(new Error(data.error || 'The request failed.'), { status: response.status });
+  // An older API answers a route it lacks with an HTML page.
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(data.error || 'The request failed.'), { status: response.status, missingRoute: response.status === 404 && !data.error });
   return data;
 }
 
@@ -33,20 +40,23 @@ function endSession(message = '') {
   generation += 1; clearTimeout(timer); controller?.abort(); pending = false;
   storeToken(''); snapshot = null; selected = null; connected = false;
   fleetMap?.remove(); fleetMap = null; mapStarting = false;
+  clearTimeout(accountsTimer); accountsPending = false; accounts = null; accountsUpdated = 0; showError('accounts-error', ''); renderAccounts();
+  clearTimeout(historyTimer); historyPending = false; history = null; historyUpdated = 0; showError('history-error', ''); renderHistory();
   $('user-list').replaceChildren(); $('person-details').replaceChildren(); $('person-details').hidden = true;
   $('dashboard').hidden = true; $('login').hidden = false;
   $('password').value = ''; showError('login-error', message);
 }
 
 async function startMap() {
-  if (fleetMap || mapStarting || !snapshot) return;
+  if (fleetMap || mapStarting || !snapshot || view !== 'live') return;
   const run = generation;
   mapStarting = true;
   try {
     const [mapModule, data] = await Promise.all([import('./map.mjs'), request('/admin/map')]);
     if (run !== generation) return;
     fleetMap = mapModule.createFleetMap($('map'), snapshot.serviceArea, data.boundary, data.places, selectUser, message => showError('map-error', message));
-    render();
+    // Someone picked with Show on map before the map was up.
+    if (selected) selectUser(selected); else render();
   } catch (error) {
     if (run === generation) showError('map-error', error.status === 401 || error.status === 403 ? 'Map access expired. Refresh to sign in again.' : 'Map unavailable. You can still use the people list; use Refresh now to retry.');
   } finally { if (run === generation) mapStarting = false; }
@@ -147,7 +157,7 @@ function render() {
   const list = $('user-list'), nodes = users.map(user => {
     const button = document.createElement('button'); button.type = 'button'; button.className = `user-row${highlighted.has(user.id) ? ' selected' : ''}`;
     button.dataset.userId = user.id; button.setAttribute('aria-pressed', String(highlighted.has(user.id)));
-    const avatar = text('span', user.name.split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase(), `avatar ${user.role}`);
+    const avatar = text('span', initials(user.name), `avatar ${user.role}`);
     const copy = document.createElement('span'); copy.className = 'user-copy';
     copy.append(text('strong', user.name), text('span', `${user.role === 'driver' ? 'Driver' : 'Passenger'} · ${statusLabel(user)}`, 'user-subtitle'), text('span', locationLabel(user, now(), connected), `user-gps${isLive(user, now(), connected) ? ' live-text' : ''}`));
     button.append(avatar, copy, text('span', '›', 'row-arrow'));
@@ -162,6 +172,191 @@ function render() {
   fleetMap?.update(mapPeople(users, routes), selected, now(), connected, routes); renderDetails();
 }
 
+// Live map, Accounts (#accounts) or one account's trip history
+// (#accounts/<id>), from the address, so a reload or the back button keeps
+// the view.
+function showView() {
+  const previous = view, account = location.hash.match(/^#accounts\/([a-f\d]{24})$/i)?.[1] ?? null;
+  view = account ? 'history' : location.hash === '#accounts' ? 'accounts' : 'live';
+  if (previous === 'accounts' && view === 'history') listScroll = scrollY;
+  const changed = account !== historyId;
+  if (changed) { historyId = account; history = null; historyUpdated = 0; showError('history-error', ''); }
+  $('live-view').hidden = view !== 'live'; $('accounts-view').hidden = view !== 'accounts'; $('history-view').hidden = view !== 'history';
+  for (const tab of document.querySelectorAll('.view-tab')) {
+    if (tab.dataset.view === (view === 'live' ? 'live' : 'accounts')) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
+  }
+  if (view === 'live') startMap();
+  else if (view === 'accounts') {
+    renderAccounts(); loadAccounts();
+    // Back from a trip history to where the list was.
+    if (previous === 'history') scrollTo(0, listScroll);
+  } else {
+    if (changed) scrollTo(0, 0);
+    renderHistory(); loadHistory();
+  }
+}
+
+function showOnMap(id) {
+  location.hash = 'live'; showView(); selectUser(id);
+}
+
+async function loadAccounts() {
+  if (!token || view !== 'accounts' || accountsPending || document.hidden) return;
+  clearTimeout(accountsTimer); accountsPending = true;
+  const run = generation;
+  try {
+    const data = await request('/admin/accounts');
+    if (run !== generation) return;
+    accounts = sortAccounts(data.accounts); accountsTotal = data.total ?? data.accounts.length; accountsUpdated = Date.now();
+    showError('accounts-error', '');
+  } catch (error) {
+    if (run !== generation) return;
+    if (error.status === 401 || error.status === 403) { endSession(error.message); return; }
+    showError('accounts-error', error.status === 404 ? 'This server cannot list accounts yet. Deploy the latest API, then refresh.' : `${error.message}${accounts ? ' Showing the last list loaded.' : ''}`);
+  } finally {
+    if (run === generation) {
+      accountsPending = false; renderAccounts();
+      if (view === 'accounts' && !document.hidden) accountsTimer = setTimeout(loadAccounts, 10000);
+    }
+  }
+}
+
+function accountRow(account) {
+  const row = document.createElement('tr'), kind = accountRole(account), online = isOnline(account);
+  const cell = (className, ...children) => { const node = document.createElement('td'); node.className = className; node.append(...children); return node; };
+  // The name opens the account's trip history, as does a click anywhere else on the row.
+  const link = text('a', account.name, 'account-link'); link.href = `#accounts/${account.key}`;
+  const name = document.createElement('strong'); name.append(link);
+  const who = document.createElement('div'); who.className = 'account-who';
+  const copy = document.createElement('span'); copy.className = 'user-copy';
+  copy.append(name, text('span', account.email || 'No email', 'user-subtitle'));
+  who.append(text('span', initials(account.name), `avatar ${kind}`), copy);
+  row.className = 'account-row';
+  row.addEventListener('click', event => { if (!event.target.closest('a, button')) link.click(); });
+  const vehicle = kind === 'driver' ? [text('span', account.plate || 'No plate', 'cell-main'), text('span', account.toda || 'No TODA', 'cell-note')] : [text('span', '—', 'cell-note')];
+  const status = [text('span', online ? 'Online' : 'Offline', `status-pill ${online ? 'online' : 'offline'}`)];
+  if (account.status === 'Available') status.push(text('span', 'Ready for requests', 'cell-note'));
+  const action = [];
+  if (online) {
+    const button = text('button', 'Show on map', 'quiet'); button.type = 'button'; button.dataset.accountKey = account.key;
+    button.addEventListener('click', () => showOnMap(account.key)); action.push(button);
+  }
+  row.append(cell('cell-who', who), cell('cell-type', text('span', kind === 'driver' ? 'Driver' : 'Passenger', `role-tag ${kind}`)),
+    cell('cell-phone', formatPhone(account.id)), cell(`cell-vehicle${kind === 'driver' ? '' : ' is-empty'}`, ...vehicle), cell('cell-status', ...status), cell('cell-action', ...action));
+  return row;
+}
+
+function renderAccounts() {
+  const list = accounts || [], counts = accountCounts(list);
+  const shown = filterAccounts(list, accountFilters.type, accountFilters.status, $('account-search').value);
+  for (const group of ['all', 'online', 'offline']) {
+    $(`account-count-${group}`).textContent = accounts ? (group === 'all' ? accountsTotal : counts[group].total) : '—';
+    $(`account-note-${group}`).textContent = accounts ? roleCountLabel(counts[group]) : 'Loading…';
+  }
+  $('accounts-updated').textContent = accountsUpdated ? `Updated ${new Date(accountsUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Loading accounts…';
+  $('account-result-count').textContent = `${shown.length} shown`;
+  const focused = document.activeElement?.dataset.accountKey, rows = shown.map(accountRow);
+  $('account-rows').replaceChildren(...rows);
+  if (focused) $('account-rows').querySelector(`[data-account-key="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
+  $('accounts-table').hidden = !shown.length;
+  const failed = !accounts && !$('accounts-error').hidden, empty = $('accounts-empty');
+  empty.hidden = shown.length > 0;
+  empty.querySelector('h3').textContent = failed ? 'Accounts unavailable' : !accounts ? 'Loading accounts' : list.length ? 'No matching accounts' : 'No accounts yet';
+  empty.querySelector('p').textContent = failed ? 'Use Refresh now to try again.' : !accounts ? 'Getting every driver and passenger account.' : list.length ? 'Try another name, number, type or status.' : 'Drivers and passengers appear here once they sign up in the app.';
+  $('accounts-footnote').textContent = accounts && accountsTotal > list.length
+    ? `Showing the newest ${list.length} of ${accountsTotal} accounts; the online and offline counts cover those shown.`
+    : 'Online means the app is open and connected. Refreshes every 10 seconds.';
+}
+
+async function loadHistory() {
+  if (!token || view !== 'history' || historyPending || document.hidden) return;
+  clearTimeout(historyTimer); historyPending = true;
+  const run = generation, id = historyId;
+  try {
+    const data = await request(`/admin/accounts/${id}`);
+    if (run !== generation || id !== historyId) return;
+    history = data; historyUpdated = Date.now(); showError('history-error', '');
+  } catch (error) {
+    if (run !== generation || id !== historyId) return;
+    if (error.status === 401 || error.status === 403) { endSession(error.message); return; }
+    showError('history-error', error.missingRoute ? 'This server cannot show trip histories yet. Deploy the latest API, then refresh.' : `${error.message}${history ? ' Showing the trips last loaded.' : ''}`);
+  } finally {
+    if (run === generation) {
+      historyPending = false; renderHistory();
+      // Another account may have been opened while this one loaded.
+      if (view === 'history' && !document.hidden) historyTimer = setTimeout(loadHistory, id === historyId ? 10000 : 0);
+    }
+  }
+}
+
+const shortDate = date => date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+
+function renderProfile(account) {
+  const profile = $('history-profile'), failed = !account && !$('history-error').hidden;
+  if (!account) { profile.replaceChildren(text('h1', failed ? 'Account unavailable' : 'Loading account…')); return; }
+  const kind = accountRole(account), online = isOnline(account);
+  const heading = document.createElement('h1');
+  heading.append(text('span', account.name, 'profile-name'), text('span', online ? 'Online' : 'Offline', `status-pill ${online ? 'online' : 'offline'}`));
+  const copy = document.createElement('div'); copy.className = 'profile-copy';
+  const details = [formatPhone(account.id), account.email, kind === 'driver' ? [account.plate, account.toda].filter(Boolean).join(' · ') : '',
+    account.joined ? `Joined ${shortDate(new Date(account.joined))}` : '', ratingLabel(account)];
+  copy.append(text('span', `${kind === 'driver' ? 'DRIVER' : 'PASSENGER'} ACCOUNT`, `eyebrow ${kind}-text`), heading, text('p', details.filter(Boolean).join(' · '), 'muted'));
+  if (online) {
+    const button = text('button', 'Show on map', 'quiet'); button.type = 'button';
+    button.addEventListener('click', () => showOnMap(account.key)); copy.append(button);
+  }
+  profile.replaceChildren(text('span', initials(account.name), `avatar large ${kind}`), copy);
+}
+
+function tripRow(trip) {
+  const row = document.createElement('tr'), date = new Date(trip.date);
+  const cell = (className, ...children) => { const node = document.createElement('td'); node.className = className; node.append(...children); return node; };
+  const route = [Number.isFinite(trip.distanceMeters) ? formatDistance(trip.distanceMeters) : '', trip.passengers ? `${trip.passengers} passenger${trip.passengers === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
+  const statusNote = { Ongoing: () => statusLabel({ status: trip.stage }), Cancelled: () => cancellationLabel(trip), 'No driver': () => 'No driver accepted' }[trip.status]?.() || '';
+  const status = [text('span', trip.status, `status-pill ${trip.status.toLowerCase().replace(' ', '-')}`)];
+  if (statusNote) status.push(text('span', statusNote, 'cell-note'));
+  const rating = [];
+  if (trip.rating) {
+    rating.push(text('span', `★ ${trip.rating.stars}`, 'cell-main stars'));
+    const said = [trip.rating.tags.join(', '), trip.rating.comment && `“${trip.rating.comment}”`].filter(Boolean).join(' · ');
+    if (said) rating.push(text('span', said, 'cell-note'));
+    if (trip.rating.flagged) rating.push(text('span', 'Safety report', 'cell-flag'));
+  } else rating.push(text('span', trip.status === 'Completed' ? 'Not rated' : '—', 'cell-note'));
+  row.append(cell('cell-date', text('span', shortDate(date), 'cell-main'), text('span', date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), 'cell-note')),
+    cell('cell-trip', text('span', trip.id, 'trip-id')),
+    cell('cell-route', text('span', `${trip.pickup} → ${trip.destination}`, 'cell-main'), ...(route ? [text('span', route, 'cell-note')] : [])),
+    cell('cell-with', text('span', trip.with || 'No driver', trip.with ? 'cell-main' : 'cell-note')),
+    cell('cell-fare', text('span', formatFare(trip.fare), trip.status === 'Completed' ? 'cell-main' : 'cell-note')),
+    cell('cell-status', ...status), cell('cell-rating', ...rating));
+  return row;
+}
+
+function renderHistory() {
+  const account = history?.account, summary = history?.summary, driver = Boolean(account) && accountRole(account) === 'driver';
+  renderProfile(account);
+  const counts = { total: summary?.trips, completed: summary?.completed, cancelled: summary && summary.cancelled + summary.noDriver };
+  for (const [key, value] of Object.entries(counts)) $(`history-count-${key}`).textContent = summary ? value : '—';
+  $('history-note-total').textContent = !summary ? 'Loading…' : summary.ongoing ? `${summary.ongoing} ongoing now` : driver ? 'Accepted as the driver' : 'Booked as the passenger';
+  $('history-note-cancelled').textContent = !summary ? 'Loading…' : summary.noDriver ? `${summary.noDriver} found no driver` : 'By the passenger or driver';
+  $('history-fares-label').textContent = driver ? 'Fares earned' : 'Fares paid';
+  $('history-fares').textContent = summary ? formatFare(summary.fares) : '—';
+  $('history-with-heading').textContent = driver ? 'Passenger' : 'Driver';
+  $('history-rating-heading').textContent = driver ? 'Passenger’s rating' : 'Driver’s rating';
+  $('history-updated').textContent = historyUpdated ? `Updated ${new Date(historyUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Loading trips…';
+  const trips = history?.trips || [], shown = filterTrips(trips, historyFilter);
+  $('history-result-count').textContent = `${shown.length} shown`;
+  $('history-rows').replaceChildren(...shown.map(tripRow));
+  $('history-table').hidden = !shown.length;
+  const failed = !history && !$('history-error').hidden, empty = $('history-empty');
+  empty.hidden = shown.length > 0;
+  empty.querySelector('h3').textContent = failed ? 'Trip history unavailable' : !history ? 'Loading trips' : trips.length ? `No ${historyFilter} trips` : 'No trips yet';
+  empty.querySelector('p').textContent = failed ? 'Use Refresh now to try again.' : !history ? 'Getting every trip this account booked or drove.' : trips.length ? 'Try another status.'
+    : driver ? 'Trips appear here once this driver accepts a request.' : 'Trips appear here once this passenger books a ride.';
+  $('history-footnote').textContent = summary && summary.trips > trips.length
+    ? `Showing the newest ${trips.length} of ${summary.trips} trips; the totals above cover them all.`
+    : 'Times are when each trip was booked. Refreshes every 10 seconds.';
+}
+
 $('login-form').addEventListener('submit', async event => {
   event.preventDefault(); const run = ++generation;
   $('sign-in').disabled = true; $('login-progress').hidden = false; showError('login-error', '');
@@ -174,7 +369,7 @@ $('login-form').addEventListener('submit', async event => {
     storeToken(candidate.token); $('password').value = '';
     $('admin-name').textContent = candidate.user.firstName || 'Pilot admin';
     $('login').hidden = true; $('dashboard').hidden = false;
-    applySnapshot(data, requestStarted); timer = setTimeout(refresh, 3000);
+    applySnapshot(data, requestStarted); timer = setTimeout(refresh, 3000); showView();
   } catch (error) {
     if (candidate?.token) request('/logout', { auth: candidate.token, body: {} }).catch(() => {});
     if (run === generation) showError('login-error', error.message);
@@ -196,7 +391,26 @@ $('role-filters').addEventListener('click', event => {
 $('refresh').addEventListener('click', refresh);
 $('fit-area').addEventListener('click', () => fleetMap?.fitArea());
 $('fit-users').addEventListener('click', () => fleetMap?.fitUsers(visibleUsers()));
-document.addEventListener('visibilitychange', () => { clearTimeout(timer); if (!document.hidden) refresh(); });
+window.addEventListener('hashchange', showView);
+$('account-search').addEventListener('input', renderAccounts);
+for (const [group, key] of [['account-types', 'type'], ['account-statuses', 'status']]) $(group).addEventListener('click', event => {
+  const button = event.target.closest(`button[data-${key}]`); if (!button) return;
+  accountFilters[key] = button.dataset[key];
+  for (const item of $(group).querySelectorAll('button')) item.setAttribute('aria-pressed', String(item === button));
+  renderAccounts();
+});
+$('accounts-refresh').addEventListener('click', loadAccounts);
+$('history-statuses').addEventListener('click', event => {
+  const button = event.target.closest('button[data-trip]'); if (!button) return;
+  historyFilter = button.dataset.trip;
+  for (const item of $('history-statuses').querySelectorAll('button')) item.setAttribute('aria-pressed', String(item === button));
+  renderHistory();
+});
+$('history-refresh').addEventListener('click', loadHistory);
+document.addEventListener('visibilitychange', () => {
+  clearTimeout(timer); clearTimeout(accountsTimer); clearTimeout(historyTimer);
+  if (!document.hidden) { refresh(); loadAccounts(); loadHistory(); }
+});
 // Age GPS on screen even if the next network request is slow.
 setInterval(() => { if (snapshot && !document.hidden) {
   if (now() - snapshot.serverTime > 10000) { connected = false; showError('connection-error', 'Updates are delayed. Displayed positions are last known while we reconnect.'); }
@@ -204,3 +418,4 @@ setInterval(() => { if (snapshot && !document.hidden) {
 } }, 1000);
 try { token = sessionStorage.getItem(tokenKey) || ''; } catch {}
 if (token) { $('login').hidden = true; $('dashboard').hidden = false; refresh(); }
+showView();

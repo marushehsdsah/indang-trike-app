@@ -90,3 +90,44 @@ test('person details show the rating average and any safety reports', async () =
   assert.equal(safetyReportLabel({ safetyReports: 1 }), '1 safety report to review');
   assert.equal(safetyReportLabel({ safetyReports: 0 }), null);
 });
+
+test('the Accounts view lists every passenger and driver, online first, filtered by type, connection and search', async () => {
+  const { accountCounts, filterAccounts, formatPhone, roleCountLabel, sortAccounts } = await model();
+  const accounts = [
+    { key: 'p1', id: '09171234567', name: 'Ana Cruz', email: 'ana@example.com', role: 'PASSENGER', status: 'Offline' },
+    { key: 'd1', id: '09181234567', name: 'Ben Reyes', email: 'ben@example.com', role: 'RIDER', status: 'Available', toda: 'ITODA', plate: 'ABC 123' },
+    { key: 'd2', id: '09191234567', name: 'Cy Lim', email: '', role: 'RIDER', status: 'Offline', toda: 'PITODA', plate: 'XYZ 9' },
+    { key: 'p2', id: '09201234567', name: 'Di Santos', email: 'di@example.com', role: 'PASSENGER', status: 'Online' },
+  ];
+  const keys = (list) => list.map((account) => account.key);
+  assert.deepEqual(keys(sortAccounts(accounts)), ['d1', 'p2', 'p1', 'd2'], 'online accounts first, then by name');
+  assert.deepEqual(keys(filterAccounts(accounts, 'all', 'online', '')), ['d1', 'p2'], 'a driver taking requests is online');
+  assert.deepEqual(keys(filterAccounts(accounts, 'driver', 'offline', '')), ['d2']);
+  assert.deepEqual(keys(filterAccounts(accounts, 'passenger', 'all', '')), ['p1', 'p2']);
+  assert.deepEqual(keys(filterAccounts(accounts, 'all', 'all', '0918 123 4567')), ['d1'], 'a number matches with its spaces');
+  assert.deepEqual(keys(filterAccounts(accounts, 'all', 'all', ' pitoda ')), ['d2']);
+  assert.deepEqual(keys(filterAccounts(accounts, 'all', 'all', 'DI@EXAMPLE')), ['p2']);
+  assert.deepEqual(filterAccounts(accounts, 'all', 'all', 'nobody'), []);
+  const counts = accountCounts(accounts);
+  assert.deepEqual(counts, { all: { total: 4, driver: 2, passenger: 2 }, online: { total: 2, driver: 1, passenger: 1 }, offline: { total: 2, driver: 1, passenger: 1 } });
+  assert.equal(roleCountLabel(counts.online), '1 driver · 1 passenger');
+  assert.equal(roleCountLabel(counts.all), '2 drivers · 2 passengers');
+  assert.equal(formatPhone('09171234567'), '0917 123 4567');
+  assert.equal(formatPhone('+639171234567'), '+639171234567', 'anything else is shown as stored');
+});
+
+test('a trip history filters by status, with searches that found no driver among the cancelled', async () => {
+  const { cancellationLabel, filterTrips, formatFare } = await model();
+  const trips = [{ key: 'a', status: 'Completed' }, { key: 'b', status: 'Cancelled' }, { key: 'c', status: 'No driver' }, { key: 'd', status: 'Ongoing' }];
+  const keys = (list) => list.map((trip) => trip.key);
+  assert.deepEqual(keys(filterTrips(trips, 'all')), ['a', 'b', 'c', 'd']);
+  assert.deepEqual(keys(filterTrips(trips, 'completed')), ['a']);
+  assert.deepEqual(keys(filterTrips(trips, 'cancelled')), ['b', 'c']);
+  assert.deepEqual(keys(filterTrips(trips, 'ongoing')), ['d']);
+  assert.equal(formatFare(45), '₱45');
+  assert.equal(formatFare(1250.5), '₱1,250.5');
+  assert.equal(formatFare(null), '—');
+  assert.equal(cancellationLabel({ cancelledBy: 'driver', cancellationReason: 'Flat tyre' }), 'By the driver: Flat tyre');
+  assert.equal(cancellationLabel({ cancelledBy: 'passenger', cancellationReason: 'Cancelled by participant' }), 'By the passenger', 'the reason saved when none was given');
+  assert.equal(cancellationLabel({ cancelledBy: null, cancellationReason: '' }), 'Cancelled');
+});

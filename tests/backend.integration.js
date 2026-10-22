@@ -174,13 +174,37 @@ test('the admin interface lists the accounts and trips in the database, for admi
   ]);
   assert.ok(Number.isFinite(Date.parse(trips[0].date)));
 
-  const accounts = (await request('/admin/accounts', admin.token)).body.accounts;
+  const { accounts, total } = (await request('/admin/accounts', admin.token)).body;
+  assert.equal(total, accounts.length);
   assert.deepEqual(accounts.find((item) => item.key === passenger.user.id),
     { key: passenger.user.id, id: passenger.user.phone.replace('+63', '0'), name: 'Test passenger', email: passenger.user.email, role: 'PASSENGER', status: 'Offline' });
   assert.deepEqual(accounts.find((item) => item.key === driver.user.id),
     { key: driver.user.id, id: driver.user.phone.replace('+63', '0'), name: 'Test driver', email: driver.user.email, role: 'RIDER', status: 'Online', toda: 'Test TODA', plate: driver.user.plate });
   assert.equal(accounts.some((item) => item.name === 'Pilot Admin'), false, 'admin accounts are not listed');
   assert.equal(accounts.length, await backend.models.User.countDocuments({ role: { $ne: 'admin' } }));
+
+  // One account's whole trip history, as passenger or as driver.
+  const fare = (await backend.models.Ride.findById(completed.id)).fare;
+  const passengerHistory = (await request(`/admin/accounts/${passenger.user.id}`, admin.token)).body;
+  assert.equal(passengerHistory.account.key, passenger.user.id);
+  assert.equal(passengerHistory.account.role, 'PASSENGER');
+  assert.ok(Number.isFinite(Date.parse(passengerHistory.account.joined)));
+  assert.deepEqual(passengerHistory.trips.map(({ key, as, status, with: other }) => ({ key, as, status, other })), [
+    { key: searching.id, as: 'passenger', status: 'Ongoing', other: null },
+    { key: cancelled.id, as: 'passenger', status: 'Cancelled', other: null },
+    { key: completed.id, as: 'passenger', status: 'Completed', other: 'Test driver' },
+  ]);
+  assert.equal(passengerHistory.trips[1].cancelledBy, 'passenger');
+  assert.equal(passengerHistory.trips[2].fare, fare);
+  assert.deepEqual(passengerHistory.summary, { trips: 3, completed: 1, cancelled: 1, noDriver: 0, ongoing: 1, fares: fare });
+  const driverHistory = (await request(`/admin/accounts/${driver.user.id}`, admin.token)).body;
+  assert.deepEqual(driverHistory.trips.map(({ key, as, status, with: other }) => ({ key, as, status, other })),
+    [{ key: completed.id, as: 'driver', status: 'Completed', other: 'Test passenger' }], 'only the trips this driver accepted');
+  assert.equal(driverHistory.account.status, 'Online');
+  assert.equal((await request(`/admin/accounts/${driver.user.id}`, passenger.token)).status, 403);
+  // Admin accounts (added earlier in this run) have no trip history to show.
+  const adminAccount = String((await backend.models.User.findOne({ role: 'admin' }))._id);
+  for (const id of [adminAccount, '0123456789abcdef01234567', 'not-an-id']) assert.equal((await request(`/admin/accounts/${id}`, admin.token)).status, 404, id);
 
   const dashboard = (await request('/admin/dashboard', admin.token)).body;
   assert.deepEqual(dashboard, { totalAccounts: accounts.length, onlineNow: 1, ongoingTrips: 1, recentTrips: trips.slice(0, 3) });

@@ -10,6 +10,7 @@ const { chromium } = require('playwright');
 const { io } = require('socket.io-client');
 const { createBackend } = require('../indang-trike-backend/app');
 const { DEFAULT_TRIP } = require('../data/indangMap');
+const SERVICE_AREA_PLACES = require('../assets/places/service-area-places.json');
 
 async function main() {
   const dbName = `indang_test_browser_${randomUUID().replaceAll('-', '').slice(0, 16)}`; // Atlas: at most 38 bytes
@@ -67,7 +68,7 @@ async function main() {
     const mapData = page.waitForResponse((response) => response.url().endsWith('/api/admin/map'));
     await page.locator('#sign-in').click();
     await page.locator('#dashboard').waitFor({ state: 'visible' });
-    assert.ok((await (await mapData).json()).places.features.length > 1000, 'establishments and landmarks reach the map');
+    assert.equal((await (await mapData).json()).places.features.length, SERVICE_AREA_PLACES.features.length, 'establishments and landmarks reach the map');
     await page.waitForFunction(() => document.querySelector('#count-online').textContent === '3');
     await page.waitForFunction(() => document.querySelectorAll('.person-marker').length === 2);
     // The map canvas must fill its panel, not only the size it started at.
@@ -86,6 +87,37 @@ async function main() {
     assert.equal(await page.locator('.user-row').count(), 1);
     assert.equal(await page.locator('.person-marker').count(), 1);
     await page.locator('#search').fill('');
+    // Accounts: every passenger and driver, the admin's own included, online or not.
+    await page.locator('#person-details [aria-label="Close user details"]').click();
+    await page.locator('.view-tab[data-view=accounts]').click();
+    await page.waitForFunction(() => document.querySelector('#account-count-all').textContent === '4');
+    assert.equal(await page.locator('#map').isVisible(), false);
+    assert.equal(await page.locator('#account-count-online').textContent(), '3');
+    assert.equal(await page.locator('#account-count-offline').textContent(), '1');
+    assert.equal(await page.locator('#account-rows tr').count(), 4);
+    assert.equal(await page.locator('#account-rows img').count(), 0, 'account markup stays text');
+    await page.locator('#account-statuses [data-status=offline]').click();
+    assert.equal(await page.locator('#account-rows tr').count(), 1);
+    await page.locator('#account-rows').getByText('Admin Pilot', { exact: true }).waitFor();
+    await page.locator('#account-statuses [data-status=all]').click();
+    await page.locator('#account-search').fill('0917 999 9992');
+    assert.equal(await page.locator('#account-rows tr').count(), 1);
+    await page.locator('#account-rows').getByText('Ready for requests', { exact: true }).waitFor();
+    await page.locator('#account-rows').getByText('TEST-101', { exact: true }).waitFor();
+    await page.screenshot({ path: '/tmp/indang-god-view-accounts.png', fullPage: true });
+    await page.reload();
+    await page.locator('#account-rows tr').first().waitFor();
+    assert.equal(await page.locator('.view-tab[aria-current=page]').textContent(), 'Accounts', 'a reload keeps the view');
+    await page.locator('#account-search').fill('0917 999 9992');
+    // An online account opens on the map, and the map fills its panel again.
+    await page.locator('#account-rows').getByRole('button', { name: 'Show on map' }).click();
+    await page.locator('#person-details').getByText('TEST-101 · Test TODA').waitFor();
+    assert.equal(await page.evaluate(() => location.hash), '#live');
+    await page.waitForFunction(() => {
+      const canvas = document.querySelector('#map canvas')?.getBoundingClientRect(), panel = document.querySelector('#map').getBoundingClientRect();
+      return canvas && panel.width > 0 && Math.abs(canvas.width - panel.width) <= 2 && Math.abs(canvas.height - panel.height) <= 2;
+    }, null, { timeout: 5000 });
+    await page.waitForFunction(() => document.querySelectorAll('.person-marker').length === 2);
     await page.locator('#fit-area').click();
     await page.waitForTimeout(1200);
     await request('/passenger/location/unavailable', {}, passenger.token);
@@ -122,7 +154,7 @@ async function main() {
     await request('/rides', { trip: DEFAULT_TRIP, passengers: 1, note: '', idempotencyKey: `god-view-${randomUUID()}` }, passenger.token);
     await page.locator('#refresh').click();
     await page.locator('.user-row', { hasText: 'Bea' }).click();
-    await page.locator('#person-details').getByText('Requested trip: 9.0 km · 23 min', { exact: true }).waitFor();
+    await page.locator('#person-details').getByText('Requested trip: 9.0 km · 22 min', { exact: true }).waitFor();
     await page.locator('#person-details').getByText('Waiting for a driver', { exact: true }).waitFor();
     await request('/driver/location', { ...fix, latitude: 14.205, longitude: 120.885, timestamp: Date.now() }, driver.token);
     await request('/driver/availability', { available: true }, driver.token);
@@ -131,7 +163,7 @@ async function main() {
     await page.locator('#refresh').click();
     await page.locator('.user-row', { hasText: 'Alex' }).click();
     await page.locator('#person-details').getByText(/^Driver to passenger: [\d.]+ k?m · \d+ min$/).waitFor();
-    await page.locator('#person-details').getByText('Then trip: 9.0 km · 23 min', { exact: true }).waitFor();
+    await page.locator('#person-details').getByText('Then trip: 9.0 km · 22 min', { exact: true }).waitFor();
     await page.waitForTimeout(800);
     await page.screenshot({ path: '/tmp/indang-god-view-to-passenger.png', fullPage: true });
     for (const step of ['arrive', 'start']) await request(`/rides/${offer.id}/${step}`, {}, driver.token);
@@ -141,22 +173,61 @@ async function main() {
     await page.locator('.person-marker.trip').click();
     await page.locator('#person-details').getByText('ON A TRIP', { exact: true }).waitFor();
     await page.locator('#person-details').getByText('Alex Pilot & Bea Pilot', { exact: true }).waitFor();
-    await page.locator('#person-details').getByText('To destination: 9.0 km · 23 min', { exact: true }).waitFor();
+    await page.locator('#person-details').getByText('To destination: 9.0 km · 22 min', { exact: true }).waitFor();
     assert.equal(await page.locator('.user-row.selected').count(), 2, 'both people are highlighted');
     await page.waitForTimeout(1200);
     await page.screenshot({ path: '/tmp/indang-god-view-desktop.png', fullPage: true });
+    // Each account's whole trip history: the trip ends, the driver reports the
+    // passenger, then a click on Bea's row opens her trips.
+    await request(`/rides/${offer.id}/complete`, {}, driver.token);
+    await request(`/rides/${offer.id}/rating`, { stars: 2, tags: ['Did not pay'], comment: 'Left without paying' }, driver.token);
+    await page.locator('.view-tab[data-view=accounts]').click();
+    await page.locator('#account-search').fill('Bea');
+    await page.locator('#account-rows tr', { hasText: 'Bea Pilot' }).locator('.cell-phone').click();
+    await page.locator('#history-profile').getByText('Bea Pilot', { exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => location.hash), `#accounts/${passenger.user.id}`);
+    await page.locator('#history-rows tr').first().waitFor();
+    assert.equal(await page.locator('#history-rows tr').count(), 1);
+    assert.equal(await page.locator('#history-count-completed').textContent(), '1');
+    for (const value of ['Alex Pilot', 'Completed', '★ 2', 'Safety report', `${DEFAULT_TRIP.pickup.name} → ${DEFAULT_TRIP.dropoff.name}`]) {
+      await page.locator('#history-rows').getByText(value, { exact: true }).waitFor();
+    }
+    assert.equal(await page.locator('#history-rows img').count(), 0, 'trip markup stays text');
+    await page.locator('#history-statuses [data-trip=cancelled]').click();
+    await page.locator('#history-empty').getByText('No cancelled trips', { exact: true }).waitFor();
+    await page.locator('#history-statuses [data-trip=all]').click();
+    await page.screenshot({ path: '/tmp/indang-god-view-history.png', fullPage: true });
+    // The driver's side of the same trip, from the list the back button returns to.
+    await page.goBack();
+    await page.locator('#accounts-view').waitFor({ state: 'visible' });
+    await page.locator('#account-search').fill('Alex');
+    await page.locator('#account-rows').getByRole('link', { name: 'Alex Pilot' }).click();
+    await page.locator('#history-with-heading').filter({ hasText: 'Passenger' }).waitFor();
+    await page.locator('#history-rows').getByText('Bea Pilot', { exact: true }).waitFor();
+    assert.equal(await page.locator('#history-fares-label').textContent(), 'Fares earned');
+    await page.locator('.view-tab[data-view=live]').click();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.locator('#fit-area').click();
     await page.waitForTimeout(800);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no horizontal overflow on phones');
     await page.screenshot({ path: '/tmp/indang-god-view-mobile.png', fullPage: true });
+    await page.locator('.view-tab[data-view=accounts]').click();
+    await page.locator('#account-rows tr').first().waitFor();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'accounts fit phones too');
+    await page.screenshot({ path: '/tmp/indang-god-view-accounts-mobile.png', fullPage: true });
+    await page.locator('#account-rows tr').first().locator('.cell-phone').click();
+    await page.locator('#history-rows tr').first().waitFor();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'trip histories fit phones too');
+    await page.screenshot({ path: '/tmp/indang-god-view-history-mobile.png', fullPage: true });
     await page.locator('#sign-out').click();
     await page.locator('#login').waitFor({ state: 'visible' });
     assert.equal(await page.locator('.person-marker').count(), 0);
     assert.equal(await page.locator('.user-row').count(), 0);
+    assert.equal(await page.locator('#account-rows tr').count(), 0);
+    assert.equal(await page.locator('#history-rows tr').count(), 0);
     assert.equal(await page.evaluate(() => sessionStorage.getItem('indanggo.god-view.session')), null);
     assert.deepEqual(errors, []);
-    console.log('Browser checks passed: separate-origin site, full-size map, places layer, requested/to-passenger/trip lines, merged trip marker, access control, real GPS markers, missing/stale GPS, safe text, role/search filters, disconnect/reconnect, responsive layout and logout.');
+    console.log('Browser checks passed: separate-origin site, full-size map, places layer, requested/to-passenger/trip lines, merged trip marker, access control, real GPS markers, missing/stale GPS, safe text, role/search filters, all accounts online and offline, trip histories, disconnect/reconnect, responsive layout and logout.');
   } finally {
     await browser?.close(); sockets.forEach(socket => socket.disconnect());
     site?.close(); if (siteDir) fs.rmSync(siteDir, { recursive: true, force: true });

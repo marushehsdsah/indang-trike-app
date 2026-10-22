@@ -92,6 +92,64 @@ export function routeFeatures(routes, selectedRideId) {
   return { type: 'FeatureCollection', features };
 }
 
+// The Accounts view lists every passenger and driver from /api/admin/accounts,
+// which names drivers RIDER (as the admin app does) and gives each a status:
+// Offline, Online (the app is open) or Available (a driver taking requests).
+export const accountRole = (account) => account.role === 'RIDER' ? 'driver' : 'passenger';
+export const isOnline = (account) => account.status !== 'Offline';
+
+// 09171234567 → 0917 123 4567, as the sign-in form writes mobile numbers.
+export function formatPhone(phone) {
+  return /^09\d{9}$/.test(phone) ? `${phone.slice(0, 4)} ${phone.slice(4, 7)} ${phone.slice(7)}` : phone;
+}
+
+// role: all, driver or passenger; status: all, online or offline. A number
+// matches with or without its spaces.
+export function filterAccounts(accounts, role, status, query) {
+  const needle = query.trim().toLocaleLowerCase(), digits = needle.replace(/[\s-]/g, '');
+  return accounts.filter(account => (role === 'all' || accountRole(account) === role) &&
+    (status === 'all' || (status === 'online') === isOnline(account)) &&
+    ([account.name, account.email, account.plate, account.toda].filter(Boolean).join(' ').toLocaleLowerCase().includes(needle) || account.id.includes(digits)));
+}
+
+// Online accounts first, then by name.
+export function sortAccounts(accounts) {
+  return [...accounts].sort((a, b) => Number(isOnline(b)) - Number(isOnline(a)) || a.name.localeCompare(b.name) || a.key.localeCompare(b.key));
+}
+
+// { all, online, offline }, each { total, driver, passenger }.
+export function accountCounts(accounts) {
+  const counts = Object.fromEntries(['all', 'online', 'offline'].map(group => [group, { total: 0, driver: 0, passenger: 0 }]));
+  for (const account of accounts) {
+    for (const group of ['all', isOnline(account) ? 'online' : 'offline']) { counts[group].total += 1; counts[group][accountRole(account)] += 1; }
+  }
+  return counts;
+}
+
+export function roleCountLabel({ driver, passenger }) {
+  return `${driver} driver${driver === 1 ? '' : 's'} · ${passenger} passenger${passenger === 1 ? '' : 's'}`;
+}
+
+// An account's trip history (/api/admin/accounts/:id). A trip's status is
+// Completed, Cancelled, No driver (the search found none) or Ongoing; the
+// Cancelled filter includes No driver.
+export function filterTrips(trips, status) {
+  if (status === 'all') return trips;
+  return trips.filter(trip => status === 'cancelled' ? ['Cancelled', 'No driver'].includes(trip.status) : trip.status.toLowerCase() === status);
+}
+
+export function formatFare(fare) {
+  return Number.isFinite(fare) ? `₱${fare.toLocaleString('en-PH', { maximumFractionDigits: 2 })}` : '—';
+}
+
+// "By the driver: Flat tyre". The server saves "Cancelled by participant"
+// when no reason was given (indang-trike-backend/dispatch.js).
+export function cancellationLabel(trip) {
+  const who = trip.cancelledBy ? `By the ${trip.cancelledBy}` : 'Cancelled';
+  const reason = trip.cancellationReason && trip.cancellationReason !== 'Cancelled by participant' ? trip.cancellationReason : '';
+  return reason ? `${who}: ${reason}` : who;
+}
+
 // The ride a driver and passenger are on together, if any.
 export function tripOf(id, routes) {
   return routes.find((route) => route.stage === 'to-destination' && (route.driverId === id || route.passengerId === id)) ?? null;

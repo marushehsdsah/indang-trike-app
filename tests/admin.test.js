@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseAdminPhones, buildOverview, buildAccounts, buildTrips, tripStatus } = require('../indang-trike-backend/admin');
+const { parseAdminPhones, buildOverview, buildAccounts, buildTrips, buildHistory, historySummary, tripStatus } = require('../indang-trike-backend/admin');
 const { profileFields, publicUser } = require('../indang-trike-backend/policy');
 const { DEFAULT_TRIP } = require('../data/indangMap');
 
@@ -149,4 +149,30 @@ test('the admin screens show each booking with its people, the driver\'s TODA an
     { key: '6ad8e18d3ba4e6be0a9ca70a', id: '#TR-9CA70A', todaId: 'ITODA', passenger: 'Ana Cruz', driver: 'Ben Reyes', status: 'Completed', route: 'Plaza → CvSU', date: createdAt },
     { key: '6ad8e18d3ba4e6be0a9ca70b', id: '#TR-9CA70B', todaId: '—', passenger: 'Deleted account', driver: '—', status: 'Ongoing', route: 'Pickup → Destination', date: createdAt },
   ]);
+});
+
+test('an account\'s trip history shows its part in each trip, the other person, the fare and the rating it received', () => {
+  const me = 'aaaaaaaaaaaaaaaaaaaaaaaa', ben = 'bbbbbbbbbbbbbbbbbbbbbbbb', gone = 'cccccccccccccccccccccccc';
+  const createdAt = new Date(now), trip = { pickup: { name: 'Plaza' }, dropoff: { name: 'CvSU' } };
+  const rides = [
+    { _id: '6ad8e18d3ba4e6be0a9ca70a', passengerId: me, driverId: ben, status: 'completed', trip, route: { distanceMeters: 2400 }, passengers: 2, fare: 60, createdAt, completedAt: createdAt },
+    { _id: '6ad8e18d3ba4e6be0a9ca70b', passengerId: me, driverId: ben, status: 'cancelled', trip, fare: 45, createdAt, cancelledAt: createdAt, cancelledBy: ben, cancellationReason: 'Flat tyre' },
+    { _id: '6ad8e18d3ba4e6be0a9ca70c', passengerId: me, status: 'no_driver', createdAt },
+    { _id: '6ad8e18d3ba4e6be0a9ca70d', passengerId: gone, driverId: me, status: 'in_progress', trip, fare: 45, createdAt },
+  ];
+  const people = new Map([[ben, { firstName: 'Ben', lastName: 'Reyes' }]]);
+  const ratings = new Map([['6ad8e18d3ba4e6be0a9ca70a', { stars: 2, tags: ['Did not pay'], comment: 'Left without paying', flagged: true }]]);
+  const history = buildHistory(me, rides, people, ratings);
+  assert.deepEqual(history[0], {
+    key: '6ad8e18d3ba4e6be0a9ca70a', id: '#TR-9CA70A', as: 'passenger', status: 'Completed', stage: 'completed', with: 'Ben Reyes',
+    pickup: 'Plaza', destination: 'CvSU', distanceMeters: 2400, passengers: 2, fare: 60, date: createdAt, endedAt: createdAt,
+    rating: { stars: 2, tags: ['Did not pay'], comment: 'Left without paying', flagged: true },
+  });
+  assert.deepEqual([history[1].status, history[1].cancelledBy, history[1].cancellationReason, history[1].rating], ['Cancelled', 'driver', 'Flat tyre', null]);
+  assert.deepEqual([history[2].status, history[2].with, history[2].pickup, history[2].fare], ['No driver', null, 'Pickup', null], 'a search that found no driver');
+  assert.deepEqual([history[3].as, history[3].status, history[3].stage, history[3].with], ['driver', 'Ongoing', 'in_progress', 'Deleted account']);
+
+  assert.deepEqual(historySummary([{ _id: 'completed', count: 3, fares: 150 }, { _id: 'cancelled', count: 1, fares: 45 }, { _id: 'no_driver', count: 2, fares: 0 }, { _id: 'accepted', count: 1, fares: 45 }]),
+    { trips: 7, completed: 3, cancelled: 1, noDriver: 2, ongoing: 1, fares: 150 }, 'only completed trips count toward fares');
+  assert.deepEqual(historySummary([]), { trips: 0, completed: 0, cancelled: 0, noDriver: 0, ongoing: 0, fares: 0 });
 });

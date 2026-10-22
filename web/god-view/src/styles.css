@@ -428,7 +428,7 @@ input::placeholder{
   grid-template-columns:330px minmax(0,1fr);
   margin:0 34px;
   min-height:480px;
-  height:calc(100dvh - 347px);
+  height:calc(100dvh - 391px);
   border:1px solid #dce5de;
   border-radius:13px;
   overflow:hidden;
@@ -801,6 +801,264 @@ input::placeholder{
   line-height:1.6;
   color:#8d9a90
 }
+.view-tabs{
+  display:flex;
+  gap:26px;
+  padding:0 34px;
+  background:white;
+  border-bottom:1px solid #dce5de;
+  flex-shrink:0
+}
+.view-tab{
+  height:44px;
+  display:flex;
+  align-items:center;
+  border-bottom:2px solid transparent;
+  margin-bottom:-1px;
+  font-size:12px;
+  font-weight:600;
+  color:#78857f
+}
+.view-tab:hover{
+  color:var(--ink)
+}
+.view-tab[aria-current=page]{
+  color:var(--ink);
+  border-bottom-color:var(--green)
+}
+.metrics.three{
+  grid-template-columns:repeat(3,minmax(0,1fr))
+}
+.legend-dot.online{
+  background:#30a478
+}
+.accounts-panel{
+  margin:0 34px;
+  border:1px solid #dce5de;
+  border-radius:13px;
+  background:#fff
+}
+.accounts-toolbar{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:10px 14px;
+  padding:16px 17px
+}
+#account-search{
+  flex:1 1 260px;
+  max-width:420px;
+  font-size:11px;
+  padding:11px 12px;
+  background:#f9faf9;
+  border-color:#e6ebe7
+}
+.accounts-toolbar .filters{
+  margin:0;
+  flex:0 1 250px
+}
+.accounts-toolbar .count-pill{
+  margin-left:auto
+}
+.accounts-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:12px
+}
+.accounts-table th{
+  position:sticky;
+  top:0;
+  z-index:1;
+  background:#f9faf9;
+  text-align:left;
+  font-size:10px;
+  font-weight:650;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  color:#7b9287;
+  padding:10px 16px;
+  border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line)
+}
+.accounts-table td{
+  padding:12px 16px;
+  border-bottom:1px solid #f0f3f0;
+  vertical-align:middle
+}
+.accounts-table tbody tr:hover{
+  background:#f7faf7
+}
+.account-row{
+  cursor:pointer
+}
+.account-link{
+  color:inherit
+}
+.account-link:hover{
+  text-decoration:underline
+}
+.account-who{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-width:0
+}
+.account-who .user-copy{
+  max-width:320px
+}
+.account-who .user-subtitle{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap
+}
+.role-tag{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  font-size:11px;
+  font-weight:600;
+  white-space:nowrap
+}
+.role-tag:before{
+  content:"";
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#1b9776
+}
+.role-tag.driver{
+  color:#257f63
+}
+.role-tag.passenger{
+  color:#8760bf
+}
+.role-tag.passenger:before{
+  background:#8461d4
+}
+.cell-phone{
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap
+}
+.cell-main{
+  display:block;
+  font-weight:600
+}
+.cell-note{
+  display:block;
+  margin-top:3px;
+  font-size:10px;
+  color:#8d9891
+}
+.status-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:4px 9px;
+  border-radius:999px;
+  font-size:10px;
+  font-weight:650
+}
+.status-pill:before{
+  content:"";
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:currentColor
+}
+.status-pill.online{
+  background:#e7f4ec;
+  color:#1c825f
+}
+.status-pill.offline,.status-pill.cancelled{
+  background:#eef1ef;
+  color:#7d8a82
+}
+.status-pill.completed{
+  background:#e7f4ec;
+  color:#1c825f
+}
+.status-pill.no-driver{
+  background:#fbf3e2;
+  color:#a17836
+}
+.status-pill.ongoing{
+  background:#e8effd;
+  color:#2563eb
+}
+.back-link{
+  display:inline-block;
+  font-size:12px;
+  font-weight:600;
+  color:var(--green);
+  margin-bottom:16px
+}
+.back-link:hover{
+  text-decoration:underline
+}
+.history-profile{
+  display:flex;
+  align-items:center;
+  gap:16px
+}
+.avatar.large{
+  width:54px;
+  height:54px;
+  border-radius:15px;
+  font-size:17px
+}
+.profile-copy{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  min-width:0
+}
+.profile-copy h1{
+  flex-wrap:wrap;
+  gap:12px
+}
+.profile-copy .quiet{
+  padding:6px 0 0
+}
+.panel-title{
+  font-size:16px;
+  letter-spacing:-.4px;
+  margin-right:6px
+}
+.accounts-toolbar #history-statuses{
+  flex-basis:330px
+}
+.trip-id{
+  font-size:11px;
+  color:#5e7163;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap
+}
+.history-table .cell-date,.history-table .cell-fare{
+  white-space:nowrap
+}
+.history-table .cell-rating{
+  max-width:240px
+}
+.stars{
+  color:#a7790a
+}
+.cell-flag{
+  display:block;
+  margin-top:3px;
+  font-size:10px;
+  font-weight:650;
+  color:#b4443a
+}
+.cell-action{
+  text-align:right;
+  white-space:nowrap
+}
+.accounts-panel .empty-state{
+  border-top:1px solid var(--line)
+}
+.accounts-panel .people-footer{
+  border-top:0
+}
 .maplibregl-ctrl-top-right{
   top:65px
 }
@@ -863,6 +1121,88 @@ input::placeholder{
   }
   .login-card h2{
     font-size:24px
+  }
+  .view-tabs{
+    padding:0 20px
+  }
+  .accounts-panel{
+    margin:0 20px
+  }
+  .accounts-table thead{
+    position:absolute;
+    width:1px;
+    height:1px;
+    overflow:hidden;
+    clip-path:inset(50%)
+  }
+  .accounts-table,.accounts-table tbody{
+    display:block
+  }
+  .accounts-table tr{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    grid-template-areas:"who status" "type phone" "vehicle action";
+    align-items:center;
+    gap:8px 12px;
+    padding:14px 16px;
+    border-top:1px solid #f0f3f0
+  }
+  .accounts-table td{
+    display:block;
+    padding:0;
+    border:0
+  }
+  .accounts-table .cell-who{
+    grid-area:who
+  }
+  .accounts-table .cell-status{
+    grid-area:status;
+    text-align:right
+  }
+  .accounts-table .cell-type{
+    grid-area:type;
+    padding-left:48px
+  }
+  .accounts-table .cell-phone{
+    grid-area:phone;
+    text-align:right
+  }
+  .accounts-table .cell-vehicle{
+    grid-area:vehicle;
+    padding-left:48px
+  }
+  .accounts-table .cell-action{
+    grid-area:action
+  }
+  .accounts-table .cell-vehicle.is-empty,.accounts-table .cell-action:empty{
+    display:none
+  }
+  .account-who .user-copy{
+    max-width:none
+  }
+  .history-table tr{
+    grid-template-areas:"date status" "route route" "with fare" "trip rating"
+  }
+  .history-table .cell-date{
+    grid-area:date
+  }
+  .history-table .cell-route{
+    grid-area:route
+  }
+  .history-table .cell-with{
+    grid-area:with
+  }
+  .history-table .cell-fare{
+    grid-area:fare;
+    text-align:right
+  }
+  .history-table .cell-trip{
+    grid-area:trip
+  }
+  .history-table .cell-rating{
+    grid-area:rating;
+    text-align:right;
+    max-width:none
   }
 }
 @media(max-width:620px){
@@ -1004,6 +1344,47 @@ input::placeholder{
   .map-legend{
     gap:11px;
     font-size:8px
+  }
+  .view-tabs{
+    padding:0 16px;
+    gap:22px
+  }
+  .accounts-panel{
+    margin:0 16px
+  }
+  .accounts-toolbar{
+    padding:14px
+  }
+  #account-search{
+    flex-basis:100%;
+    max-width:none
+  }
+  .accounts-toolbar #account-types{
+    flex:1 1 100%
+  }
+  .accounts-toolbar #account-statuses{
+    flex:1 1 auto
+  }
+  .accounts-toolbar .count-pill{
+    margin-left:0
+  }
+  .accounts-table tr{
+    padding:13px 14px
+  }
+  .accounts-table .cell-type,.accounts-table .cell-vehicle{
+    padding-left:0
+  }
+  .history-profile .avatar{
+    display:none
+  }
+  .history-heading .muted{
+    max-width:none
+  }
+  .panel-title{
+    flex-basis:100%
+  }
+  .accounts-toolbar #history-statuses{
+    flex:1 1 auto
   }
 }
 @media(prefers-reduced-motion:reduce){

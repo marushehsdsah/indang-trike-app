@@ -59,9 +59,12 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   app.get('/api/admin/rides/:id/messages', async (req, res) => res.json(await chat.transcript(req.params.id)));
   // The service area and the same places layer the app draws (assets/places).
   app.get('/api/admin/map', (req, res) => res.json({ boundary: INDANG_BOUNDARY_SHAPE, places: SERVICE_AREA_PLACES }));
-  // The admin interface's Dashboard, Accounts and Trips screens (IndangGoAdmin).
+  // The admin interface's Dashboard, Accounts and Trips screens (IndangGoAdmin),
+  // and God view's Accounts view.
   app.get('/api/admin/dashboard', async (req, res) => res.json(await admin.dashboard()));
-  app.get('/api/admin/accounts', async (req, res) => res.json({ accounts: await admin.accounts() }));
+  app.get('/api/admin/accounts', async (req, res) => res.json(await admin.accounts()));
+  // One account's trip history (God view).
+  app.get('/api/admin/accounts/:id', async (req, res) => res.json(await admin.history(req.params.id)));
   app.get('/api/admin/trips', async (req, res) => res.json({ trips: await admin.trips() }));
   // Admin accounts oversee the service; they do not book, drive or chat on trips.
   app.use(['/api/rides', '/api/driver', '/api/passenger'], (req, res, next) => {

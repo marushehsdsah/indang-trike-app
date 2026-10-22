@@ -90,7 +90,7 @@ function buildOverview(users, rides, connectedIds, now, findRoute = roadRoute, r
 
 // The admin interface's lists (IndangGoAdmin), shaped as its screens show them.
 // The newest come first, up to these many.
-const ACCOUNT_LIMIT = 500, TRIP_LIMIT = 300;
+const ACCOUNT_LIMIT = 500, TRIP_LIMIT = 300, HISTORY_LIMIT = 500;
 const fullName = (user, fallback) => [user.firstName, user.lastName].filter(Boolean).join(' ') || fallback;
 // An account's ID on the admin screens: its mobile number as people type it (09…).
 function localPhone(phone) {
@@ -123,6 +123,8 @@ function tripStatus(status) {
   return status === 'no_driver' ? 'No driver' : 'Cancelled';
 }
 
+const tripId = (id) => `#TR-${id.slice(-6).toUpperCase()}`;
+
 // people: user id -> the passengers and drivers of these rides, for their names
 // and the driver's (current) TODA.
 function buildTrips(rides, people) {
@@ -130,7 +132,7 @@ function buildTrips(rides, people) {
     const id = String(ride._id), passenger = people.get(String(ride.passengerId));
     const driver = ride.driverId ? people.get(String(ride.driverId)) : null;
     return {
-      key: id, id: `#TR-${id.slice(-6).toUpperCase()}`, todaId: todaName(driver?.toda) || '—',
+      key: id, id: tripId(id), todaId: todaName(driver?.toda) || '—',
       passenger: passenger ? fullName(passenger, 'Passenger') : 'Deleted account',
       driver: !ride.driverId ? '—' : driver ? fullName(driver, 'Driver') : 'Deleted account',
       status: tripStatus(ride.status),
@@ -138,6 +140,43 @@ function buildTrips(rides, people) {
       date: ride.createdAt,
     };
   });
+}
+
+// One account's trips, as passenger or driver (God view's trip history).
+// people: user id -> the other participants, for their names; ratings: ride
+// id -> the rating this account received on that ride.
+function buildHistory(accountId, rides, people, ratings) {
+  return rides.map((ride) => {
+    const id = String(ride._id), asDriver = ride.driverId === accountId && ride.passengerId !== accountId;
+    const otherId = asDriver ? ride.passengerId : ride.driverId, other = otherId ? people.get(String(otherId)) : null;
+    const rating = ratings.get(id);
+    return {
+      key: id, id: tripId(id), as: asDriver ? 'driver' : 'passenger', status: tripStatus(ride.status), stage: ride.status,
+      with: !otherId ? null : other ? fullName(other, asDriver ? 'Passenger' : 'Driver') : 'Deleted account',
+      pickup: ride.trip?.pickup?.name || 'Pickup', destination: ride.trip?.dropoff?.name || 'Destination',
+      distanceMeters: ride.route?.distanceMeters ?? null, passengers: ride.passengers ?? null, fare: ride.fare ?? null,
+      date: ride.createdAt, endedAt: ride.completedAt || ride.cancelledAt || null,
+      ...(ride.status === 'cancelled' ? {
+        cancelledBy: ride.cancelledBy === ride.passengerId ? 'passenger' : ride.cancelledBy === ride.driverId ? 'driver' : null,
+        cancellationReason: ride.cancellationReason || '',
+      } : {}),
+      rating: rating ? { stars: rating.stars, tags: rating.tags || [], comment: rating.comment || '', flagged: Boolean(rating.flagged) } : null,
+    };
+  });
+}
+
+// groups: [{ _id: ride status, count, fares }]. Fares count completed trips only.
+function historySummary(groups) {
+  const summary = { trips: 0, completed: 0, cancelled: 0, noDriver: 0, ongoing: 0, fares: 0 };
+  for (const { _id: status, count, fares } of groups) {
+    summary.trips += count;
+    const label = tripStatus(status);
+    if (label === 'Completed') { summary.completed += count; summary.fares += fares; }
+    else if (label === 'Ongoing') summary.ongoing += count;
+    else if (label === 'No driver') summary.noDriver += count;
+    else summary.cancelled += count;
+  }
+  return summary;
 }
 
 function createAdmin({ models, presence, clock, adminPhones }) {
@@ -172,11 +211,39 @@ function createAdmin({ models, presence, clock, adminPhones }) {
     // A phone can disconnect while the database reads are in flight.
     return buildOverview(users, rides, connectedIds(), clock(), cachedRoute, reports);
   }
-  // Passengers and drivers; admin accounts are not listed.
+  // Passengers and drivers, newest first; admin accounts are not listed. total
+  // counts them all, in case there are more than the list holds.
   async function accounts() {
-    const users = await models.User.find({ role: { $ne: 'admin' } }).sort({ createdAt: -1, _id: -1 }).limit(ACCOUNT_LIMIT)
-      .select('phone firstName lastName email role available toda plate').lean();
-    return buildAccounts(users, connectedIds());
+    const [users, total] = await Promise.all([
+      models.User.find({ role: { $ne: 'admin' } }).sort({ createdAt: -1, _id: -1 }).limit(ACCOUNT_LIMIT)
+        .select('phone firstName lastName email role available toda plate').lean(),
+      models.User.countDocuments({ role: { $ne: 'admin' } }),
+    ]);
+    return { accounts: buildAccounts(users, connectedIds()), total };
+  }
+  // One passenger's or driver's account and every trip they booked or
+  // accepted, newest first; summary covers all of them.
+  async function history(id) {
+    requireValue(/^[a-f\d]{24}$/i.test(id), 404, 'No account has this ID.');
+    const user = await models.User.findOne({ _id: id, role: { $ne: 'admin' } })
+      .select('phone firstName lastName email role available toda plate ratingSum ratingCount createdAt').lean();
+    requireValue(user, 404, 'No account has this ID.');
+    const mine = { $or: [{ passengerId: id }, { driverId: id }] };
+    const [rides, groups] = await Promise.all([
+      models.Ride.find(mine).sort({ createdAt: -1, _id: -1 }).limit(HISTORY_LIMIT)
+        .select('passengerId driverId status trip route passengers fare createdAt completedAt cancelledAt cancelledBy cancellationReason').lean(),
+      models.Ride.aggregate([{ $match: mine }, { $group: { _id: '$status', count: { $sum: 1 }, fares: { $sum: { $ifNull: ['$fare', 0] } } } }]),
+    ]);
+    const others = [...new Set(rides.map((ride) => (ride.passengerId === id ? ride.driverId : ride.passengerId)).filter((other) => /^[a-f\d]{24}$/i.test(String(other))))];
+    const [people, ratings] = await Promise.all([
+      models.User.find({ _id: { $in: others } }).select('firstName lastName').lean(),
+      models.Rating.find({ rateeId: id, rideId: { $in: rides.map((ride) => String(ride._id)) } }).select('rideId stars tags comment flagged').lean(),
+    ]);
+    return {
+      account: { ...buildAccounts([user], connectedIds())[0], joined: user.createdAt, rating: ratingSummary(user) },
+      summary: historySummary(groups),
+      trips: buildHistory(id, rides, new Map(people.map((person) => [String(person._id), person])), new Map(ratings.map((rating) => [rating.rideId, rating]))),
+    };
   }
   async function trips(limit = TRIP_LIMIT) {
     const rides = await models.Ride.find().sort({ createdAt: -1, _id: -1 }).limit(limit).select('passengerId driverId status trip createdAt').lean();
@@ -193,7 +260,7 @@ function createAdmin({ models, presence, clock, adminPhones }) {
     ]);
     return { totalAccounts, onlineNow, ongoingTrips, recentTrips };
   }
-  return { middleware, overview, accounts, trips, dashboard };
+  return { middleware, overview, accounts, history, trips, dashboard };
 }
 
-module.exports = { createAdmin, parseAdminPhones, buildOverview, buildRideRoutes, buildAccounts, buildTrips, tripStatus };
+module.exports = { createAdmin, parseAdminPhones, buildOverview, buildRideRoutes, buildAccounts, buildTrips, buildHistory, historySummary, tripStatus };

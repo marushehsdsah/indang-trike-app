@@ -86,6 +86,8 @@ export function createFleetMap(container, area, boundary, places, onSelect, onEr
       }
     },
     focus(user, route) {
+      // The map may have just been shown again (Accounts → Live map).
+      map.resize();
       // A matched rider or driver: frame their whole route guide path.
       const path = route ? [route.approach, route.trip].filter(Boolean).flatMap((line) => line.coordinates) : [];
       if (user?.location) path.push([user.location.longitude, user.location.latitude]);

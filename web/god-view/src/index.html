@@ -35,6 +35,8 @@
 
   <main id="dashboard" class="dashboard" hidden>
     <header class="topbar"><a class="brand" href="./"><span class="brand-mark">iG</span>IndangGO</a><span class="topbar-divider"></span><span class="workspace-name">God view</span><span class="pilot-tag">PILOT</span><div class="topbar-right"><span id="admin-name"></span><button id="sign-out" class="quiet light">Sign out</button></div></header>
+    <nav class="view-tabs" aria-label="God view"><a class="view-tab" href="#live" data-view="live" aria-current="page">Live map</a><a class="view-tab" href="#accounts" data-view="accounts">Accounts</a></nav>
+    <div id="live-view">
     <section class="page-heading"><div><span class="eyebrow">PILOT OPERATIONS</span><h1>Live overview <span id="area-name" class="area-chip">Service area</span></h1><p class="muted">The people moving through your city, right now.</p></div><div class="sync-panel"><span id="connection-status" class="connection" role="status">Connecting</span><span id="last-updated" class="small muted">Waiting for the first update</span><button id="refresh" class="quiet">Refresh now</button></div></section>
     <section class="metrics" aria-label="Online user summary">
       <div class="metric"><span class="metric-label">People online</span><strong id="count-online">—</strong><span class="metric-note">Connected to the app</span></div>
@@ -61,6 +63,55 @@
       </section>
     </section>
     <footer class="page-footer"><span>Online means the app is open and connected. Ride availability is shown separately.</span><span>GPS older than 30 seconds is marked last known.</span></footer>
+    </div>
+
+    <div id="accounts-view" hidden>
+    <section class="page-heading"><div><span class="eyebrow">PILOT ACCOUNTS</span><h1>All accounts</h1><p class="muted">Every driver and passenger on IndangGO, online or offline.</p></div><div class="sync-panel"><span id="accounts-updated" class="small muted">Loading accounts…</span><button id="accounts-refresh" class="quiet">Refresh now</button></div></section>
+    <section class="metrics three" aria-label="Account summary">
+      <div class="metric"><span class="metric-label">All accounts</span><strong id="account-count-all">—</strong><span id="account-note-all" class="metric-note">Loading…</span></div>
+      <div class="metric"><span class="metric-label"><i class="legend-dot online"></i> Online</span><strong id="account-count-online">—</strong><span id="account-note-online" class="metric-note">Loading…</span></div>
+      <div class="metric"><span class="metric-label"><i class="legend-dot stale"></i> Offline</span><strong id="account-count-offline">—</strong><span id="account-note-offline" class="metric-note">Loading…</span></div>
+    </section>
+    <p id="accounts-error" class="notice" role="alert" hidden></p>
+    <section class="accounts-panel" aria-label="Accounts">
+      <div class="accounts-toolbar">
+        <label class="search-label" for="account-search">Search accounts</label><input id="account-search" type="search" placeholder="Search a name, mobile number, email, plate or TODA…" autocomplete="off">
+        <div id="account-types" class="filters" role="group" aria-label="Filter by account type"><button data-type="all" aria-pressed="true">Everyone</button><button data-type="driver" aria-pressed="false">Drivers</button><button data-type="passenger" aria-pressed="false">Passengers</button></div>
+        <div id="account-statuses" class="filters" role="group" aria-label="Filter by online or offline"><button data-status="all" aria-pressed="true">All</button><button data-status="online" aria-pressed="false">Online</button><button data-status="offline" aria-pressed="false">Offline</button></div>
+        <span id="account-result-count" class="count-pill">0 shown</span>
+      </div>
+      <table id="accounts-table" class="accounts-table">
+        <thead><tr><th scope="col">Account</th><th scope="col">Type</th><th scope="col">Mobile number</th><th scope="col">Vehicle</th><th scope="col">Status</th><th scope="col"><span class="search-label">Map</span></th></tr></thead>
+        <tbody id="account-rows"></tbody>
+      </table>
+      <div id="accounts-empty" class="empty-state"><span aria-hidden="true">◎</span><h3>Loading accounts</h3><p>Getting every driver and passenger account.</p></div>
+      <div class="people-footer"><span id="accounts-footnote">Online means the app is open and connected. Refreshes every 10 seconds.</span></div>
+    </section>
+    </div>
+
+    <div id="history-view" hidden>
+    <section class="page-heading history-heading"><div><a class="back-link" href="#accounts">← All accounts</a><div id="history-profile" class="history-profile"></div></div><div class="sync-panel"><span id="history-updated" class="small muted">Loading trips…</span><button id="history-refresh" class="quiet">Refresh now</button></div></section>
+    <section class="metrics" aria-label="Trip summary">
+      <div class="metric"><span class="metric-label">Trips</span><strong id="history-count-total">—</strong><span id="history-note-total" class="metric-note">Loading…</span></div>
+      <div class="metric"><span class="metric-label"><i class="legend-dot online"></i> Completed</span><strong id="history-count-completed">—</strong><span class="metric-note">Reached the destination</span></div>
+      <div class="metric"><span class="metric-label"><i class="legend-dot stale"></i> Cancelled</span><strong id="history-count-cancelled">—</strong><span id="history-note-cancelled" class="metric-note">Loading…</span></div>
+      <div class="metric"><span id="history-fares-label" class="metric-label">Fares</span><strong id="history-fares">—</strong><span class="metric-note">From completed trips</span></div>
+    </section>
+    <p id="history-error" class="notice" role="alert" hidden></p>
+    <section class="accounts-panel" aria-labelledby="history-title">
+      <div class="accounts-toolbar">
+        <h2 id="history-title" class="panel-title">Trip history</h2>
+        <div id="history-statuses" class="filters" role="group" aria-label="Filter by trip status"><button data-trip="all" aria-pressed="true">All</button><button data-trip="completed" aria-pressed="false">Completed</button><button data-trip="cancelled" aria-pressed="false">Cancelled</button><button data-trip="ongoing" aria-pressed="false">Ongoing</button></div>
+        <span id="history-result-count" class="count-pill">0 shown</span>
+      </div>
+      <table id="history-table" class="accounts-table history-table">
+        <thead><tr><th scope="col">Booked</th><th scope="col">Trip</th><th scope="col">Route</th><th id="history-with-heading" scope="col">Driver</th><th scope="col">Fare</th><th scope="col">Status</th><th id="history-rating-heading" scope="col">Driver’s rating</th></tr></thead>
+        <tbody id="history-rows"></tbody>
+      </table>
+      <div id="history-empty" class="empty-state"><span aria-hidden="true">◎</span><h3>Loading trips</h3><p>Getting every trip this account booked or drove.</p></div>
+      <div class="people-footer"><span id="history-footnote">Times are when each trip was booked. Refreshes every 10 seconds.</span></div>
+    </section>
+    </div>
   </main>
 </body>
 </html>
