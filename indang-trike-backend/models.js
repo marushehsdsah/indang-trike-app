@@ -17,6 +17,9 @@ function createModels(connection) {
     locationAvailable: { type: Boolean, default: false },
     // Running totals of the ratings this user has received; see utils/rating.js.
     ratingSum: { type: Number, default: 0 }, ratingCount: { type: Number, default: 0 },
+    // How many times offensive words were censored from what this user sent
+    // (utils/profanity.js); shown to admins.
+    languageWarnings: { type: Number, default: 0 },
   }, { timestamps: true, bufferCommands: false });
   const sessionSchema = new Schema({
     tokenHash: { type: String, unique: true, required: true },

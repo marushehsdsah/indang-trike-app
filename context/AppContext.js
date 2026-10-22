@@ -36,6 +36,10 @@ export function AppProvider({ children }) {
   // sent). A snapshot asked for before then may still count those messages
   // as unread, so the phone's own count is kept instead.
   const chatReadAt = useRef(new Map());
+  // Counts up each time the server hid offensive words from something this
+  // person sent; components/LanguageWarning.js warns them.
+  const [languageWarning, setLanguageWarning] = useState(0);
+  const noteCensored = useCallback((result) => { if (result?.censored) setLanguageWarning((count) => count + 1); return result; }, []);
   const activeRide = ride && ACTIVE_STATUSES.includes(ride.status);
   // Pilot admins can locate connected users while their app is open. Driver
   // availability remains a separate choice controlling ride requests. Admin
@@ -165,14 +169,14 @@ export function AppProvider({ children }) {
   const deliver = useCallback(async (rideId, message) => {
     const generation = sessionGeneration.current;
     try {
-      const result = await request(`/rides/${rideId}/messages`, { clientId: message.clientId, ...(message.preset ? { preset: message.preset } : { text: message.text }) });
+      const result = noteCensored(await request(`/rides/${rideId}/messages`, { clientId: message.clientId, ...(message.preset ? { preset: message.preset } : { text: message.text }) }));
       if (generation === sessionGeneration.current) updateChat(rideId, (messages) => mergeMessages(messages, [result.message]));
     } catch (failure) {
       if (generation !== sessionGeneration.current) return;
       updateChat(rideId, (messages) => messages.map((item) => (item.clientId === message.clientId && !item.id
         ? { ...item, status: 'failed', error: failure.status ? failure.message : null, retry: !failure.status } : item)));
     }
-  }, [request, updateChat]);
+  }, [request, updateChat, noteCensored]);
   // content is { text } or { preset }.
   const sendChat = useCallback((rideId, content) => {
     const me = current.current.user;
@@ -282,12 +286,12 @@ export function AppProvider({ children }) {
     const generation = sessionGeneration.current;
     try {
       const { trip, passengers, note, idempotencyKey, fareType, discounted } = payload;
-      const result = await request('/rides', { trip, passengers, note, idempotencyKey, fareType, discounted });
+      const result = noteCensored(await request('/rides', { trip, passengers, note, idempotencyKey, fareType, discounted }));
       if (generation !== sessionGeneration.current) return;
       refreshSequence.current += 1;
       setRide((previous) => mergeRide(previous, result.ride)); await refresh(); return result.ride;
     } catch (failure) { if (generation === sessionGeneration.current) await refresh(); throw failure; }
-  }, [request, refresh]);
+  }, [request, refresh, noteCensored]);
   const rideAction = useCallback(async (id, action, body = {}) => {
     const generation = sessionGeneration.current;
     try {
@@ -300,13 +304,13 @@ export function AppProvider({ children }) {
   }, [request, refresh]);
   // Rates the other participant of a completed ride; returns the updated ride.
   const rateRide = useCallback(async (id, rating) => {
-    const result = await request(`/rides/${id}/rating`, rating);
+    const result = noteCensored(await request(`/rides/${id}/rating`, rating));
     if (result.ride) setRide((previous) => previous?.id === result.ride.id ? mergeRide(previous, result.ride) : previous);
     return result.ride;
-  }, [request]);
+  }, [request, noteCensored]);
   const dismissRide = useCallback(() => setRide((previous) => previous && ACTIVE_STATUSES.includes(previous.status) ? previous : null), []);
 
-  return <Context.Provider value={{ user, ride, offer, token, loading, error, connected, online, syncing, config, gps, foreground, serverOffset,
+  return <Context.Provider value={{ languageWarning, user, ride, offer, token, loading, error, connected, online, syncing, config, gps, foreground, serverOffset,
     chat, chatNotice, loadChat, viewChat, sendChat, retryChat, dismissChatNotice,
     request, refresh, restore, signIn, signOut, setAvailable, bookRide, rideAction, rateRide, dismissRide, clearError: () => setError(null) }}>{children}</Context.Provider>;
 }

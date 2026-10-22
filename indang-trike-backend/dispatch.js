@@ -4,6 +4,7 @@ const { getMunicipalityAt } = require('../data/indangMap');
 const { findToda, todaCovers, todaName } = require('../data/todaZones');
 const { HttpError, requireValue, publicUser, bookingFields, cleanText } = require('./policy');
 const { ratingSummary, validateRating } = require('../utils/rating');
+const { censorText } = require('../utils/profanity');
 
 function createDispatch({ models, io, clock, presence, options = {} }) {
   const { User, Ride, Rating } = models;
@@ -116,10 +117,13 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     if (existing) return { ride: await view(existing, user._id), reused: true };
     requireValue(!await Ride.exists({ passengerId: String(user._id), active: true }), 409, 'You already have an active booking.');
     let ride;
-    try { ride = await Ride.create({ ...bookingFields(body, clock()), passengerId: String(user._id), searchExpiresAt: new Date(clock() + searchMs) }); }
+    // Offensive words in the pickup note are hidden before the driver sees it.
+    const fields = bookingFields(body, clock()), note = censorText(fields.note);
+    try { ride = await Ride.create({ ...fields, note: note.text, passengerId: String(user._id), searchExpiresAt: new Date(clock() + searchMs) }); }
     catch (error) { if (error.code === 11000) throw new HttpError(409, 'You already have an active booking.'); throw error; }
     await tickUnsafe(); notify(user._id);
-    return { ride: await view(await Ride.findById(ride._id), user._id), reused: false };
+    if (note.censored) await warnLanguage(user._id);
+    return { ride: await view(await Ride.findById(ride._id), user._id), reused: false, ...(note.censored ? { censored: true } : {}) };
   }
   async function action(user, id, actionName, body = {}) {
     requireValue(/^[a-f0-9]{24}$/.test(id), 404, 'Ride not found.');
@@ -153,6 +157,9 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     notifyRide(ride); notifyRide(updated); await tickUnsafe();
     return { ride: await view(updated, userId) };
   }
+  // Offensive words were hidden from what this user sent: one more warning on
+  // their account, which admins see.
+  const warnLanguage = (userId) => User.updateOne({ _id: userId }, { $inc: { languageWarnings: 1 } });
   // A participant rates the other one, once, after the ride is completed.
   async function rate(user, id, body = {}) {
     requireValue(/^[a-f0-9]{24}$/.test(id), 404, 'Ride not found.');
@@ -163,16 +170,18 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     requireValue(ride.status === 'completed', 409, 'You can rate a ride once it is completed.');
     let fields;
     try { fields = validateRating(body, asPassenger ? 'driver' : 'passenger'); } catch (error) { throw new HttpError(400, error.message); }
+    const comment = censorText(cleanText(fields.comment, 200));
     const rateeId = asPassenger ? ride.driverId : ride.passengerId;
     try {
-      await Rating.create({ ...fields, rideId: String(ride._id), raterId: userId, rateeId, raterRole: asPassenger ? 'passenger' : 'driver', comment: cleanText(fields.comment, 200) });
+      await Rating.create({ ...fields, rideId: String(ride._id), raterId: userId, rateeId, raterRole: asPassenger ? 'passenger' : 'driver', comment: comment.text });
     } catch (error) { if (error.code === 11000) throw new HttpError(409, 'You already rated this ride.'); throw error; }
     // The average comes from these running totals. If they cannot be updated,
     // the rating is taken back so the rater can simply try again.
     try { await User.updateOne({ _id: rateeId }, { $inc: { ratingSum: fields.stars, ratingCount: 1 } }); }
     catch (error) { await Rating.deleteOne({ rideId: String(ride._id), raterId: userId }).catch(() => {}); throw error; }
     notify(userId);
-    return { ride: await view(ride, userId) };
+    if (comment.censored) await warnLanguage(userId);
+    return { ride: await view(ride, userId), ...(comment.censored ? { censored: true } : {}) };
   }
   async function location(user, body) {
     requireValue(user.role === 'driver', 403, 'Driver account required.');

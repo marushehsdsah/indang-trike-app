@@ -70,7 +70,7 @@ function buildOverview(users, rides, connectedIds, now, findRoute = roadRoute, r
       role: driver ? 'driver' : 'passenger', status,
       available: Boolean(driver && user.available && !active && locationStatus === 'live' && inServiceArea),
       ...(driver ? { plate: user.plate || '', toda: todaName(user.toda) || '' } : {}),
-      rating: ratingSummary(user), safetyReports: reports.get(id) || 0,
+      rating: ratingSummary(user), safetyReports: reports.get(id) || 0, languageWarnings: user.languageWarnings || 0,
       location, locationStatus, inServiceArea,
       ride: active ? { id: String(active._id), status: active.status, pickup: active.trip?.pickup?.name || '', destination: active.trip?.dropoff?.name || '' } : null,
     };
@@ -110,7 +110,7 @@ function buildAccounts(users, connectedIds) {
     const id = String(user._id), driver = user.role === 'driver';
     return {
       key: id, id: localPhone(user.phone), name: fullName(user, driver ? 'Driver' : 'Passenger'), email: user.email || '',
-      role: driver ? 'RIDER' : 'PASSENGER', status: accountStatus(user, connectedIds.has(id)),
+      role: driver ? 'RIDER' : 'PASSENGER', status: accountStatus(user, connectedIds.has(id)), languageWarnings: user.languageWarnings || 0,
       ...(driver ? { toda: todaName(user.toda) || '', plate: user.plate || '' } : {}),
     };
   });
@@ -204,7 +204,7 @@ function createAdmin({ models, presence, clock, adminPhones }) {
     const ids = [...presence.keys()];
     // Admins signed in on the app are watching, not riding, so they are not shown.
     const [users, rides, reports] = await Promise.all([
-      models.User.find({ _id: { $in: ids }, role: { $ne: 'admin' } }).select('firstName lastName role plate toda available location locationAvailable ratingSum ratingCount').lean(),
+      models.User.find({ _id: { $in: ids }, role: { $ne: 'admin' } }).select('firstName lastName role plate toda available location locationAvailable ratingSum ratingCount languageWarnings').lean(),
       models.Ride.find({ active: true, $or: [{ passengerId: { $in: ids } }, { driverSlot: { $in: ids } }] }).select('passengerId driverId driverSlot status trip route').lean(),
       models.Rating.aggregate([{ $match: { flagged: true, rateeId: { $in: ids } } }, { $group: { _id: '$rateeId', count: { $sum: 1 } } }]),
     ]).then(([found, active, flagged]) => [found, active, new Map(flagged.map(({ _id, count }) => [String(_id), count]))]);
@@ -216,7 +216,7 @@ function createAdmin({ models, presence, clock, adminPhones }) {
   async function accounts() {
     const [users, total] = await Promise.all([
       models.User.find({ role: { $ne: 'admin' } }).sort({ createdAt: -1, _id: -1 }).limit(ACCOUNT_LIMIT)
-        .select('phone firstName lastName email role available toda plate').lean(),
+        .select('phone firstName lastName email role available toda plate languageWarnings').lean(),
       models.User.countDocuments({ role: { $ne: 'admin' } }),
     ]);
     return { accounts: buildAccounts(users, connectedIds()), total };

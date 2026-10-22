@@ -130,9 +130,9 @@ test('the admin screens list accounts by mobile number and whether the app is op
     { _id: 'd2', phone: '+639191234567', role: 'driver', available: false },
   ], new Set(['d1', 'd2']));
   assert.deepEqual(accounts, [
-    { key: 'p1', id: '09171234567', name: 'Ana Cruz', email: 'ana@example.com', role: 'PASSENGER', status: 'Offline' },
-    { key: 'd1', id: '09181234567', name: 'Ben Reyes', email: 'ben@example.com', role: 'RIDER', status: 'Available', toda: 'ITODA', plate: 'ABC 123' },
-    { key: 'd2', id: '09191234567', name: 'Driver', email: '', role: 'RIDER', status: 'Online', toda: '', plate: '' },
+    { key: 'p1', id: '09171234567', name: 'Ana Cruz', email: 'ana@example.com', role: 'PASSENGER', status: 'Offline', languageWarnings: 0 },
+    { key: 'd1', id: '09181234567', name: 'Ben Reyes', email: 'ben@example.com', role: 'RIDER', status: 'Available', languageWarnings: 0, toda: 'ITODA', plate: 'ABC 123' },
+    { key: 'd2', id: '09191234567', name: 'Driver', email: '', role: 'RIDER', status: 'Online', languageWarnings: 0, toda: '', plate: '' },
   ]);
 });
 
