@@ -77,9 +77,11 @@
       ]
     },
     {
-      "id": "sitodai",
-      "name": "SITODAI",
+      "id": "bcitoda",
+      "name": "BCITODA",
       "aliases": [
+        "BCITODA TODA",
+        "SITODAI",
         "SITODAI TODA"
       ],
       "barangays": [
@@ -492,6 +494,30 @@
         "LA CASA DE SERENIDAD",
         "BONIFACIO SHRINE",
         "VILLA FELICIANA"
+      ]
+    },
+    {
+      "id": "kayitoda",
+      "name": "KAYITODA",
+      "aliases": [],
+      "barangays": [
+        "Kaytapos"
+      ],
+      "review": [],
+      "places": [
+        "KAYTAPOS"
+      ]
+    },
+    {
+      "id": "bmlitoda",
+      "name": "BMLITODA",
+      "aliases": [],
+      "barangays": [
+        "Mahabangkahoy Lejos"
+      ],
+      "review": [],
+      "places": [
+        "BALAGBAG MAHABANG KAHOY"
       ]
     }
   ]

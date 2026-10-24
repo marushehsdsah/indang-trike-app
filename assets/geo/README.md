@@ -31,7 +31,7 @@ in such a gap in the nearest barangay within 300 m.
 
 ## Indang TODA zones
 
-`indang-todas.json` lists Indang's 14 TODAs and the barangays each may serve,
+`indang-todas.json` lists Indang's 16 TODAs and the barangays each may serve,
 from `TODAs_coordinates.xlsx` at the repository root (COORDINATES and Notes
 sheets). A TODA serves:
 
@@ -47,7 +47,8 @@ pin, or, with `along`, a strip `depthMeters` deep along that barangay's whole
 border with the `along` barangay, rounded past both ends of the border and cut
 to the barangay's outline. BITODA serves
 Bancod and the CvSU stop (400 m around the CvSU pin, inside Kaytapos), not the
-rest of Kaytapos. SITODAI serves Banaba Cerca and two stops: Rehab, the strip
+rest of Kaytapos. BCITODA (formerly misspelled SITODAI, kept as an alias for
+drivers saved under it) serves Banaba Cerca and two stops: Rehab, the strip
 of Banaba Lejos along its border with Banaba Cerca, end to end, 320 m deep
 (Rehab is 270 m from that border); and British Village, 300 m around the
 Indang British Village pin, in Calumpang Lejos I. CIKTODA serves Kaytambog and
@@ -106,6 +107,13 @@ Banaba Lejos's TODA is BLI-TODA, as the sheet names it; it was listed here as
 BIPTODA until 2026-10-20, which stays an alias. Its POULTRY (Maragondon) and
 MALAINEN (Malainen Luma, Naic) pins lie outside Indang, which the app does not
 serve, and JARO and GLORY MOORE have no pins, so its area is Banaba Lejos only.
+
+KAYITODA and BMLITODA were added on 2026-10-24 from the sheet's last two
+columns. KAYITODA serves Kaytapos, so CvSU is both its and BITODA's.
+BMLITODA serves Mahabangkahoy Lejos: its BALAGBAG MAHABANG KAHOY pin is the
+same as ITODA's (Mahabang Kahoy Lejos Barangay Hall), and its drivers' addresses
+on its 2026 franchise list are Mahabangkahoy Lejos ("Ma. Kahoy Lejos" or
+"Bal. Ma. Kahoy").
 
 A driver whose TODA field names one of these TODAs (any spelling of its name or
 an alias) is offered only trips whose pickup is inside its barangays, and their

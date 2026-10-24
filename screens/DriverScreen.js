@@ -181,7 +181,7 @@ export default function DriverScreen({ navigation }) {
                   style={({ pressed }) => [styles.zone, pressed && styles.pressed]}>
                   {!toda.wholeTown && <View style={styles.zoneSwatch} />}
                   <Text style={[TYPE.label, styles.flex]} numberOfLines={1}>{toda.wholeTown ? t('driver.zoneAll', { toda: toda.name })
-                    : toda.stops.length ? t('driver.zoneAreas', { toda: toda.name, areas: toda.areas.join(', ') })
+                    : toda.areas.length === 1 || toda.stops.length ? t('driver.zoneAreas', { toda: toda.name, areas: toda.areas.join(', ') })
                     : t('driver.zone', { toda: toda.name, count: toda.barangays.length })}</Text>
                   <MaterialCommunityIcons name={zoneOpen ? 'chevron-up' : 'chevron-down'} size={22} color={COLORS.inkSecondary} />
                 </Pressable>
