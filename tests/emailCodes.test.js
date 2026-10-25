@@ -200,11 +200,19 @@ test('a driver is emailed the admin\'s decision on their account, with the reaso
   await send({ to: 'ben@gmail.com', purpose: 'driverApproved', name: 'Ben' });
   await send({ to: 'ben@gmail.com', purpose: 'driverTerminated', name: 'Ben', reason: 'Plate <b>ABC</b> is not on the list' });
   await send({ to: 'ben@gmail.com', purpose: 'driverDeleted', name: 'Ben' });
-  assert.deepEqual(bodies.map((body) => body.subject), ['Your IndangGO driver account is approved', 'Your IndangGO driver account was terminated', 'Your IndangGO driver account was deleted']);
-  assert.match(bodies[0].textContent, /^Hi Ben,\n\n.*approved your driver account\.\n\nOpen the app and go online/);
-  assert.match(bodies[1].textContent, /cannot be used to sign up again\.\n\nReason: Plate <b>ABC<\/b> is not on the list$/);
+  await send({ to: 'ben@gmail.com', purpose: 'driverDeclined', name: 'Ben', reason: 'Plate number mistyped' });
+  assert.deepEqual(bodies.map((body) => body.subject), ['Your IndangGO driver registration is approved', 'Your IndangGO driver account was suspended',
+    'Your IndangGO driver account was deleted', 'Your IndangGO driver registration was declined']);
+  assert.equal(bodies[3].textContent, 'Hi Ben,\n\nWe regret to inform you that your driver registration has been declined because the information you provided does not match the records of registered drivers from the TODAs in Indang.'
+    + '\n\nYou may register again by providing the correct information and required credentials.\n\nReason: Plate number mistyped\n\n— The IndangGO Team');
+  assert.equal(bodies[0].textContent, 'Hi Ben,\n\nWe are pleased to inform you that your driver registration has been approved. You can now accept bookings from passengers.'
+    + '\n\nOpen the app and go online to start receiving bookings.\n\n— The IndangGO Team');
+  assert.match(bodies[0].htmlContent, /<p>— The IndangGO Team<\/p>$/);
+  assert.match(bodies[1].textContent, /and suspended your driver account\.\n\nYou cannot log in while it is suspended/);
+  assert.match(bodies[1].textContent, /cannot be used to sign up again\.\n\nReason: Plate <b>ABC<\/b> is not on the list\n\n— The IndangGO Team$/);
+  assert.doesNotMatch(bodies[1].textContent, /terminat/i);
   assert.match(bodies[1].htmlContent, /Reason: Plate &lt;b&gt;ABC&lt;\/b&gt; is not on the list/, 'the admin\'s text is never HTML');
-  assert.match(bodies[2].textContent, /sign up again with the correct ones\.$/, 'no reason line without a reason');
+  assert.match(bodies[2].textContent, /sign up again with the correct ones\.\n\n— The IndangGO Team$/, 'no reason line without a reason');
   assert.deepEqual(bodies[0].to, [{ email: 'ben@gmail.com' }]);
 });
 

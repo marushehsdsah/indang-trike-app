@@ -71,7 +71,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
   // anywhere, but only those in the pickup's town get it: the towns' roads do
   // not connect. An Indang TODA's drivers pick up only inside its barangays;
   // the drop-off may be anywhere in town. A driver still waiting for an
-  // admin's approval, or one an admin terminated, gets nothing.
+  // admin's approval, or one an admin suspended, gets nothing.
   function inScope(user, ride) {
     const town = getMunicipalityAt(ride.trip.pickup.coordinate), toda = findToda(user.toda);
     return Boolean(!awaitingApproval(user) && !user.disabled && publicUser(user).profileComplete && user.locationAvailable && user.location && town &&
@@ -241,7 +241,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     return { ride: await view(ride, userId), ...(comment.censored ? { censored: true } : {}) };
   }
   // An account an admin cut off: a suspended passenger, or a driver who was
-  // terminated or deleted. A request offered to the driver goes to the next
+  // suspended or deleted. A request offered to the driver goes to the next
   // one; their active booking or trip is cancelled with `reason`; their app is
   // cut off at once.
   async function suspended(userId, reason = 'Passenger account suspended') {

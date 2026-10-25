@@ -16,7 +16,7 @@
 // status: 'Available' (a driver taking ride requests) | 'Online' (app open) | 'Offline'
 // Drivers also have toda, plate, capacity, joined (when they signed up) and
 // approval: 'Pending' (waiting for an admin's approval) | 'Approved' |
-// 'Terminated' (with terminatedAt and terminationReason).
+// 'Suspended' (with terminatedAt and terminationReason).
 export const accounts = [
   { key: 'a1', id: '09171234501', name: 'Johnwil Verano', email: 'johnwilverano@email.com', role: 'RIDER', status: 'Available', toda: 'ITODA', plate: 'ABC 1234', capacity: 4, joined: '2026-09-02T01:00:00.000Z', approval: 'Approved' },
   { key: 'a2', id: '09171234542', name: 'Jame Barrios', email: 'barriosjamehart@email.com', role: 'PASSENGER', status: 'Online' },
@@ -24,7 +24,7 @@ export const accounts = [
   { key: 'a4', id: '09171234569', name: 'Elena Dizon', email: 'elena.d@email.com', role: 'RIDER', status: 'Online', toda: 'ITODA', plate: 'DEF 9012', capacity: 3, joined: '2026-10-21T09:45:00.000Z', approval: 'Pending' },
   { key: 'a5', id: '09171234570', name: 'Kuya Virgilio', email: 'virgilio.toda@email.com', role: 'RIDER', status: 'Offline', toda: 'BITODA', plate: 'GHI 3456', capacity: 4, joined: '2026-10-22T02:10:00.000Z', approval: 'Pending' },
   { key: 'a6', id: '09171234571', name: 'Maria Clara', email: 'maria.clara@email.com', role: 'PASSENGER', status: 'Offline' },
-  { key: 'a7', id: '09171234588', name: 'Lito Camagong', email: 'lito.c@email.com', role: 'RIDER', status: 'Offline', toda: 'ALITODA', plate: 'JKL 7788', capacity: 4, joined: '2026-10-18T05:30:00.000Z', approval: 'Terminated', terminatedAt: '2026-10-19T02:00:00.000Z', terminationReason: 'Plate not on the TODA list' },
+  { key: 'a7', id: '09171234588', name: 'Lito Camagong', email: 'lito.c@email.com', role: 'RIDER', status: 'Offline', toda: 'ALITODA', plate: 'JKL 7788', capacity: 4, joined: '2026-10-18T05:30:00.000Z', approval: 'Suspended', terminatedAt: '2026-10-19T02:00:00.000Z', terminationReason: 'Plate not on the TODA list' },
 ];
 
 // status: 'Ongoing' | 'Completed' | 'Cancelled' | 'No driver' (no driver took it)

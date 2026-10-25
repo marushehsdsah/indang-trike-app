@@ -37,7 +37,7 @@ function validateReport(body) {
 }
 
 // Whether an account is barred from the app right now, and why. A driver an
-// admin terminated (indang-trike-backend/admin.js) is disabled too.
+// admin suspended (indang-trike-backend/admin.js) is disabled too.
 function suspensionOf(user, now = Date.now()) {
   if (user?.disabled) return { permanent: true, until: null, terminated: Boolean(user.terminatedAt) };
   const until = user?.suspendedUntil ? +new Date(user.suspendedUntil) : 0;
@@ -46,7 +46,7 @@ function suspensionOf(user, now = Date.now()) {
 
 function suspensionMessage(suspension) {
   if (!suspension) return '';
-  if (suspension.terminated) return 'This driver account was terminated by an IndangGO admin.';
+  if (suspension.terminated) return 'This driver account was suspended by an IndangGO admin.';
   if (suspension.permanent) return 'This account has been permanently disabled after repeated reports of fake bookings.';
   const until = new Date(suspension.until).toLocaleString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   return `This account is suspended until ${until} after a driver's report was upheld.`;

@@ -4,15 +4,17 @@
 // One driver's sign-up details, opened from Account Approval or
 // from a driver in Accounts, for the admin to compare with the
 // TODA's list of registered drivers and decide:
-// - Pending: Approve, Terminate or Delete.
-// - Approved: Terminate or Delete.
-// - Terminated: Unblock (the driver waits for approval again).
-// Terminate disables the account and blocks its mobile number and
-// email from signing up again; Delete removes the account, so the
-// driver can sign up again with corrected details. Both sign the
-// driver out at once and cancel any trip they are on. The driver
-// is emailed when approved, terminated or deleted, with the
-// reason written here, if any.
+// - Pending: Approve or Decline.
+// - Approved: Suspend or Delete.
+// - Suspended: Unblock (the driver waits for approval again).
+// Decline removes the registration, so a driver who typed a
+// detail wrong can sign up again with the same mobile number and
+// email. Suspend disables the account and blocks its mobile number
+// and email from signing up again; Delete removes the account, so
+// the driver can sign up again with corrected details. Each signs
+// the driver out at once and cancels any trip they are on. The
+// driver is emailed when approved, declined, suspended or deleted,
+// with the reason written here, if any.
 //
 // HOW TO EDIT:
 // - The driver comes from useAdminData('drivers/<key>'); each
@@ -38,14 +40,21 @@ const DECISIONS = {
     message: (name) => `${name} can go online and get bookings right away.`,
     done: 'Driver approved',
   },
+  // reason: the reason box is shown, and what is typed there is sent.
+  decline: {
+    label: 'Decline', icon: 'close-circle-outline', tone: 'danger', confirm: 'Decline', destructive: true, reason: true,
+    title: 'Decline this registration?',
+    message: (name) => `${name}’s registration is removed and they are signed out. They can sign up again with the same mobile number and email and the correct details.`,
+    done: 'Registration declined',
+  },
   terminate: {
-    label: 'Terminate', icon: 'ban-outline', tone: 'danger', confirm: 'Terminate', destructive: true,
-    title: 'Terminate this account?',
+    label: 'Suspend', icon: 'ban-outline', tone: 'danger', confirm: 'Suspend', destructive: true, reason: true,
+    title: 'Suspend this account?',
     message: (name) => `${name} is signed out at once and any trip they are on is cancelled. Their mobile number and email can’t sign up again unless you unblock them.`,
-    done: 'Account terminated',
+    done: 'Account suspended',
   },
   delete: {
-    label: 'Delete', icon: 'trash-outline', tone: 'quiet', confirm: 'Delete', destructive: true,
+    label: 'Delete', icon: 'trash-outline', tone: 'quiet', confirm: 'Delete', destructive: true, reason: true,
     title: 'Delete this account?',
     message: (name) => `${name}’s account is removed for good and they are signed out at once. They can sign up again with corrected details.`,
     done: 'Account deleted',
@@ -58,7 +67,7 @@ const DECISIONS = {
   },
 };
 // The decisions open to a driver, by their approval.
-const ACTIONS = { Pending: ['approve', 'terminate', 'delete'], Approved: ['terminate', 'delete'], Terminated: ['unblock'] };
+const ACTIONS = { Pending: ['approve', 'decline'], Approved: ['terminate', 'delete'], Suspended: ['unblock'] };
 
 export default function DriverReviewScreen({ navigation, route }) {
   const { key } = route.params;
@@ -70,7 +79,7 @@ export default function DriverReviewScreen({ navigation, route }) {
   const [working, setWorking] = useState(null);
 
   const actions = driver ? ACTIONS[driver.approval] || [] : [];
-  const removable = actions.includes('terminate');
+  const askReason = actions.some((decision) => DECISIONS[decision].reason);
 
   const decide = (decision) => {
     const text = DECISIONS[decision];
@@ -84,7 +93,7 @@ export default function DriverReviewScreen({ navigation, route }) {
     const text = DECISIONS[decision];
     setWorking(decision);
     try {
-      const body = decision === 'terminate' || decision === 'delete' ? { reason: reason.trim() } : {};
+      const body = text.reason ? { reason: reason.trim() } : {};
       const result = await act(`drivers/${key}/${decision}`, body);
       const message = decision === 'unblock'
         ? `${driver.name} is back in Pending. Approve them once their details check out.`
@@ -108,8 +117,8 @@ export default function DriverReviewScreen({ navigation, route }) {
     { icon: 'calendar-outline', label: 'Signed up', value: driver.joined ? formatDate(driver.joined) : '—' },
     { icon: 'phone-portrait-outline', label: 'App', value: driver.status },
     ...(driver.approval === 'Approved' && driver.approvedAt ? [{ icon: 'checkmark-circle-outline', label: 'Approved', value: formatDate(driver.approvedAt) }] : []),
-    ...(driver.approval === 'Terminated' && driver.terminatedAt ? [{ icon: 'ban-outline', label: 'Terminated', value: formatDate(driver.terminatedAt) }] : []),
-    ...(driver.approval === 'Terminated' ? [{ icon: 'document-text-outline', label: 'Reason', value: driver.terminationReason || 'None given' }] : []),
+    ...(driver.approval === 'Suspended' && driver.terminatedAt ? [{ icon: 'ban-outline', label: 'Suspended', value: formatDate(driver.terminatedAt) }] : []),
+    ...(driver.approval === 'Suspended' ? [{ icon: 'document-text-outline', label: 'Reason', value: driver.terminationReason || 'None given' }] : []),
   ] : [];
 
   return (
@@ -168,11 +177,15 @@ export default function DriverReviewScreen({ navigation, route }) {
           ))}
         </View>
 
-        {/* ---- Optional reason, emailed if the account is terminated or deleted ---- */}
-        {removable && (
+        {/* ---- Optional reason, emailed if the driver is declined, suspended or deleted ---- */}
+        {askReason && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Reason (optional)</Text>
-            <Text style={styles.hint}>Included in the email if you terminate or delete this account.</Text>
+            <Text style={styles.hint}>
+              {driver.approval === 'Pending'
+                ? 'Included in the email if you decline this registration, so the driver knows what to fix.'
+                : 'Included in the email if you suspend or delete this account.'}
+            </Text>
             <TextInput
               style={styles.reasonInput}
               placeholder="e.g. Plate not on the TODA list"

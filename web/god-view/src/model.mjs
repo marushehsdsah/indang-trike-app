@@ -121,8 +121,8 @@ export function filterAccounts(accounts, role, status, query) {
 
 // A driver's approval (indang-trike-backend/admin.js): Pending until an admin
 // checks them against their TODA's list of registered drivers, Approved, or
-// Terminated. The decisions open to each, in the order their buttons show.
-export const DRIVER_ACTIONS = { Pending: ['approve', 'terminate', 'delete'], Approved: ['terminate', 'delete'], Terminated: ['unblock'] };
+// Suspended. The decisions open to each, in the order their buttons show.
+export const DRIVER_ACTIONS = { Pending: ['approve', 'terminate', 'delete'], Approved: ['terminate', 'delete'], Suspended: ['unblock'] };
 
 // Online accounts first, then by name.
 export function sortAccounts(accounts) {

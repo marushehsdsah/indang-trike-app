@@ -21,13 +21,16 @@ below).
   Dashboard / Accounts / Trips tabs) and **Account Approval**.
 - **Account Approval** — drivers who signed up wait here (Pending) until
   an admin checks their details against their TODA's list of registered
-  drivers; a Terminated filter lists the drivers an admin cut off. Until
+  drivers; a Suspended filter lists the drivers an admin cut off. Until
   approved, a driver can't go online or get bookings.
 - **Driver Review** — opened from Account Approval or a driver in
   Accounts: the driver's sign-up details and the decisions open to them
-  (Approve, Terminate, Delete, or Unblock for a terminated driver). Each
-  asks for confirmation; the driver is emailed when approved, terminated
-  or deleted, with the optional reason typed here.
+  (Approve or Decline for a pending driver; Suspend or Delete for an
+  approved one; Unblock for a suspended one). Declining removes the
+  registration, so a driver who typed a detail wrong can sign up again
+  with the same mobile number and email. Each asks for confirmation;
+  the driver is emailed when approved, declined, suspended or deleted,
+  with the optional reason typed here.
 - **Profile** — opened from the avatar at the top right: the admin's name,
   Admin ID and role, and a Logout button.
 
@@ -35,7 +38,8 @@ Inside the IndangGO app, Dashboard, Accounts, Trips and Account Approval
 load real data from the API (`GET /api/admin/dashboard`, `/accounts`,
 `/trips`, `/approvals`, `/drivers/<id>`), pulling down refreshes them,
 and a driver's review sends the admin's decision (`POST
-/api/admin/drivers/<id>/approve`, `/terminate`, `/delete`, `/unblock`).
+/api/admin/drivers/<id>/approve`, `/decline`, `/terminate` (Suspend), `/delete`,
+`/unblock`).
 Run on its own, this folder shows the fake data in
 `src/data/mockData.js` instead, in the same shape, and the decisions
 change that fake data.
@@ -125,8 +129,8 @@ src/
     AccountsScreen.js
     TripsScreen.js
     ProfileScreen.js         <- admin profile + Logout (opened from the avatar)
-    AccountApprovalScreen.js <- drivers waiting for approval, and terminated ones
-    DriverReviewScreen.js    <- one driver's details + Approve/Terminate/Delete/Unblock
+    AccountApprovalScreen.js <- drivers waiting for approval, and suspended ones
+    DriverReviewScreen.js    <- one driver's details + Approve/Decline/Suspend/Delete/Unblock
   components/
     TopHeader.js            <- shared top bar (hamburger menu + title + avatar -> Profile)
     BottomNav.js             <- shared bottom tab bar
@@ -149,7 +153,7 @@ src/
 | Change the real accounts/trips the screens get   | `../indang-trike-backend/admin.js` (`buildAccounts`, `buildTrips`) |
 | Change the hamburger menu's items                  | `src/components/TopHeader.js` (`MENU_ITEMS`) |
 | Change what a driver decision asks or says         | `src/screens/DriverReviewScreen.js` (`DECISIONS`, `ACTIONS`) |
-| Change what a decision does on the server          | `../indang-trike-backend/admin.js` (`approve`, `terminate`, `remove`, `unblock`) |
+| Change what a decision does on the server          | `../indang-trike-backend/admin.js` (`approve`, `decline`, `terminate`, `remove`, `unblock`) |
 | Add, remove, or change mock accounts              | `src/data/mockData.js` (`accounts` array) |
 | Add, remove, or change mock trips                 | `src/data/mockData.js` (`trips` array)    |
 | Add a new status (e.g. "On Hold")                 | `src/components/StatusBadge.js` (`STATUS_COLORS`) |

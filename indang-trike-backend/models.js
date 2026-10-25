@@ -25,7 +25,7 @@ function createModels(connection) {
     offenses: { type: Number, default: 0 }, suspendedUntil: Date, disabled: { type: Boolean, default: false },
     // A driver who signs up waits as "pending" until an admin approves them;
     // drivers without it (those from before approval) count as approved. A
-    // driver an admin terminates is disabled, and terminatedAt says so.
+    // driver an admin suspends is disabled, and terminatedAt says so.
     approval: { type: String, enum: ['pending', 'approved'] }, approvedAt: Date,
     terminatedAt: Date, terminationReason: String,
   }, { timestamps: true, bufferCommands: false });

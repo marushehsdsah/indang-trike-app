@@ -51,13 +51,14 @@ const loadMock = async (name) => {
 // An admin's decisions on the mock drivers, as the API makes them.
 const DECISIONS = {
   approve: () => ({ approval: 'Approved' }),
-  terminate: (reason) => ({ approval: 'Terminated', terminatedAt: new Date().toISOString(), terminationReason: reason }),
+  terminate: (reason) => ({ approval: 'Suspended', terminatedAt: new Date().toISOString(), terminationReason: reason }),
   unblock: () => ({ approval: 'Pending', terminatedAt: null, terminationReason: '' }),
 };
 const actMock = async (path, body = {}) => {
   const [, key, decision] = path.match(/^drivers\/([^/]+)\/(\w+)$/) || [];
   const driver = findMockDriver(key);
-  if (decision === 'delete') accounts.splice(accounts.indexOf(driver), 1);
+  // Declining a registration removes it, as deleting an account does.
+  if (decision === 'delete' || decision === 'decline') accounts.splice(accounts.indexOf(driver), 1);
   else Object.assign(driver, DECISIONS[decision]((body.reason || '').trim()));
   // Nothing is emailed from the mock.
   return { driver: { ...driver }, emailed: false };

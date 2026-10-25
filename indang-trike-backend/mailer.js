@@ -6,10 +6,14 @@ const MESSAGES = {
 // after checking it against their TODA's list of registered drivers.
 const CHECKED = "An IndangGO admin checked your details against your TODA's list of registered drivers";
 const NOTICES = {
-  driverApproved: { subject: 'Your IndangGO driver account is approved',
-    lines: [`${CHECKED} and approved your driver account.`, 'Open the app and go online to start getting bookings.'] },
-  driverTerminated: { subject: 'Your IndangGO driver account was terminated',
-    lines: [`${CHECKED} and terminated your driver account.`, 'You can no longer log in, and this mobile number and email cannot be used to sign up again.'] },
+  driverApproved: { subject: 'Your IndangGO driver registration is approved',
+    lines: ['We are pleased to inform you that your driver registration has been approved. You can now accept bookings from passengers.',
+      'Open the app and go online to start receiving bookings.'] },
+  driverDeclined: { subject: 'Your IndangGO driver registration was declined',
+    lines: ['We regret to inform you that your driver registration has been declined because the information you provided does not match the records of registered drivers from the TODAs in Indang.',
+      'You may register again by providing the correct information and required credentials.'] },
+  driverTerminated: { subject: 'Your IndangGO driver account was suspended',
+    lines: [`${CHECKED} and suspended your driver account.`, 'You cannot log in while it is suspended, and this mobile number and email cannot be used to sign up again.'] },
   driverDeleted: { subject: 'Your IndangGO driver account was deleted',
     lines: [`${CHECKED} and deleted your driver account.`, 'If any of your details were wrong, you can sign up again with the correct ones.'] },
 };
@@ -24,9 +28,10 @@ function codeEmail(code, purpose) {
       + `<p>It expires in 10 minutes. ${text.ignore}</p>`,
   };
 }
+const SIGN_OFF = '— The IndangGO Team';
 // name: the driver's first name; reason: what the admin wrote, if anything.
 function noticeEmail({ subject, lines }, { name, reason }) {
-  const paragraphs = [`Hi ${name || 'there'},`, ...lines, ...(reason ? [`Reason: ${reason}`] : [])];
+  const paragraphs = [`Hi ${name || 'there'},`, ...lines, ...(reason ? [`Reason: ${reason}`] : []), SIGN_OFF];
   return { subject, textContent: paragraphs.join('\n\n'), htmlContent: paragraphs.map((line) => `<p>${escapeHtml(line)}</p>`).join('') };
 }
 

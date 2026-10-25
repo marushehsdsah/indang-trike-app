@@ -230,7 +230,7 @@ test('the admin interface lists the accounts and trips in the database, for admi
   await request('/logout', admin.token, {});
 });
 
-test('a driver who signs up gets no bookings until an admin approves them, and an admin can terminate, unblock or delete a driver', async () => {
+test('a driver who signs up gets no bookings until an admin approves them, and an admin can suspend, unblock or delete a driver', async () => {
   const passenger = await account(), phone = `0917${sequence++}`, email = `${phone}@example.com`;
   const form = { phone, password: 'strong-password', firstName: 'Nora', lastName: 'Driver', email, role: 'driver', plate: 'NEW-1', toda: 'Test TODA', capacity: 3 };
   const registered = await signup(form);
@@ -275,23 +275,23 @@ test('a driver who signs up gets no bookings until an admin approves them, and a
   assert.equal((await request(`/admin/drivers/${id}/approve`, admin.token, {})).status, 409, 'only once');
   await online(driver);
 
-  // Terminating cancels the trip the driver is on, signs them out and blocks
+  // Suspending cancels the trip the driver is on, signs them out and blocks
   // their number and email from signing up again.
   const trip = (await book(passenger)).body.ride;
   assert.equal((await action(driver, trip.id, 'accept', { offerId: (await state(driver)).offer.offerId })).status, 200);
   const terminated = await request(`/admin/drivers/${id}/terminate`, admin.token, { reason: '  Plate not on the TODA list  ' });
   assert.equal(terminated.status, 200, JSON.stringify(terminated.body));
-  assert.deepEqual([terminated.body.driver.approval, terminated.body.driver.terminationReason, terminated.body.emailed], ['Terminated', 'Plate not on the TODA list', true]);
+  assert.deepEqual([terminated.body.driver.approval, terminated.body.driver.terminationReason, terminated.body.emailed], ['Suspended', 'Plate not on the TODA list', true]);
   assert.deepEqual(notices.at(-1), { to: email, purpose: 'driverTerminated', name: 'Nora', reason: 'Plate not on the TODA list' });
   const ended = await backend.models.Ride.findById(trip.id);
   assert.deepEqual([ended.status, ended.active, ended.cancelledBy, ended.cancellationReason], ['cancelled', false, 'admin', 'Driver account removed']);
   assert.equal((await state(driver)).error, 'Your session has expired. Please log in again.');
-  assert.deepEqual(await request('/login', null, { phone, password: 'strong-password' }), { status: 403, body: { error: 'This driver account was terminated by an IndangGO admin.' } });
+  assert.deepEqual(await request('/login', null, { phone, password: 'strong-password' }), { status: 403, body: { error: 'This driver account was suspended by an IndangGO admin.' } });
   assert.equal((await signup({ ...form, phone: `0917${sequence++}` })).status, 403, 'the email is blocked');
   assert.equal((await request('/register/code', null, { ...form, email: `other${phone}@example.com` })).status, 403, 'the number is blocked');
-  assert.equal((await request(`/admin/drivers/${id}/terminate`, admin.token, {})).status, 409);
+  assert.deepEqual(await request(`/admin/drivers/${id}/terminate`, admin.token, {}), { status: 409, body: { error: 'This driver was already suspended.' } });
   assert.deepEqual(await request(`/admin/drivers/${id}/delete`, admin.token, {}), { status: 409, body: { error: 'Unblock this driver before deleting the account.' } });
-  assert.equal((await request('/admin/approvals', admin.token)).body.drivers.find((item) => item.key === id).approval, 'Terminated');
+  assert.equal((await request('/admin/approvals', admin.token)).body.drivers.find((item) => item.key === id).approval, 'Suspended');
 
   // Unblocking frees the number and email; the driver waits for approval again.
   const unblocked = await request(`/admin/drivers/${id}/unblock`, admin.token, {});
@@ -299,7 +299,7 @@ test('a driver who signs up gets no bookings until an admin approves them, and a
   assert.equal(await backend.models.Blocked.countDocuments({ userId: id }), 0);
   driver = (await request('/login', null, { phone, password: 'strong-password' })).body;
   assert.equal(driver.user.pendingApproval, true);
-  assert.equal((await request(`/admin/drivers/${id}/unblock`, admin.token, {})).status, 409, 'not terminated now');
+  assert.equal((await request(`/admin/drivers/${id}/unblock`, admin.token, {})).status, 409, 'not suspended now');
 
   // Deleting removes the account; the same number and email can sign up again.
   const deleted = await request(`/admin/drivers/${id}/delete`, admin.token, { reason: 'Wrong plate number' });
@@ -315,6 +315,37 @@ test('a driver who signs up gets no bookings until an admin approves them, and a
   assert.equal(again.body.user.pendingApproval, true);
   await backend.models.User.deleteOne({ _id: again.body.user.id });
   socket.disconnect();
+  await request('/logout', admin.token, {});
+});
+
+test('an admin can decline a driver\'s registration, and the driver can sign up again with the same number and email', async () => {
+  const phone = `0917${sequence++}`, email = `${phone}@example.com`;
+  const form = { phone, password: 'strong-password', firstName: 'Lea', lastName: 'Driver', email, role: 'driver', plate: 'TYPO-1', toda: 'Test TODA', capacity: 3 };
+  const registered = await signup(form);
+  assert.equal(registered.status, 201, JSON.stringify(registered.body));
+  const id = registered.body.user.id;
+  const driver = (await request('/login', null, { phone, password: 'strong-password' })).body;
+  const admin = (await request('/login', null, { phone: adminPhone, password: 'strong-password' })).body;
+  assert.equal((await request(`/admin/drivers/${id}/decline`, driver.token, {})).status, 403, 'admins only');
+
+  // Declining removes the registration and signs the driver out, but blocks nothing.
+  const declined = await request(`/admin/drivers/${id}/decline`, admin.token, { reason: '  Plate number mistyped  ' });
+  assert.deepEqual([declined.status, declined.body.emailed], [200, true], JSON.stringify(declined.body));
+  assert.deepEqual(notices.at(-1), { to: email, purpose: 'driverDeclined', name: 'Lea', reason: 'Plate number mistyped' });
+  assert.equal(await backend.models.User.exists({ _id: id }), null);
+  assert.equal(await backend.models.Blocked.countDocuments({ $or: [{ userId: id }, { email }] }), 0, 'nothing is blocked');
+  assert.equal((await state(driver)).error, 'Your session has expired. Please log in again.');
+  assert.equal((await request(`/admin/drivers/${id}/decline`, admin.token, {})).status, 404);
+
+  // The driver signs up again with the same number and email and the right
+  // plate, and waits for approval again.
+  const again = await signup({ ...form, plate: 'RIGHT-1' });
+  assert.equal(again.status, 201, JSON.stringify(again.body));
+  assert.equal(again.body.user.pendingApproval, true);
+  // Only a registration waiting for approval can be declined.
+  assert.equal((await request(`/admin/drivers/${again.body.user.id}/approve`, admin.token, {})).status, 200);
+  assert.deepEqual(await request(`/admin/drivers/${again.body.user.id}/decline`, admin.token, {}), { status: 409, body: { error: 'This driver is no longer waiting for approval.' } });
+  await backend.models.User.deleteOne({ _id: again.body.user.id });
   await request('/logout', admin.token, {});
 });
 

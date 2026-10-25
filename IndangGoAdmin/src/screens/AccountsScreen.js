@@ -14,8 +14,9 @@
 // - Filter options live in ROLE_FILTERS below — add a new one
 //   there if you introduce another role.
 // - Tapping a driver opens their review (DriverReviewScreen.js),
-//   where they can be approved, terminated, deleted or unblocked;
-//   a driver who isn't approved shows a Pending or Terminated
+//   where they can be approved, declined, suspended, deleted or
+//   unblocked;
+//   a driver who isn't approved shows a Pending or Suspended
 //   badge. Tapping a passenger does nothing yet.
 // =============================================================
 

@@ -11,7 +11,7 @@ const accountFilters = { type: 'all', status: 'all' };
 // One account's trip history (#accounts/<id>), of every trip or of the
 // trips booked in the last historyDays (7, 14 or 30).
 let historyId = null, history = null, historyUpdated = 0, historyTimer, historyPending = false, historyFilter = 'all', historyDays = 0, listScroll = 0;
-// A decision on a driver being sent (approve, terminate, delete or unblock),
+// A decision on a driver being sent (approve, suspend, delete or unblock),
 // and how many were made, so a trip history asked for before one is dropped.
 let deciding = null, decisions = 0;
 // The Reports view (#reports): drivers' reports about passengers.
@@ -324,7 +324,7 @@ function renderProfile(account) {
   const details = [formatPhone(account.id), account.email, kind === 'driver' ? [account.plate, account.toda].filter(Boolean).join(' · ') : '',
     account.joined ? `Joined ${shortDate(new Date(account.joined))}` : '', ratingLabel(account)];
   copy.append(text('span', `${kind === 'driver' ? 'DRIVER' : 'PASSENGER'} ACCOUNT`, `eyebrow ${kind}-text`), heading, text('p', details.filter(Boolean).join(' · '), 'muted'));
-  if (account.terminatedAt) copy.append(text('p', `Terminated ${shortDate(new Date(account.terminatedAt))}${account.terminationReason ? ` · ${account.terminationReason}` : ''}`, 'outside-label'));
+  if (account.terminatedAt) copy.append(text('p', `Suspended ${shortDate(new Date(account.terminatedAt))}${account.terminationReason ? ` · ${account.terminationReason}` : ''}`, 'outside-label'));
   if (online) {
     const button = text('button', 'Show on map', 'quiet'); button.type = 'button';
     button.addEventListener('click', () => showOnMap(account.key)); copy.append(button);
@@ -344,13 +344,13 @@ function renderProfile(account) {
   profile.replaceChildren(text('span', initials(account.name), `avatar large ${kind}`), copy);
 }
 
-// What each decision on a driver asks and says. Terminate and Delete ask for
+// What each decision on a driver asks and says. Suspend and Delete ask for
 // an optional reason, which goes in the email to the driver.
 const DRIVER_DECISIONS = {
   approve: { label: 'Approve', className: 'approve', done: 'Approved.',
     ask: name => `Approve ${name}?\n\nThey can go online and get bookings right away.` },
-  terminate: { label: 'Terminate', className: 'severe', done: 'Terminated.', reason: true,
-    ask: name => `Terminate ${name}'s account?\n\nThey are signed out at once, any trip they are on is cancelled, and their mobile number and email cannot sign up again unless you unblock them.\n\nReason for the email to the driver (optional):` },
+  terminate: { label: 'Suspend', className: 'severe', done: 'Suspended.', reason: true,
+    ask: name => `Suspend ${name}'s account?\n\nThey are signed out at once, any trip they are on is cancelled, and their mobile number and email cannot sign up again unless you unblock them.\n\nReason for the email to the driver (optional):` },
   delete: { label: 'Delete', className: 'dismiss', done: 'Deleted.', reason: true,
     ask: name => `Delete ${name}'s account?\n\nIt is removed for good and they are signed out at once. They can sign up again with corrected details.\n\nReason for the email to the driver (optional):` },
   unblock: { label: 'Unblock', className: 'approve', done: 'Unblocked.',

@@ -222,7 +222,7 @@ async function main() {
     await page.locator('#history-rows').getByText('Bea Pilot', { exact: true }).waitFor();
     assert.equal(await page.locator('#history-fares-label').textContent(), 'Fares earned');
     // A driver who signs up waits for approval: the Accounts tab counts them,
-    // Pending approval lists them, and their page approves, terminates,
+    // Pending approval lists them, and their page approves, suspends,
     // unblocks or deletes them, each after the admin confirms.
     await account('09179999995', 'driver', 'Cora', { approved: false });
     await page.locator('#accounts-badge').filter({ hasText: '1' }).waitFor();
@@ -244,10 +244,12 @@ async function main() {
     await page.locator('#history-note').filter({ hasText: 'Approved. Cora Pilot was emailed.' }).waitFor();
     assert.deepEqual(await page.locator('#history-profile [data-decision]').evaluateAll((buttons) => buttons.map((button) => button.dataset.decision)), ['terminate', 'delete']);
     await page.locator('#accounts-badge').waitFor({ state: 'hidden' });
-    page.once('dialog', (dialog) => { assert.equal(dialog.type(), 'prompt'); dialog.accept('Plate not on the TODA list'); });
+    assert.equal(await page.locator('#history-profile [data-decision=terminate]').textContent(), 'Suspend');
+    page.once('dialog', (dialog) => { assert.equal(dialog.type(), 'prompt'); assert.match(dialog.message(), /^Suspend Cora Pilot's account\?/); dialog.accept('Plate not on the TODA list'); });
     await page.locator('#history-profile [data-decision=terminate]').click();
-    await page.locator('#history-note').filter({ hasText: 'Terminated. Cora Pilot was emailed.' }).waitFor();
-    await page.locator('#history-profile').getByText(/Terminated .* · Plate not on the TODA list/).waitFor();
+    await page.locator('#history-note').filter({ hasText: 'Suspended. Cora Pilot was emailed.' }).waitFor();
+    await page.locator('#history-profile').getByText('Suspended', { exact: true }).waitFor();
+    await page.locator('#history-profile').getByText(/Suspended .* · Plate not on the TODA list/).waitFor();
     assert.equal((await backend.models.User.findOne({ phone: '+639179999995' })).terminationReason, 'Plate not on the TODA list');
     page.once('dialog', (dialog) => dialog.accept());
     await page.locator('#history-profile [data-decision=unblock]').click();

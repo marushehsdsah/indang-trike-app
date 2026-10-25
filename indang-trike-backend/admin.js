@@ -108,10 +108,10 @@ function accountStatus(user, connected) {
 }
 
 // A driver's approval: Pending until an admin checks them against their
-// TODA's list of registered drivers, Terminated once an admin cut them off,
+// TODA's list of registered drivers, Suspended once an admin cut them off,
 // otherwise Approved (as are the drivers from before approval).
 function driverApproval(user) {
-  if (user.terminatedAt) return 'Terminated';
+  if (user.terminatedAt) return 'Suspended';
   return user.approval === 'pending' ? 'Pending' : 'Approved';
 }
 
@@ -329,7 +329,7 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
     ]);
     return { totalAccounts, onlineNow, ongoingTrips, recentTrips, pendingDrivers };
   }
-  // Account Approval: the drivers waiting for approval, and those terminated
+  // Account Approval: the drivers waiting for approval, and those suspended
   // (who can be unblocked), newest first.
   async function approvals() {
     const drivers = await models.User.find({ role: 'driver', $or: [{ approval: 'pending' }, { terminatedAt: { $exists: true } }] })
@@ -365,15 +365,16 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
     await onApproved(id);
     return { driver: buildDriver(user, connectedIds()), emailed: await tell(user, 'driverApproved') };
   }
-  // Disables a driver for good: their number and email cannot sign up again,
-  // every session ends and any trip they are on is cancelled. Unblock undoes it.
+  // Suspends a driver until an admin unblocks them: the account is disabled,
+  // their number and email cannot sign up again, every session ends and any
+  // trip they are on is cancelled.
   async function terminate(id, body) {
     checkDriverId(id);
     const reason = cleanText(body?.reason, 200);
     const user = await models.User.findOneAndUpdate({ _id: id, role: 'driver', terminatedAt: { $exists: false } },
       { $set: { disabled: true, available: false, locationAvailable: false, terminatedAt: new Date(clock()), terminationReason: reason } },
       { returnDocument: 'after' }).select(DRIVER_FIELDS).lean();
-    if (!user) await undecided(id, 'This driver was already terminated.');
+    if (!user) await undecided(id, 'This driver was already suspended.');
     const phone = normalizePhilippinePhone(user.phone) || user.phone;
     await models.Blocked.updateOne({ phone }, { $set: { email: (user.email || '').toLowerCase(), userId: id, reason: `Driver terminated${reason ? `: ${reason}` : ''}` } }, { upsert: true });
     await models.Session.deleteMany({ userId: user._id });
@@ -381,25 +382,31 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
     return { driver: buildDriver(user, connectedIds()), emailed: await tell(user, 'driverTerminated', reason) };
   }
   // Removes a driver's account completely, so they can sign up again (with
-  // corrected details). A terminated driver must be unblocked first, so a
-  // blocked number never outlives the account that explains it.
-  async function remove(id, body) {
+  // corrected details): Delete, or Decline for a driver waiting for approval.
+  async function discard(id, body, filter, missing, purpose) {
     checkDriverId(id);
     const reason = cleanText(body?.reason, 200);
-    const user = await models.User.findOneAndDelete({ _id: id, role: 'driver', terminatedAt: { $exists: false } }).select(DRIVER_FIELDS).lean();
-    if (!user) await undecided(id, 'Unblock this driver before deleting the account.');
+    const user = await models.User.findOneAndDelete({ _id: id, ...filter }).select(DRIVER_FIELDS).lean();
+    if (!user) await undecided(id, missing);
     await Promise.all([models.Session.deleteMany({ userId: user._id }), models.ResetCode.deleteMany({ userId: user._id })]);
     await onSuspended(id, 'Driver account removed');
-    return { driver: buildDriver(user, new Set()), emailed: await tell(user, 'driverDeleted', reason) };
+    return { driver: buildDriver(user, new Set()), emailed: await tell(user, purpose, reason) };
   }
-  // Undoes a termination: the number and email are freed and the driver waits
+  // A suspended driver must be unblocked first, so a blocked number never
+  // outlives the account that explains it.
+  const remove = (id, body) => discard(id, body, { role: 'driver', terminatedAt: { $exists: false } },
+    'Unblock this driver before deleting the account.', 'driverDeleted');
+  // Declines a driver's registration, say for a mistyped plate or TODA: their
+  // number and email stay free, so they can sign up again with the right details.
+  const decline = (id, body) => discard(id, body, PENDING_DRIVERS, 'This driver is no longer waiting for approval.', 'driverDeclined');
+  // Undoes a suspension: the number and email are freed and the driver waits
   // for approval again.
   async function unblock(id) {
     checkDriverId(id);
     const user = await models.User.findOneAndUpdate({ _id: id, role: 'driver', terminatedAt: { $exists: true } },
       { $set: { disabled: false, approval: 'pending' }, $unset: { terminatedAt: 1, terminationReason: 1, approvedAt: 1 } },
       { returnDocument: 'after' }).select(DRIVER_FIELDS).lean();
-    if (!user) await undecided(id, 'This driver is not terminated.');
+    if (!user) await undecided(id, 'This driver is not suspended.');
     await models.Blocked.deleteMany({ userId: id });
     return { driver: buildDriver(user, connectedIds()) };
   }
@@ -446,7 +453,7 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
     requireValue(updated, 409, 'This report was already reviewed.');
     return { report: (await reports()).reports.find((item) => item.key === id) };
   }
-  return { middleware, overview, accounts, history, trips, dashboard, reports, uphold, dismiss, approvals, driver, approve, terminate, remove, unblock };
+  return { middleware, overview, accounts, history, trips, dashboard, reports, uphold, dismiss, approvals, driver, approve, decline, terminate, remove, unblock };
 }
 
 module.exports = { createAdmin, parseAdminPhones, buildOverview, buildReports, buildRideRoutes, buildAccounts, buildDriver, driverApproval, buildTrips, buildHistory, historySummary, historyPeriod, tripStatus };

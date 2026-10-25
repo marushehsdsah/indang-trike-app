@@ -82,6 +82,7 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   app.get('/api/admin/approvals', async (req, res) => res.json(await admin.approvals()));
   app.get('/api/admin/drivers/:id', async (req, res) => res.json(await admin.driver(req.params.id)));
   app.post('/api/admin/drivers/:id/approve', async (req, res) => res.json(await admin.approve(req.params.id)));
+  app.post('/api/admin/drivers/:id/decline', async (req, res) => res.json(await admin.decline(req.params.id, req.body)));
   app.post('/api/admin/drivers/:id/terminate', async (req, res) => res.json(await admin.terminate(req.params.id, req.body)));
   app.post('/api/admin/drivers/:id/delete', async (req, res) => res.json(await admin.remove(req.params.id, req.body)));
   app.post('/api/admin/drivers/:id/unblock', async (req, res) => res.json(await admin.unblock(req.params.id)));

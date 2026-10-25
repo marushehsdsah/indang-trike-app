@@ -28,7 +28,7 @@ export default function AdminNavigator() {
     admin: { name, adminId, role: 'Administrator' }, signOut,
     // 'dashboard' | 'accounts' | 'trips' | 'approvals' | 'drivers/<key>': GET /api/admin/<name>.
     load: (dataName) => request(`/admin/${dataName}`),
-    // 'drivers/<key>/approve' (or terminate, delete, unblock): POST /api/admin/<path>.
+    // 'drivers/<key>/approve' (or decline, terminate, delete, unblock): POST /api/admin/<path>.
     act: (path, body = {}) => request(`/admin/${path}`, body),
   }), [name, adminId, signOut, request]);
   return (

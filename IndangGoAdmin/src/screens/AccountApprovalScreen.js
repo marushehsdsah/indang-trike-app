@@ -4,10 +4,10 @@
 // "Account Approval", opened from the hamburger menu (TopHeader):
 // the drivers who signed up and wait for an admin to check their
 // details against their TODA's list of registered drivers, and
-// the drivers an admin terminated. Until approved, a driver
+// the drivers an admin suspended. Until approved, a driver
 // cannot go online or get bookings. Tapping a driver opens their
-// review (DriverReviewScreen.js) to approve, terminate, delete or
-// unblock them.
+// review (DriverReviewScreen.js) to approve or decline a pending
+// driver, or unblock a suspended one.
 //
 // HOW TO EDIT:
 // - Drivers come from useAdminData('approvals'): the API in the
@@ -31,7 +31,7 @@ import LoadState, { RefreshError } from '../components/LoadState';
 // The drivers' approval, as the API names it.
 const FILTERS = [
   { key: 'Pending', label: 'Pending', empty: 'No drivers are waiting for approval.' },
-  { key: 'Terminated', label: 'Terminated', empty: 'No drivers have been terminated.' },
+  { key: 'Suspended', label: 'Suspended', empty: 'No drivers have been suspended.' },
 ];
 
 export default function AccountApprovalScreen({ navigation }) {
@@ -55,7 +55,7 @@ export default function AccountApprovalScreen({ navigation }) {
           Check each driver against their TODA’s list of registered drivers. They can’t take bookings until you approve them.
         </Text>
 
-        {/* ---- Pending / Terminated chips, with how many each has ---- */}
+        {/* ---- Pending / Suspended chips, with how many each has ---- */}
         <View style={styles.filterRow}>
           {FILTERS.map((item) => {
             const isActive = activeFilter === item.key;
@@ -114,12 +114,12 @@ export default function AccountApprovalScreen({ navigation }) {
                 <View style={styles.detailRow}>
                   <Ionicons name="calendar-outline" size={12} color={colors.textSecondary} />
                   <Text style={styles.detailText} numberOfLines={1}>
-                    {item.approval === 'Terminated' && item.terminatedAt
-                      ? `Terminated ${formatDate(item.terminatedAt)}`
+                    {item.approval === 'Suspended' && item.terminatedAt
+                      ? `Suspended ${formatDate(item.terminatedAt)}`
                       : `Signed up ${formatDate(item.joined)}`}
                   </Text>
                 </View>
-                {item.approval === 'Terminated' && item.terminationReason ? (
+                {item.approval === 'Suspended' && item.terminationReason ? (
                   <Text style={styles.reasonText} numberOfLines={2}>Reason: {item.terminationReason}</Text>
                 ) : null}
               </View>

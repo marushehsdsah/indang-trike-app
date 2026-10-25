@@ -45,7 +45,10 @@ not uploaded.
 
 A standalone build bundles the JavaScript, so it needs no Metro and no PC; it
 talks to the Render backend over HTTPS. The backend address is fixed at build
-time through `EXPO_PUBLIC_API_URL`.
+time through `EXPO_PUBLIC_API_URL`. A release build stops with "Release build
+stopped: …" when it is missing, is not `https://`, or points at this PC or the
+local network (`metro.config.js`), since phones could never reach the server;
+development builds are not checked.
 
 Locally in WSL (toolchain as in [development-build.md](development-build.md)):
 

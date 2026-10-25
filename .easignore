@@ -1,0 +1,100 @@
+# What EAS Build leaves out when it uploads the project to build the APK.
+# EAS reads this file instead of .gitignore, so the first part repeats
+# .gitignore (keep the two in step); the second part leaves out what the app
+# does not need. Everything here stays in git: this only affects EAS builds.
+
+# ---- Same as .gitignore ------------------------------------------------------
+
+# dependencies
+node_modules/
+.gis-*-readonly-backup/
+assets/.gis-*-readonly-backup/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env
+.env.*
+!.env.example
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# God view website build output
+web/god-view/dist/
+
+# Google OAuth client files downloaded from Google Cloud (they hold the client secret)
+client_secret_*.json
+
+# EAS signing credentials downloaded with `eas credentials` (keystore passwords)
+credentials.json
+credentials/
+
+# ---- Not needed in the APK ---------------------------------------------------
+# The APK is built from App.js, index.js, theme.js, the app folders
+# (components/ context/ data/ hooks/ i18n/ navigation/ screens/ services/
+# utils/ IndangGoAdmin/src/), assets/ and the config files (app.json, eas.json,
+# metro.config.js, package.json, package-lock.json). Nothing below is imported
+# by the app.
+
+# Tests, and the scripts run by hand (test accounts, simulations, the road
+# graph builder, the dev launcher). The TODA tester itself lives in the backend
+# and the app's code, so it keeps working.
+tests/
+scripts/
+
+# The backend and God view run on Render, not on the phone.
+indang-trike-backend/
+web/
+server.js
+render.yaml
+
+# Local launchers, docs, notes and AI tool settings.
+start.bat
+start.sh
+docs/
+PRODUCT.md
+.env.example
+assets/**/README.md
+.agents/
+.claude/
+.codex/
+.impeccable/
+
+# The source spreadsheet; the app reads the data made from it (assets/geo, assets/fares).
+TODAs_coordinates.xlsx
+
+# The admin interface's stand-alone runner; the app uses IndangGoAdmin/src only.
+IndangGoAdmin/App.js
+IndangGoAdmin/app.json
+IndangGoAdmin/README.md

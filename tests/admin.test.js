@@ -135,24 +135,24 @@ test('the admin screens list accounts by mobile number and whether the app is op
     { key: 'p1', id: '09171234567', name: 'Ana Cruz', email: 'ana@example.com', role: 'PASSENGER', status: 'Offline', languageWarnings: 0 },
     { key: 'd1', id: '09181234567', name: 'Ben Reyes', email: 'ben@example.com', role: 'RIDER', status: 'Available', languageWarnings: 0, toda: 'ITODA', plate: 'ABC 123', approval: 'Approved' },
     { key: 'd2', id: '09191234567', name: 'Driver', email: '', role: 'RIDER', status: 'Online', languageWarnings: 0, toda: '', plate: '', approval: 'Pending' },
-    { key: 'd3', id: '09201234567', name: 'Driver', email: '', role: 'RIDER', status: 'Offline', languageWarnings: 0, toda: '', plate: '', approval: 'Terminated' },
+    { key: 'd3', id: '09201234567', name: 'Driver', email: '', role: 'RIDER', status: 'Offline', languageWarnings: 0, toda: '', plate: '', approval: 'Suspended' },
   ]);
 });
 
 test('a driver who signs up waits for approval, and the approval screens show what they signed up with', () => {
   assert.deepEqual([{}, { approval: 'approved' }, { approval: 'pending' }, { approval: 'pending', terminatedAt: new Date(now) }, { approval: 'approved', terminatedAt: new Date(now) }].map(driverApproval),
-    ['Approved', 'Approved', 'Pending', 'Terminated', 'Terminated'], 'drivers from before approval count as approved');
+    ['Approved', 'Approved', 'Pending', 'Suspended', 'Suspended'], 'drivers from before approval count as approved');
   const joined = new Date(now), terminatedAt = new Date(now + 1000);
   assert.deepEqual(buildDriver({ _id: 'd1', phone: '+639181234567', firstName: 'Ben', lastName: 'Reyes', email: 'ben@example.com', role: 'driver', toda: 'ITODA PITODA',
     plate: 'ABC 123', capacity: 3, createdAt: joined, approval: 'pending', terminatedAt, terminationReason: 'Plate not on the list', languageWarnings: 2, password: 'hash' }, new Set()), {
-    key: 'd1', id: '09181234567', name: 'Ben Reyes', email: 'ben@example.com', role: 'RIDER', status: 'Offline', languageWarnings: 2, toda: 'ITODA', plate: 'ABC 123', approval: 'Terminated',
+    key: 'd1', id: '09181234567', name: 'Ben Reyes', email: 'ben@example.com', role: 'RIDER', status: 'Offline', languageWarnings: 2, toda: 'ITODA', plate: 'ABC 123', approval: 'Suspended',
     capacity: 3, joined, approvedAt: null, terminatedAt, terminationReason: 'Plate not on the list',
   });
   const driver = { _id: 'd2', phone: '+639191234567', firstName: 'Cy', lastName: 'Lim', email: 'cy@example.com', role: 'driver', plate: 'X 1', toda: 'ITODA', capacity: 4 };
   assert.equal(publicUser({ ...driver, approval: 'pending' }).pendingApproval, true);
   assert.equal('pendingApproval' in publicUser(driver), false);
   assert.equal('pendingApproval' in publicUser({ ...driver, approval: 'approved' }), false);
-  assert.equal(suspensionMessage(suspensionOf({ disabled: true, terminatedAt: new Date(now) }, now)), 'This driver account was terminated by an IndangGO admin.');
+  assert.equal(suspensionMessage(suspensionOf({ disabled: true, terminatedAt: new Date(now) }, now)), 'This driver account was suspended by an IndangGO admin.');
   assert.match(suspensionMessage(suspensionOf({ disabled: true }, now)), /repeated reports of fake bookings/);
 });
 

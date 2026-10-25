@@ -55,7 +55,7 @@ function reset(at = { name: 'Main', params: {} }) { navigation.calls = []; alert
 
 const pending = { key: 'd1', id: '09170000011', name: 'Dante Reyes', email: 'dante@example.com', role: 'RIDER', status: 'Offline', toda: 'ITODA', plate: 'SIM 011',
   approval: 'Pending', capacity: 4, joined: '2026-10-22T02:00:00.000Z', approvedAt: null, terminatedAt: null, terminationReason: '' };
-const terminated = { ...pending, key: 'd3', name: 'Lito Camagong', approval: 'Terminated', terminatedAt: '2026-10-22T03:00:00.000Z', terminationReason: 'Plate not on the list' };
+const suspended = { ...pending, key: 'd3', name: 'Lito Camagong', approval: 'Suspended', terminatedAt: '2026-10-22T03:00:00.000Z', terminationReason: 'Plate not on the list' };
 // The API, as the app provides it to the admin screens.
 function api(responses) {
   const calls = [];
@@ -122,17 +122,17 @@ test('Dashboard from the menu switches Main to the Dashboard tab every time', as
   assert.deepEqual(texts(tree.root), ['dashboard tab'], 'the same choice again still counts');
 });
 
-test('Account Approval lists the pending drivers, then the terminated ones, and opens a driver\'s review', async () => {
+test('Account Approval lists the pending drivers, then the suspended ones, and opens a driver\'s review', async () => {
   reset({ name: 'AccountApproval', params: {} });
   const second = { ...pending, key: 'd2', name: 'Rosa Mendoza' };
-  const server = api({ approvals: () => ({ drivers: [pending, second, terminated] }) });
+  const server = api({ approvals: () => ({ drivers: [pending, second, suspended] }) });
   const AccountApprovalScreen = admin('screens/AccountApprovalScreen.js').default;
   const tree = await render(withSession(server.session, React.createElement(AccountApprovalScreen, { navigation })));
   const shown = texts(tree.root);
-  for (const text of ['Account Approval', 'Pending (2)', 'Terminated (1)', 'Dante Reyes', 'Rosa Mendoza', 'Mobile No#: 09170000011', 'ITODA · SIM 011']) assert.ok(shown.includes(text), text);
+  for (const text of ['Account Approval', 'Pending (2)', 'Suspended (1)', 'Dante Reyes', 'Rosa Mendoza', 'Mobile No#: 09170000011', 'ITODA · SIM 011']) assert.ok(shown.includes(text), text);
   assert.ok(shown.some((text) => /^Signed up Oct 22, 2026/.test(text)), 'when they signed up, in Philippine time');
   assert.ok(!shown.includes('Lito Camagong'));
-  await press(tree.root, 'Terminated (1)');
+  await press(tree.root, 'Suspended (1)');
   assert.ok(texts(tree.root).includes('Lito Camagong'));
   assert.ok(texts(tree.root).includes('Reason: Plate not on the list'));
   assert.ok(!texts(tree.root).includes('Dante Reyes'));
@@ -147,7 +147,7 @@ test('Account Approval lists the pending drivers, then the terminated ones, and 
   assert.ok(texts(none.root).includes('No drivers are waiting for approval.'));
 });
 
-test('Driver Review approves, terminates with a reason, or unblocks, after the admin confirms', async () => {
+test('Driver Review approves or declines a pending driver, suspends an approved one, or unblocks, after the admin confirms', async () => {
   const DriverReviewScreen = admin('screens/DriverReviewScreen.js').default;
   const screen = (session, key) => withSession(session, React.createElement(DriverReviewScreen, { navigation, route: { params: { key } } }));
   const confirm = async () => {
@@ -157,22 +157,23 @@ test('Driver Review approves, terminates with a reason, or unblocks, after the a
     await flush();
   };
 
-  // A pending driver: Approve, Terminate or Delete, and a reason box.
+  // A pending driver: Approve or Decline, and a reason box.
   reset({ name: 'DriverReview', params: { key: 'd1' } });
   const server = api({ 'drivers/d1': { driver: pending },
-    'drivers/d1/terminate': () => ({ driver: { ...pending, approval: 'Terminated' }, emailed: true }),
+    'drivers/d1/decline': () => ({ driver: pending, emailed: true }),
     'drivers/d1/approve': () => { throw new Error('This driver is no longer waiting for approval.'); } });
   const tree = await render(screen(server.session, 'd1'));
   const shown = texts(tree.root);
-  for (const text of ['Dante Reyes', 'PENDING', '09170000011', 'dante@example.com', 'ITODA', 'SIM 011', '4 passengers', 'Approve', 'Terminate', 'Delete', 'Reason (optional)']) assert.ok(shown.includes(text), text);
-  assert.ok(!shown.includes('Unblock'));
+  for (const text of ['Dante Reyes', 'PENDING', '09170000011', 'dante@example.com', 'ITODA', 'SIM 011', '4 passengers', 'Approve', 'Decline', 'Reason (optional)']) assert.ok(shown.includes(text), text);
+  assert.ok(!shown.includes('Suspend') && !shown.includes('Delete') && !shown.includes('Unblock'), 'a registration is declined, not suspended');
   await renderer.act(async () => tree.root.find((node) => node.type === 'TextInput').props.onChangeText('  Plate not on the list '));
-  await press(tree.root, 'Terminate');
-  assert.equal(alerts.at(-1)[0], 'Terminate this account?');
+  await press(tree.root, 'Decline');
+  assert.equal(alerts.at(-1)[0], 'Decline this registration?');
+  assert.match(alerts.at(-1)[1], /can sign up again with the same mobile number and email/);
   assert.equal(server.calls.filter(([kind]) => kind === 'act').length, 0, 'nothing is sent before the admin confirms');
   await confirm();
-  assert.deepEqual(server.calls.at(-1), ['act', 'drivers/d1/terminate', { reason: 'Plate not on the list' }]);
-  assert.deepEqual(alerts.at(-1).slice(0, 2), ['Account terminated', 'Dante Reyes was emailed about it.']);
+  assert.deepEqual(server.calls.at(-1), ['act', 'drivers/d1/decline', { reason: 'Plate not on the list' }]);
+  assert.deepEqual(alerts.at(-1).slice(0, 2), ['Registration declined', 'Dante Reyes was emailed about it.']);
   await renderer.act(async () => alerts.at(-1)[2][0].onPress());
   assert.deepEqual(navigation.calls, [['goBack']]);
 
@@ -184,9 +185,25 @@ test('Driver Review approves, terminates with a reason, or unblocks, after the a
   assert.deepEqual(server.calls.at(-1), ['load', 'drivers/d1']);
   assert.deepEqual(navigation.calls, []);
 
-  // A terminated driver can only be unblocked; no reason is sent.
+  // An approved driver: Suspend or Delete, with the reason.
+  reset({ name: 'DriverReview', params: { key: 'd2' } });
+  const approved = { ...pending, key: 'd2', name: 'Rosa Mendoza', approval: 'Approved', approvedAt: '2026-10-22T04:00:00.000Z' };
+  const active = api({ 'drivers/d2': { driver: approved }, 'drivers/d2/terminate': () => ({ driver: { ...approved, approval: 'Suspended' }, emailed: false }) });
+  const review = await render(screen(active.session, 'd2'));
+  const choices = texts(review.root);
+  for (const text of ['APPROVED', 'Suspend', 'Delete', 'Reason (optional)']) assert.ok(choices.includes(text), text);
+  assert.ok(!choices.includes('Approve') && !choices.includes('Decline'));
+  assert.ok(!choices.some((text) => /terminat/i.test(text)), 'the screen says suspend, not terminate');
+  await renderer.act(async () => review.root.find((node) => node.type === 'TextInput').props.onChangeText('Fake plate'));
+  await press(review.root, 'Suspend');
+  assert.equal(alerts.at(-1)[0], 'Suspend this account?');
+  await confirm();
+  assert.deepEqual(active.calls.at(-1), ['act', 'drivers/d2/terminate', { reason: 'Fake plate' }]);
+  assert.deepEqual(alerts.at(-1).slice(0, 2), ['Account suspended', 'The email to Rosa Mendoza couldn’t be sent, so let them know yourself.']);
+
+  // A suspended driver can only be unblocked; no reason is sent.
   reset({ name: 'DriverReview', params: { key: 'd3' } });
-  const blocked = api({ 'drivers/d3': { driver: terminated }, 'drivers/d3/unblock': () => ({ driver: { ...terminated, approval: 'Pending' } }) });
+  const blocked = api({ 'drivers/d3': { driver: suspended }, 'drivers/d3/unblock': () => ({ driver: { ...suspended, approval: 'Pending' } }) });
   const unblock = await render(screen(blocked.session, 'd3'));
   const options = texts(unblock.root);
   assert.ok(options.includes('Unblock') && options.includes('Plate not on the list'));
@@ -201,13 +218,13 @@ test('Accounts shows which drivers are not approved, and tapping a driver opens 
   reset();
   const passenger = { key: 'p1', id: '09170000902', name: 'Bea Santos', email: 'bea@example.com', role: 'PASSENGER', status: 'Offline' };
   const approved = { ...pending, key: 'd2', name: 'Rosa Mendoza', approval: 'Approved' };
-  const server = api({ accounts: { accounts: [pending, approved, terminated, passenger] } });
+  const server = api({ accounts: { accounts: [pending, approved, suspended, passenger] } });
   const AccountsScreen = admin('screens/AccountsScreen.js').default;
   const tree = await render(withSession(server.session, React.createElement(AccountsScreen)));
   const badges = (name) => texts(tree.root.find((node) => node.type === 'TouchableOpacity' && texts(node).includes(name))).filter((text) => /^[A-Z]+$/.test(text));
   assert.deepEqual(badges('Dante Reyes'), ['PENDING', 'RIDER']);
   assert.deepEqual(badges('Rosa Mendoza'), ['RIDER'], 'approved drivers need no badge');
-  assert.deepEqual(badges('Lito Camagong'), ['TERMINATED', 'RIDER']);
+  assert.deepEqual(badges('Lito Camagong'), ['SUSPENDED', 'RIDER']);
   assert.equal(tree.root.findAll((node) => node.type === 'Ionicons' && node.props.name === 'person-add').length, 0, 'no add-account button over the list');
   await renderer.act(async () => tree.root.find((node) => node.type === 'TouchableOpacity' && texts(node).includes('Bea Santos')).props.onPress());
   assert.deepEqual(navigation.calls, [], 'a passenger has no review');
@@ -215,19 +232,19 @@ test('Accounts shows which drivers are not approved, and tapping a driver opens 
   assert.deepEqual(navigation.calls, [['navigate', 'DriverReview', { key: 'd3', name: 'Lito Camagong' }]]);
 });
 
-test('run on its own, the admin interface approves and removes the mock drivers', async () => {
+test('run on its own, the admin interface approves and declines the mock drivers', async () => {
   reset({ name: 'AccountApproval', params: {} });
   const AccountApprovalScreen = admin('screens/AccountApprovalScreen.js').default;
   // No provider: the mock data of data/mockData.js.
   const tree = await render(React.createElement(AccountApprovalScreen, { navigation }));
   assert.ok(texts(tree.root).includes('Pending (2)'));
-  assert.ok(texts(tree.root).includes('Terminated (1)'));
+  assert.ok(texts(tree.root).includes('Suspended (1)'));
   let session;
   const Probe = () => { session = mocks['../session'].useAdminSession(); return null; };
   await render(React.createElement(Probe));
   const [elena, virgilio] = (await session.load('approvals')).drivers;
   assert.deepEqual((await session.act(`drivers/${elena.key}/approve`)).driver.approval, 'Approved');
-  await session.act(`drivers/${virgilio.key}/delete`, { reason: 'Wrong plate' });
+  await session.act(`drivers/${virgilio.key}/decline`, { reason: 'Wrong plate' });
   await refocus();
   assert.ok(texts(tree.root).includes('Pending (0)'));
   assert.equal((await session.load('accounts')).accounts.some((account) => account.key === virgilio.key), false);

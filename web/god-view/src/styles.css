@@ -1566,7 +1566,7 @@ input::placeholder{
   color:#a17836
 }
 /* A driver's approval (Accounts and an account's page). */
-.status-pill.terminated{
+.status-pill.suspended{
   background:#fcebe8;
   color:#b4443a
 }
