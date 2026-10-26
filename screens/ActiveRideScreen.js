@@ -143,8 +143,11 @@ export default function ActiveRideScreen({ navigation, route }) {
   useEffect(() => { if (nearStop) setReachedStage(stageKey); }, [nearStop, stageKey]);
   const atStop = !target || nearStop || reachedStage === stageKey;
   const terminal = !ride || !ACTIVE_STATUSES.includes(ride.status);
-  // The TODA tester can cancel mid-trip too, to run test rides back to back.
-  const cancellable = !terminal && (['accepted', 'arrived', 'searching'].includes(ride.status) || (driver && user.tester && riding));
+  // A driver cancels only while waiting at the pickup (a passenger who does
+  // not show), never on the way to the pickup or the dropoff. The TODA tester
+  // can cancel at any stage, to run test rides back to back.
+  const cancellable = !terminal && (driver ? ride.status === 'arrived' || user.tester
+    : ['accepted', 'arrived', 'searching'].includes(ride.status));
 
   // The pill says whether the position the user is watching is live: the
   // driver's own GPS, or for a passenger, the driver's.
@@ -185,8 +188,9 @@ export default function ActiveRideScreen({ navigation, route }) {
     <RouteMap ref={mapRef} pickup={toPickup || leg?.live ? null : ride?.trip.pickup} destination={toPickup ? ride?.trip.pickup : ride?.trip.dropoff}
       route={terminal ? null : leg?.route} fitKey={ride ? `${ride.id}:${ride.status}:${leg?.route ? 'route' : 'none'}` : undefined}
       bottomInset={bottomHeight}>
-      {/* The passenger's own dot pulses on live GPS while the trike is on its way. */}
-      {passengerPosition && !driver && passengerFresh && ride.status === 'accepted' && <PassengerPulse coordinate={passengerPosition} />}
+      {/* The passenger's own dot pulses on live GPS while the trike is on its way.
+          Done and Trip history clear the ride before the screen closes. */}
+      {passengerPosition && !driver && passengerFresh && ride?.status === 'accepted' && <PassengerPulse coordinate={passengerPosition} />}
       {/* A fixed-size frame: MapLibre draws markers into bitmaps and crashes on a zero-width one.
           The bitmap is drawn once, so the key redraws it when the fix turns live or stale. */}
       {position && !terminal && <ViewAnnotation key={fresh ? 'live' : 'stale'} lngLat={[position.longitude, position.latitude]}
@@ -221,14 +225,16 @@ export default function ActiveRideScreen({ navigation, route }) {
       <FloatingCard style={{ maxHeight: keyboardHeight ? height - keyboardHeight - 96 : height * 0.72 }}>
         {terminal ? <KeyboardAwareScrollView padForKeyboard={false} showsVerticalScrollIndicator={false}>
           <Text style={TYPE.heading} accessibilityLiveRegion="polite">{t(`ride.status.${ride?.status ?? 'none'}`)}</Text>
+          {/* Why it was cancelled, under the heading, before the rating or report. */}
+          {ride?.cancellationReason ? <Text style={[TYPE.caption, styles.reason]}>{ride.cancellationReason}</Text> : null}
           {ride?.status === 'completed' && <View style={styles.paid}>
             <Money amount={ride.fare} size={34} color={COLORS.brand} />
             <Text style={[TYPE.body, styles.paidText]}>{t(driver ? 'active.collected' : 'active.paid')}</Text>
           </View>}
-          {/* The passenger rates the driver; the driver can report the passenger, also after a cancellation. */}
-          {!driver && ride?.status === 'completed' && !ratingSkipped && <RatingPrompt ride={ride} asDriver={false} onSkip={() => setRatingSkipped(true)} style={styles.rating} />}
+          {/* Once a ride with a driver ends, completed or cancelled by anyone, the
+              passenger rates the driver and the driver can report the passenger. */}
+          {!driver && ride?.ratable && !ratingSkipped && <RatingPrompt ride={ride} asDriver={false} onSkip={() => setRatingSkipped(true)} style={styles.rating} />}
           {driver && <ReportPrompt ride={ride} style={styles.rating} />}
-          {ride?.cancellationReason ? <Text style={[TYPE.caption, styles.reason]}>{ride.cancellationReason}</Text> : null}
           {person && messageCount > 0 && <Button label={t('chat.viewMessages', { count: messageCount })} icon="chat-outline"
             variant="tonal" size="md" onPress={() => setChatVisible(true)} style={styles.messages} />}
           <View style={styles.actions}>

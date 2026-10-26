@@ -1586,6 +1586,19 @@ input::placeholder{
 .profile-actions{
   margin:10px 0 6px
 }
+/* Cancel booking, under an ongoing trip's status in a trip history. */
+.trip-actions{
+  margin-top:8px
+}
+.report-button.cancel-trip{
+  background:white;
+  border-color:#e8bdb7;
+  color:#b4443a;
+  white-space:nowrap
+}
+.report-button.cancel-trip:hover:not(:disabled){
+  background:#fcebe8
+}
 .notice.success{
   border-color:#bfe0cc;
   background:#eef8f2;

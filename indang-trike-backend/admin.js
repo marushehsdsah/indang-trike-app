@@ -136,6 +136,14 @@ function buildDriver(user, connectedIds) {
   };
 }
 
+// Who cancelled a ride: its passenger, its driver, or an admin (who cancelled
+// it from God view, or suspended or deleted one of them); null otherwise.
+function cancelledByOf(ride) {
+  if (ride.status !== 'cancelled') return null;
+  if (ride.cancelledBy === 'admin') return 'admin';
+  return ride.cancelledBy === ride.passengerId ? 'passenger' : ride.cancelledBy === ride.driverId ? 'driver' : null;
+}
+
 const REPORT_LIMIT = 300;
 // God view's Reports tab. people: user id -> passengers and reporting drivers;
 // rides: ride id -> the reported trips.
@@ -154,7 +162,7 @@ function buildReports(list, people, rides, now) {
       } : null,
       driver: driver ? { key: String(driver._id), name: fullName(driver, 'Driver'), plate: driver.plate || '', toda: todaName(driver.toda) || '' } : null,
       trip: ride ? { key: String(ride._id), id: tripId(String(ride._id)), status: tripStatus(ride.status), route: `${ride.trip?.pickup?.name || 'Pickup'} → ${ride.trip?.dropoff?.name || 'Destination'}`,
-        date: ride.createdAt, cancelledBy: ride.status !== 'cancelled' ? null : ride.cancelledBy === ride.passengerId ? 'passenger' : ride.cancelledBy === ride.driverId ? 'driver' : null } : null,
+        date: ride.createdAt, cancelledBy: cancelledByOf(ride) } : null,
     };
   });
 }
@@ -199,10 +207,7 @@ function buildHistory(accountId, rides, people, ratings) {
       pickup: ride.trip?.pickup?.name || 'Pickup', destination: ride.trip?.dropoff?.name || 'Destination',
       distanceMeters: ride.route?.distanceMeters ?? null, passengers: ride.passengers ?? null, fare: ride.fare ?? null,
       date: ride.createdAt, endedAt: ride.completedAt || ride.cancelledAt || null,
-      ...(ride.status === 'cancelled' ? {
-        cancelledBy: ride.cancelledBy === ride.passengerId ? 'passenger' : ride.cancelledBy === ride.driverId ? 'driver' : null,
-        cancellationReason: ride.cancellationReason || '',
-      } : {}),
+      ...(ride.status === 'cancelled' ? { cancelledBy: cancelledByOf(ride), cancellationReason: ride.cancellationReason || '' } : {}),
       rating: rating ? { stars: rating.stars, tags: rating.tags || [], comment: rating.comment || '', flagged: Boolean(rating.flagged) } : null,
     };
   });
@@ -234,9 +239,15 @@ function historyPeriod(days, now) {
 const PENDING_DRIVERS = { role: 'driver', approval: 'pending', terminatedAt: { $exists: false } };
 const DRIVER_FIELDS = 'phone firstName lastName email role available toda plate capacity createdAt approval approvedAt terminatedAt terminationReason languageWarnings';
 
+// What the passenger and driver see on a trip an admin cancelled without
+// giving a reason.
+const ADMIN_CANCELLATION = 'Cancelled by an IndangGO admin';
+
 // onSuspended(id, reason): an account was cut off, so its rides end and its
-// app disconnects; onApproved(id): a driver was approved, so their app updates.
-function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, onSuspended = async () => {}, onApproved = async () => {} }) {
+// app disconnects; onApproved(id): a driver was approved, so their app updates;
+// onCancelTrip(id, reason): an admin cancelled a ride, which ends it at once
+// and gives it back.
+function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, onSuspended = async () => {}, onApproved = async () => {}, onCancelTrip = async () => null }) {
   const allowed = parseAdminPhones(adminPhones);
   // The ids of users with the app open.
   const connectedIds = () => new Set([...presence].filter(([, sockets]) => sockets.size).map(([id]) => id));
@@ -410,6 +421,13 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
     await models.Blocked.deleteMany({ userId: id });
     return { driver: buildDriver(user, connectedIds()) };
   }
+  // Cancels a booking or trip that has not ended, from an account's trip
+  // history in God view. The reason, if any, is what the passenger and driver see.
+  async function cancelTrip(id, body) {
+    requireValue(/^[a-f\d]{24}$/i.test(id), 404, 'Trip not found.');
+    const ride = await onCancelTrip(id, cleanText(body?.reason, 200) || ADMIN_CANCELLATION);
+    return { trip: { key: id, id: tripId(id), status: tripStatus(ride.status), cancelledBy: cancelledByOf(ride), cancellationReason: ride.cancellationReason } };
+  }
   // Drivers' reports about passengers, newest first, with what each
   // passenger's next upheld report would bring.
   async function reports() {
@@ -453,7 +471,7 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
     requireValue(updated, 409, 'This report was already reviewed.');
     return { report: (await reports()).reports.find((item) => item.key === id) };
   }
-  return { middleware, overview, accounts, history, trips, dashboard, reports, uphold, dismiss, approvals, driver, approve, decline, terminate, remove, unblock };
+  return { middleware, overview, accounts, history, trips, cancelTrip, dashboard, reports, uphold, dismiss, approvals, driver, approve, decline, terminate, remove, unblock };
 }
 
-module.exports = { createAdmin, parseAdminPhones, buildOverview, buildReports, buildRideRoutes, buildAccounts, buildDriver, driverApproval, buildTrips, buildHistory, historySummary, historyPeriod, tripStatus };
+module.exports = { ADMIN_CANCELLATION, createAdmin, parseAdminPhones, buildOverview, buildReports, buildRideRoutes, buildAccounts, buildDriver, driverApproval, buildTrips, buildHistory, historySummary, historyPeriod, tripStatus };

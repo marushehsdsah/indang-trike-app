@@ -189,6 +189,8 @@ test('an account\'s trip history shows its part in each trip, the other person, 
     rating: { stars: 2, tags: ['Did not pay'], comment: 'Left without paying', flagged: true },
   });
   assert.deepEqual([history[1].status, history[1].cancelledBy, history[1].cancellationReason, history[1].rating], ['Cancelled', 'driver', 'Flat tyre', null]);
+  const byAdmin = buildHistory(me, [{ ...rides[1], cancelledBy: 'admin', cancellationReason: 'Duplicate booking' }], people, new Map());
+  assert.deepEqual([byAdmin[0].cancelledBy, byAdmin[0].cancellationReason], ['admin', 'Duplicate booking'], 'cancelled from God view');
   assert.deepEqual([history[2].status, history[2].with, history[2].pickup, history[2].fare], ['No driver', null, 'Pickup', null], 'a search that found no driver');
   assert.deepEqual([history[3].as, history[3].status, history[3].stage, history[3].with], ['driver', 'Ongoing', 'in_progress', 'Deleted account']);
 

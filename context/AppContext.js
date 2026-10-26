@@ -306,7 +306,8 @@ export function AppProvider({ children }) {
       await refresh(); return result;
     } catch (failure) { if (generation === sessionGeneration.current) await refresh(); throw failure; }
   }, [request, refresh]);
-  // Rates the other participant of a completed ride; returns the updated ride.
+  // Rates the driver of an ended ride (completed, or cancelled once a driver
+  // accepted); returns the updated ride.
   const rateRide = useCallback(async (id, rating) => {
     const result = noteCensored(await request(`/rides/${id}/rating`, rating));
     if (result.ride) setRide((previous) => previous?.id === result.ride.id ? mergeRide(previous, result.ride) : previous);

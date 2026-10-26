@@ -11,9 +11,10 @@ const accountFilters = { type: 'all', status: 'all' };
 // One account's trip history (#accounts/<id>), of every trip or of the
 // trips booked in the last historyDays (7, 14 or 30).
 let historyId = null, history = null, historyUpdated = 0, historyTimer, historyPending = false, historyFilter = 'all', historyDays = 0, listScroll = 0;
-// A decision on a driver being sent (approve, suspend, delete or unblock),
-// and how many were made, so a trip history asked for before one is dropped.
-let deciding = null, decisions = 0;
+// A decision on a driver being sent (approve, suspend, delete or unblock), the
+// trip being cancelled, and how many of either were made, so a trip history
+// asked for before one is dropped.
+let deciding = null, cancelling = null, decisions = 0;
 // The Reports view (#reports): drivers' reports about passengers.
 let reports = null, reportsUpdated = 0, reportsTimer, reportsPending = false, reportFilter = 'pending', reviewing = null;
 const now = () => Date.now() + serverOffset;
@@ -49,7 +50,7 @@ function endSession(message = '') {
   clearTimeout(accountsTimer); accountsPending = false; accounts = null; accountsUpdated = 0; showError('accounts-error', ''); renderAccounts();
   clearTimeout(historyTimer); historyPending = false; history = null; historyUpdated = 0; showError('history-error', ''); renderHistory();
   clearTimeout(reportsTimer); reportsPending = false; reports = null; reportsUpdated = 0; showError('reports-error', ''); renderReports();
-  deciding = null; showError('accounts-note', ''); showError('history-note', ''); $('accounts-badge').hidden = true;
+  deciding = null; cancelling = null; showError('accounts-note', ''); showError('history-note', ''); $('accounts-badge').hidden = true;
   $('user-list').replaceChildren(); $('person-details').replaceChildren(); $('person-details').hidden = true;
   $('dashboard').hidden = true; $('login').hidden = false;
   $('password').value = ''; showError('login-error', message);
@@ -335,7 +336,7 @@ function renderProfile(account) {
     const actions = document.createElement('div'); actions.className = 'report-actions profile-actions';
     for (const decision of decisions) {
       const button = text('button', deciding === decision ? 'Saving…' : DRIVER_DECISIONS[decision].label, `report-button ${DRIVER_DECISIONS[decision].className}`);
-      button.type = 'button'; button.disabled = Boolean(deciding); button.dataset.decision = decision;
+      button.type = 'button'; button.disabled = Boolean(deciding || cancelling); button.dataset.decision = decision;
       button.addEventListener('click', () => decideDriver(account, decision)); actions.append(button);
     }
     copy.append(actions);
@@ -358,7 +359,7 @@ const DRIVER_DECISIONS = {
 };
 
 async function decideDriver(account, decision) {
-  if (deciding) return;
+  if (deciding || cancelling) return;
   const choice = DRIVER_DECISIONS[decision];
   let body = {};
   if (choice.reason) {
@@ -392,6 +393,30 @@ async function decideDriver(account, decision) {
   }
 }
 
+// Cancels a booking or trip that has not ended, after the admin confirms. The
+// reason, if one is typed, is what the passenger and driver see.
+async function cancelTrip(trip) {
+  if (cancelling || deciding) return;
+  const reason = prompt(`Cancel trip ${trip.id}, ${trip.pickup} → ${trip.destination}?\n\nIt ends at once: the passenger, and the driver if one accepted, see it cancelled in the app, and the driver is free for the next booking.\n\nReason shown to them (optional):`, '');
+  if (reason === null) return;
+  cancelling = trip.key; showError('history-note', ''); renderHistory();
+  const run = generation;
+  try {
+    const { trip: cancelled } = await request(`/admin/rides/${trip.key}/cancel`, { body: { reason } });
+    if (run !== generation) return;
+    // A trip history loading now was asked for before the cancellation.
+    decisions += 1;
+    if (history?.trips) history = { ...history, trips: history.trips.map(item => item.key === trip.key ? { ...item, status: cancelled.status, cancelledBy: cancelled.cancelledBy, cancellationReason: cancelled.cancellationReason } : item) };
+    showError('history-error', ''); showError('history-note', `Trip ${trip.id} was cancelled.`);
+  } catch (error) {
+    if (run !== generation) return;
+    if (error.status === 401 || error.status === 403) { endSession(error.message); return; }
+    showError('history-error', error.missingRoute ? 'This server cannot cancel trips yet. Deploy the latest API, then refresh.' : error.message);
+  } finally {
+    if (run === generation) { cancelling = null; renderHistory(); if (view === 'history') loadHistory(); }
+  }
+}
+
 function tripRow(trip) {
   const row = document.createElement('tr'), date = new Date(trip.date);
   const cell = (className, ...children) => { const node = document.createElement('td'); node.className = className; node.append(...children); return node; };
@@ -399,13 +424,21 @@ function tripRow(trip) {
   const statusNote = { Ongoing: () => statusLabel({ status: trip.stage }), Cancelled: () => cancellationLabel(trip), 'No driver': () => 'No driver accepted' }[trip.status]?.() || '';
   const status = [text('span', trip.status, `status-pill ${trip.status.toLowerCase().replace(' ', '-')}`)];
   if (statusNote) status.push(text('span', statusNote, 'cell-note'));
+  // A booking or trip that has not ended can be cancelled from here.
+  if (trip.status === 'Ongoing') {
+    const actions = document.createElement('div'); actions.className = 'trip-actions';
+    const button = text('button', cancelling === trip.key ? 'Cancelling…' : 'Cancel booking', 'report-button cancel-trip');
+    button.type = 'button'; button.disabled = Boolean(cancelling || deciding); button.dataset.cancelTrip = trip.key;
+    button.addEventListener('click', () => cancelTrip(trip)); actions.append(button); status.push(actions);
+  }
+  // A trip with a driver can be rated once it ends, completed or cancelled.
   const rating = [];
   if (trip.rating) {
     rating.push(text('span', `★ ${trip.rating.stars}`, 'cell-main stars'));
     const said = [trip.rating.tags.join(', '), trip.rating.comment && `“${trip.rating.comment}”`].filter(Boolean).join(' · ');
     if (said) rating.push(text('span', said, 'cell-note'));
     if (trip.rating.flagged) rating.push(text('span', 'Safety report', 'cell-flag'));
-  } else rating.push(text('span', trip.status === 'Completed' ? 'Not rated' : '—', 'cell-note'));
+  } else rating.push(text('span', trip.with && ['Completed', 'Cancelled'].includes(trip.status) ? 'Not rated' : '—', 'cell-note'));
   row.append(cell('cell-date', text('span', shortDate(date), 'cell-main'), text('span', date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), 'cell-note')),
     cell('cell-trip', text('span', trip.id, 'trip-id')),
     cell('cell-route', text('span', `${trip.pickup} → ${trip.destination}`, 'cell-main'), ...(route ? [text('span', route, 'cell-note')] : [])),
@@ -422,7 +455,7 @@ function renderHistory() {
   const counts = { total: summary?.trips, completed: summary?.completed, cancelled: summary && summary.cancelled + summary.noDriver };
   for (const [key, value] of Object.entries(counts)) $(`history-count-${key}`).textContent = summary ? value : '—';
   $('history-note-total').textContent = !summary ? 'Loading…' : summary.ongoing ? `${summary.ongoing} ongoing now` : driver ? 'Accepted as the driver' : 'Booked as the passenger';
-  $('history-note-cancelled').textContent = !summary ? 'Loading…' : summary.noDriver ? `${summary.noDriver} found no driver` : 'By the passenger or driver';
+  $('history-note-cancelled').textContent = !summary ? 'Loading…' : summary.noDriver ? `${summary.noDriver} found no driver` : 'By the passenger, driver or an admin';
   $('history-fares-label').textContent = driver ? 'Fares earned' : 'Fares paid';
   $('history-fares').textContent = summary ? formatFare(summary.fares) : '—';
   $('history-with-heading').textContent = driver ? 'Passenger' : 'Driver';

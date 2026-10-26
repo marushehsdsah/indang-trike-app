@@ -27,7 +27,8 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   const presence = new Map(), auth = createAuth(models, clock, { sendEmail });
   const dispatch = createDispatch({ models, io, clock, presence, options: dispatchOptions });
   const admin = createAdmin({ models, presence, clock, adminPhones, sendEmail,
-    onSuspended: (id, reason) => dispatch.run(() => dispatch.suspended(id, reason)), onApproved: (id) => dispatch.notify(id) });
+    onSuspended: (id, reason) => dispatch.run(() => dispatch.suspended(id, reason)), onApproved: (id) => dispatch.notify(id),
+    onCancelTrip: (id, reason) => dispatch.run(() => dispatch.adminCancel(id, reason)) });
   const chat = createChat({ models, io, clock });
   app.disable('x-powered-by');
   // The God view website (web/god-view) is hosted separately and calls this
@@ -72,6 +73,8 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   // One account's trip history (God view).
   app.get('/api/admin/accounts/:id', async (req, res) => res.json(await admin.history(req.params.id, req.query.days)));
   app.get('/api/admin/trips', async (req, res) => res.json({ trips: await admin.trips() }));
+  // An admin cancels a booking or trip that has not ended (God view's trip histories).
+  app.post('/api/admin/rides/:id/cancel', async (req, res) => res.json(await admin.cancelTrip(req.params.id, req.body)));
   // Drivers' reports about passengers (God view's Reports tab): upholding one
   // suspends the passenger, longer each time, then disables the account.
   app.get('/api/admin/reports', async (req, res) => res.json(await admin.reports()));

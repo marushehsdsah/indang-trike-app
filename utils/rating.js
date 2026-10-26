@@ -1,10 +1,13 @@
-// Trip ratings, shared by the app and the backend. After a completed ride the
-// passenger rates the driver and the driver rates the passenger: 1–5 stars,
-// optional quick tags, and an optional comment. Each side sees the other's
-// average before they meet (on the offer, or once a driver accepts).
+// Trip ratings, shared by the app and the backend. Once a ride with a driver
+// ends, completed or cancelled (by anyone), the passenger rates the driver:
+// 1–5 stars, optional quick tags, and an optional comment. Drivers report
+// passengers instead (utils/reports.js). Each side sees the other's average
+// before they meet (on the offer, or once a driver accepts).
 
 const STAR_LABELS = { 1: 'Terrible', 2: 'Bad', 3: 'Okay', 4: 'Good', 5: 'Great' };
 const MAX_COMMENT_LENGTH = 200;
+// A ride can be rated once it ended with a driver assigned.
+const RATABLE_STATUSES = ['completed', 'cancelled'];
 
 // Tags about the person being rated, by their role. Four or five stars offer
 // praise; three or fewer offer concerns.
@@ -60,6 +63,7 @@ function formatRating(summary) {
 
 module.exports = {
   MAX_COMMENT_LENGTH,
+  RATABLE_STATUSES,
   RATING_TAGS,
   SAFETY_TAGS,
   STAR_LABELS,

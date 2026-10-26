@@ -154,11 +154,13 @@ export function formatFare(fare) {
   return Number.isFinite(fare) ? `₱${fare.toLocaleString('en-PH', { maximumFractionDigits: 2 })}` : '—';
 }
 
-// "By the driver: Flat tyre". The server saves "Cancelled by participant"
-// when no reason was given (indang-trike-backend/dispatch.js).
+// "By the driver: Flat tyre". The server saves "Cancelled by participant", or
+// "Cancelled by an IndangGO admin" for an admin, when no reason was given
+// (indang-trike-backend/dispatch.js and admin.js).
+const UNEXPLAINED = ['Cancelled by participant', 'Cancelled by an IndangGO admin'];
 export function cancellationLabel(trip) {
   const who = trip.cancelledBy ? `By the ${trip.cancelledBy}` : 'Cancelled';
-  const reason = trip.cancellationReason && trip.cancellationReason !== 'Cancelled by participant' ? trip.cancellationReason : '';
+  const reason = trip.cancellationReason && !UNEXPLAINED.includes(trip.cancellationReason) ? trip.cancellationReason : '';
   return reason ? `${who}: ${reason}` : who;
 }
 

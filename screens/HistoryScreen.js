@@ -47,14 +47,15 @@ export default function HistoryScreen({ navigation }) {
               <View style={styles.flex}>
                 {completed ? <Money amount={ride.fare} size={22} /> : <Text style={TYPE.caption}>{t('history.noFare')}</Text>}
               </View>
-              {!driver && completed && (ride.myRating ? <Stars value={ride.myRating.stars} size={16} />
+              {/* A ride with a driver can be rated once it ends, completed or cancelled. */}
+              {!driver && ride.ratable && (ride.myRating ? <Stars value={ride.myRating.stars} size={16} />
                 : rating !== ride.id && <Button label={t('rating.rate')} icon="star-outline" size="sm" full={false} variant="outline" onPress={() => setRating(ride.id)} />)}
               {!driver && ride.trip.dropoff.coordinate && <Button label={t('history.rebook')} icon="replay" size="sm" full={false} variant="tonal"
                 onPress={() => navigation.navigate('Passenger', { destination: ride.trip.dropoff })} />}
             </View>
             {/* Drivers report a passenger instead of rating them. */}
             {driver && ride.reportable && <ReportPrompt ride={ride} onDone={reload} style={styles.ratingCard} />}
-            {!driver && rating === ride.id && !ride.myRating && <RatingPrompt ride={ride} asDriver={driver} style={styles.ratingCard}
+            {!driver && ride.ratable && rating === ride.id && !ride.myRating && <RatingPrompt ride={ride} asDriver={driver} style={styles.ratingCard}
               onSkip={() => setRating(null)} onRated={() => { setRating(null); reload(); }} />}
           </Card>;
         })}

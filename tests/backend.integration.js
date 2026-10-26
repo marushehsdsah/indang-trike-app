@@ -4,6 +4,7 @@ const { randomUUID } = require('node:crypto');
 const { createRequire } = require('node:module');
 const { io } = require('socket.io-client');
 const { createBackend } = require('../indang-trike-backend/app');
+const { ADMIN_CANCELLATION } = require('../indang-trike-backend/admin');
 const { DEFAULT_TRIP } = require('../data/indangMap');
 const { quoteTrip } = require('../data/fares');
 const { SEND_LIMIT, SEND_WINDOW_MS } = require('../indang-trike-backend/chat');
@@ -346,6 +347,52 @@ test('an admin can decline a driver\'s registration, and the driver can sign up 
   assert.equal((await request(`/admin/drivers/${again.body.user.id}/approve`, admin.token, {})).status, 200);
   assert.deepEqual(await request(`/admin/drivers/${again.body.user.id}/decline`, admin.token, {}), { status: 409, body: { error: 'This driver is no longer waiting for approval.' } });
   await backend.models.User.deleteOne({ _id: again.body.user.id });
+  await request('/logout', admin.token, {});
+});
+
+test('an admin can cancel any booking or trip that has not ended, and the driver is free for the next booking', async () => {
+  const passenger = await account(), driver = await account('driver');
+  const admin = (await request('/login', null, { phone: adminPhone, password: 'strong-password' })).body;
+  const cancel = (rideId, body = {}, token = admin.token) => request(`/admin/rides/${rideId}/cancel`, token, body);
+
+  // A booking still finding a driver; only admins may cancel it this way.
+  const searching = (await book(passenger)).body.ride;
+  assert.equal((await cancel(searching.id, {}, passenger.token)).status, 403);
+  const first = await cancel(searching.id);
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.deepEqual(first.body.trip, { key: searching.id, id: `#TR-${searching.id.slice(-6).toUpperCase()}`, status: 'Cancelled', cancelledBy: 'admin', cancellationReason: ADMIN_CANCELLATION });
+  const told = await state(passenger);
+  assert.deepEqual([told.ride, told.lastRide.status, told.lastRide.cancellationReason], [null, 'cancelled', ADMIN_CANCELLATION]);
+
+  // A trip under way: the passenger and driver both see it cancelled with the admin's reason.
+  await online(driver);
+  const ride = (await book(passenger)).body.ride;
+  const offer = (await state(driver)).offer;
+  assert.equal(offer?.id, ride.id);
+  await action(driver, ride.id, 'accept', { offerId: offer.offerId });
+  for (const step of ['arrive', 'start']) await action(driver, ride.id, step);
+  const underWay = await cancel(ride.id, { reason: '  Passenger called the hotline  ' });
+  assert.equal(underWay.status, 200, JSON.stringify(underWay.body));
+  assert.deepEqual([underWay.body.trip.status, underWay.body.trip.cancellationReason], ['Cancelled', 'Passenger called the hotline']);
+  const ended = await backend.models.Ride.findById(ride.id).lean();
+  assert.deepEqual([ended.status, ended.active, ended.cancelledBy, ended.driverSlot], ['cancelled', false, 'admin', undefined]);
+  for (const person of [passenger, driver]) {
+    const seen = await state(person);
+    assert.deepEqual([seen.ride, seen.lastRide.status, seen.lastRide.cancellationReason], [null, 'cancelled', 'Passenger called the hotline']);
+  }
+  const listed = (await request(`/admin/accounts/${driver.user.id}`, admin.token)).body.trips.find((trip) => trip.key === ride.id);
+  assert.deepEqual([listed.status, listed.cancelledBy, listed.cancellationReason], ['Cancelled', 'admin', 'Passenger called the hotline']);
+
+  // Only a trip that has not ended can be cancelled.
+  assert.deepEqual(await cancel(ride.id), { status: 409, body: { error: 'This trip has already ended.' } });
+  assert.deepEqual(await cancel('0123456789abcdef01234567'), { status: 404, body: { error: 'Trip not found.' } });
+  assert.equal((await cancel('not-a-trip')).status, 404);
+
+  // The driver is offered the next booking.
+  const next = (await book(passenger)).body.ride;
+  assert.equal((await state(driver)).offer?.id, next.id);
+  await action(passenger, next.id, 'cancel');
+  await request('/driver/availability', driver.token, { available: false });
   await request('/logout', admin.token, {});
 });
 
@@ -801,7 +848,7 @@ test('after a completed ride each side rates the other once, and the next trip s
   const ride = (await book(passenger)).body.ride;
   let offer = (await state(driver)).offer;
   assert.deepEqual(offer.passenger.rating, { average: null, count: 0 }, 'a new passenger has no rating yet');
-  assert.equal((await request(`/rides/${ride.id}/rating`, passenger.token, { stars: 5 })).status, 409, 'not before the ride is completed');
+  assert.equal((await request(`/rides/${ride.id}/rating`, passenger.token, { stars: 5 })).status, 409, 'not before the ride ends');
   await action(driver, ride.id, 'accept', { offerId: offer.offerId });
   for (const step of ['arrive', 'start', 'complete']) await action(driver, ride.id, step);
 
@@ -864,6 +911,65 @@ async function finishedTrip(passenger, driver, { cancel = false } = {}) {
   else for (const step of ['arrive', 'start', 'complete']) await action(driver, ride.id, step);
   return ride;
 }
+
+test('after a cancellation, whoever cancelled, the passenger can rate the driver and the driver can report the passenger', async () => {
+  const passenger = await account(), driver = await account('driver');
+  await online(driver);
+  const admin = (await request('/login', null, { phone: adminPhone, password: 'strong-password' })).body;
+  // A ride the driver accepted and took to `steps`, then cancelled by `by`.
+  async function cancelledTrip(steps, by) {
+    const ride = (await book(passenger)).body.ride;
+    const offer = (await state(driver)).offer;
+    assert.equal(offer?.id, ride.id);
+    await action(driver, ride.id, 'accept', { offerId: offer.offerId });
+    for (const step of steps) await action(driver, ride.id, step);
+    const cancelled = by === admin ? await request(`/admin/rides/${ride.id}/cancel`, admin.token, {}) : await action(by, ride.id, 'cancel');
+    assert.equal(cancelled.status, 200, JSON.stringify(cancelled.body));
+    return ride;
+  }
+  const cases = [['the passenger', [], passenger, 5], ['the driver', ['arrive'], driver, 2], ['an admin', ['arrive', 'start'], admin, 4]];
+  for (const [who, steps, by, stars] of cases) {
+    const ride = await cancelledTrip(steps, by);
+    const seen = (await state(passenger)).lastRide, theirs = (await state(driver)).lastRide;
+    assert.deepEqual([seen.id, seen.status, seen.ratable, seen.myRating], [ride.id, 'cancelled', true, null], `cancelled by ${who}: the app offers the passenger a rating`);
+    assert.deepEqual([theirs.id, theirs.reportable, theirs.myReport, theirs.ratable], [ride.id, true, null, undefined], `cancelled by ${who}: the app offers the driver a report`);
+    const rated = await request(`/rides/${ride.id}/rating`, passenger.token, { stars, tags: stars >= 4 ? ['Friendly'] : ['Late pickup'] });
+    assert.equal(rated.status, 200, JSON.stringify(rated.body));
+    assert.equal(rated.body.ride.myRating.stars, stars);
+    assert.equal((await request(`/rides/${ride.id}/rating`, passenger.token, { stars: 1 })).status, 409, 'once per ride');
+    assert.equal((await request(`/rides/${ride.id}/rating`, driver.token, { stars: 1 })).status, 403, 'drivers report rather than rate');
+    const reported = await request(`/rides/${ride.id}/report`, driver.token, { reason: 'no_show' });
+    assert.equal(reported.status, 200, JSON.stringify(reported.body));
+    assert.equal(reported.body.ride.myReport.reason, 'no_show');
+  }
+  assert.deepEqual((await state(driver)).user.rating, { average: 3.7, count: 3 }, 'cancelled trips count toward the driver’s average');
+  const history = (await request('/history', passenger.token)).body.rides;
+  assert.equal(history.filter((entry) => entry.ratable && entry.myRating).length, 3, 'History shows each rating');
+
+  // A booking cancelled before any driver accepted has no one to rate or report.
+  await request('/driver/availability', driver.token, { available: false });
+  const unmatched = (await book(passenger)).body.ride;
+  await action(passenger, unmatched.id, 'cancel');
+  const lone = (await state(passenger)).lastRide;
+  assert.deepEqual([lone.id, lone.ratable, lone.reportable], [unmatched.id, undefined, undefined]);
+  assert.deepEqual(await request(`/rides/${unmatched.id}/rating`, passenger.token, { stars: 5 }),
+    { status: 409, body: { error: 'No driver accepted this booking, so there is no one to rate.' } });
+  assert.equal((await request(`/rides/${unmatched.id}/report`, driver.token, { reason: 'fake_booking' })).status, 403);
+
+  // A driver whose account was deleted can no longer be rated.
+  const other = await account('driver');
+  await online(other);
+  const gone = (await book(passenger)).body.ride;
+  const offer = (await state(other)).offer;
+  assert.equal(offer?.id, gone.id);
+  await action(other, gone.id, 'accept', { offerId: offer.offerId });
+  await action(passenger, gone.id, 'cancel');
+  await backend.models.User.deleteOne({ _id: other.user.id });
+  assert.equal((await state(passenger)).lastRide.ratable, undefined);
+  assert.deepEqual(await request(`/rides/${gone.id}/rating`, passenger.token, { stars: 1 }),
+    { status: 409, body: { error: "This driver's account no longer exists." } });
+  await request('/logout', admin.token, {});
+});
 
 test('upheld reports suspend a passenger for 24 hours, then 3 days, then disable the account and block its number and email', async () => {
   const passenger = await account(), driver = await account('driver'), stranger = await account();

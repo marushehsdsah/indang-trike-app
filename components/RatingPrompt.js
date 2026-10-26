@@ -40,14 +40,17 @@ export function RatingBadge({ rating, style }) {
   );
 }
 
-// After a completed ride: the passenger rates the driver, the driver rates the
-// passenger. Once rated it shows the given stars. onSkip hides it for now; the
-// ride can still be rated from History.
+// After a ride with a driver ends, completed or cancelled by anyone, the
+// passenger rates the driver (ride.ratable). Once rated it shows the given
+// stars. onSkip hides it for now; the ride can still be rated from History.
 export default function RatingPrompt({ ride, asDriver, onSkip, onRated, style }) {
   const { rateRide } = useApp();
   const { t } = useI18n();
   const person = asDriver ? ride.passenger : ride.driver;
   const rateeRole = asDriver ? 'passenger' : 'driver';
+  // A cancelled trip asks about the person rather than the trip.
+  const name = person ? person.firstName || userName(person) : null;
+  const question = name ? t(ride.status === 'cancelled' ? 'rating.howWasCancelled' : 'rating.howWasWith', { name }) : t('rating.howWas');
   const [stars, setStars] = useState(0), [tags, setTags] = useState([]), [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false), [error, setError] = useState(null);
 
@@ -85,7 +88,7 @@ export default function RatingPrompt({ ride, asDriver, onSkip, onRated, style })
         {person && <Avatar name={userName(person)} size={44} />}
         <View style={styles.headerText}>
           <Text style={TYPE.subheading}>{t(`rating.title.${rateeRole}`)}</Text>
-          <Text style={TYPE.caption}>{person ? t('rating.howWasWith', { name: person.firstName || userName(person) }) : t('rating.howWas')}</Text>
+          <Text style={TYPE.caption}>{question}</Text>
         </View>
       </View>
 

@@ -130,4 +130,6 @@ test('a trip history filters by status, with searches that found no driver among
   assert.equal(cancellationLabel({ cancelledBy: 'driver', cancellationReason: 'Flat tyre' }), 'By the driver: Flat tyre');
   assert.equal(cancellationLabel({ cancelledBy: 'passenger', cancellationReason: 'Cancelled by participant' }), 'By the passenger', 'the reason saved when none was given');
   assert.equal(cancellationLabel({ cancelledBy: null, cancellationReason: '' }), 'Cancelled');
+  assert.equal(cancellationLabel({ cancelledBy: 'admin', cancellationReason: 'Cancelled by an IndangGO admin' }), 'By the admin', 'an admin gave no reason');
+  assert.equal(cancellationLabel({ cancelledBy: 'admin', cancellationReason: 'Duplicate booking' }), 'By the admin: Duplicate booking');
 });

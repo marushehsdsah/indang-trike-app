@@ -66,7 +66,8 @@ function createModels(connection) {
   rideSchema.index({ passengerId: 1 }, { unique: true, partialFilterExpression: { active: true } });
   rideSchema.index({ driverSlot: 1 }, { unique: true, partialFilterExpression: { active: true, driverSlot: { $type: 'string' } } });
   rideSchema.index({ driverId: 1, createdAt: -1 });
-  // One rating per participant per completed ride, of the other participant.
+  // One rating per participant per ended ride (completed, or cancelled with a
+  // driver), of the other participant.
   // flagged marks a safety report for admins.
   const ratingSchema = new Schema({
     rideId: { type: String, required: true }, raterId: { type: String, required: true }, rateeId: { type: String, required: true, index: true },

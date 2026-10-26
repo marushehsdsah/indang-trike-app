@@ -221,6 +221,29 @@ async function main() {
     await page.locator('#history-with-heading').filter({ hasText: 'Passenger' }).waitFor();
     await page.locator('#history-rows').getByText('Bea Pilot', { exact: true }).waitFor();
     assert.equal(await page.locator('#history-fares-label').textContent(), 'Fares earned');
+    // An ongoing trip in the driver's history can be cancelled, after the admin confirms.
+    await request('/driver/location', { ...fix, timestamp: Date.now() }, driver.token);
+    const { ride: booked } = await request('/rides', { trip: DEFAULT_TRIP, passengers: 1, note: '', idempotencyKey: `god-view-${randomUUID()}` }, passenger.token);
+    const { offer: next } = await request('/state', null, driver.token);
+    assert.equal(next?.id, booked.id);
+    await request(`/rides/${booked.id}/accept`, { offerId: next.offerId }, driver.token);
+    await page.locator('#history-refresh').click();
+    await page.locator('#history-statuses [data-trip=ongoing]').click();
+    await page.locator('#history-rows').getByText('Heading to pickup', { exact: true }).waitFor();
+    await page.screenshot({ path: '/tmp/indang-god-view-ongoing.png', fullPage: true });
+    page.once('dialog', (dialog) => dialog.dismiss());
+    await page.locator('#history-rows').getByRole('button', { name: 'Cancel booking' }).click();
+    await page.waitForTimeout(300);
+    assert.equal((await backend.models.Ride.findById(booked.id).lean()).status, 'accepted', 'cancelling the question changes nothing');
+    page.once('dialog', (dialog) => { assert.equal(dialog.type(), 'prompt'); assert.match(dialog.message(), /^Cancel trip #TR-/); dialog.accept('Passenger called the hotline'); });
+    await page.locator('#history-rows').getByRole('button', { name: 'Cancel booking' }).click();
+    await page.locator('#history-note').filter({ hasText: /^Trip #TR-\w+ was cancelled\.$/ }).waitFor();
+    await page.locator('#history-empty').getByText('No ongoing trips', { exact: true }).waitFor();
+    await page.locator('#history-statuses [data-trip=cancelled]').click();
+    await page.locator('#history-rows').getByText('By the admin: Passenger called the hotline', { exact: true }).waitFor();
+    await page.screenshot({ path: '/tmp/indang-god-view-cancelled.png', fullPage: true });
+    assert.deepEqual([(await request('/state', null, driver.token)).ride, (await request('/state', null, passenger.token)).lastRide.status], [null, 'cancelled']);
+    await page.locator('#history-statuses [data-trip=all]').click();
     // A driver who signs up waits for approval: the Accounts tab counts them,
     // Pending approval lists them, and their page approves, suspends,
     // unblocks or deletes them, each after the admin confirms.
@@ -286,7 +309,7 @@ async function main() {
     assert.equal(await page.locator('#history-rows tr').count(), 0);
     assert.equal(await page.evaluate(() => sessionStorage.getItem('indanggo.god-view.session')), null);
     assert.deepEqual(errors, []);
-    console.log('Browser checks passed: separate-origin site, full-size map, places layer, requested/to-passenger/trip lines, merged trip marker, access control, real GPS markers, missing/stale GPS, safe text, role/search filters, all accounts online and offline, trip histories and their periods, driver approval, disconnect/reconnect, responsive layout and logout.');
+    console.log('Browser checks passed: separate-origin site, full-size map, places layer, requested/to-passenger/trip lines, merged trip marker, access control, real GPS markers, missing/stale GPS, safe text, role/search filters, all accounts online and offline, trip histories and their periods, cancelling a trip, driver approval, disconnect/reconnect, responsive layout and logout.');
   } finally {
     await browser?.close(); sockets.forEach(socket => socket.disconnect());
     site?.close(); if (siteDir) fs.rmSync(siteDir, { recursive: true, force: true });

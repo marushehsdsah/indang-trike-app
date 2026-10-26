@@ -3,7 +3,7 @@ const { ASSIGNED_STATUSES, GPS_MAX_AGE_MS, isFreshFix, rankDrivers, validateFix,
 const { getMunicipalityAt } = require('../data/indangMap');
 const { findToda, todaCovers, todaName } = require('../data/todaZones');
 const { HttpError, requireValue, publicUser, bookingFields, cleanText, awaitingApproval, AWAITING_APPROVAL } = require('./policy');
-const { ratingSummary, validateRating } = require('../utils/rating');
+const { RATABLE_STATUSES, ratingSummary, validateRating } = require('../utils/rating');
 const { censorText } = require('../utils/profanity');
 const { REPORTABLE_STATUSES, validateReport } = require('../utils/reports');
 const { haversineDistance } = require('../utils/pathfinding');
@@ -22,13 +22,16 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
   async function view(ride, viewerId, offered = false, ratings) {
     if (!ride) return null;
     const result = ride.toObject ? ride.toObject() : { ...ride };
-    // Passengers rate their driver; drivers report a passenger instead.
+    // Passengers rate their driver; drivers report a passenger instead. Both
+    // once a ride with a driver ends, completed or cancelled by anyone.
     const asDriver = Boolean(viewerId) && result.driverId === String(viewerId);
-    const rated = result.status === 'completed' && viewerId && !asDriver;
+    const rated = Boolean(viewerId) && !asDriver && Boolean(result.driverId) && RATABLE_STATUSES.includes(result.status);
     const reportable = asDriver && REPORTABLE_STATUSES.includes(result.status);
     const [driver, passenger, myRating, myReport] = await Promise.all([result.driverId ? User.findById(result.driverId) : null, User.findById(result.passengerId),
       !rated ? null : ratings ? ratings.get(String(result._id)) ?? null : Rating.findOne({ rideId: String(result._id), raterId: String(viewerId) }),
       reportable ? Report.findOne({ rideId: String(result._id), reporterId: String(viewerId) }) : null]);
+    // A driver whose account was deleted can no longer be rated.
+    const ratable = rated && Boolean(driver);
     // Each side sees the other's average rating: the driver on the offer, the
     // passenger once a driver is assigned.
     const contact = (user, allowPhone) => user ? {
@@ -49,8 +52,10 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
       driverConnected: assigned && driver ? connected(driver._id) : false,
       driverLocationAvailable: Boolean(assigned && driver?.locationAvailable && isFreshFix(driver.location, clock())),
       passengerLocation,
-      // The viewer's own rating of the other participant, once given.
+      // The viewer's own rating of the other participant, once given; ratable
+      // says the passenger can rate the driver.
       myRating: myRating ? { stars: myRating.stars, tags: myRating.tags, comment: myRating.comment } : null,
+      ...(ratable ? { ratable: true } : {}),
       // The driver's report about the passenger, once sent; reportable says one can be.
       ...(reportable ? { reportable: true, myReport: myReport ? { reason: myReport.reason, details: myReport.details, status: myReport.status } : null } : {}),
       createdAt: result.createdAt, completedAt: result.completedAt, cancelledAt: result.cancelledAt,
@@ -216,7 +221,8 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
   // Offensive words were hidden from what this user sent: one more warning on
   // their account, which admins see.
   const warnLanguage = (userId) => User.updateOne({ _id: userId }, { $inc: { languageWarnings: 1 } });
-  // The passenger rates the driver, once, after the ride is completed.
+  // The passenger rates the driver, once, after the ride ends: completed, or
+  // cancelled by anyone after the driver accepted.
   async function rate(user, id, body = {}) {
     requireValue(/^[a-f0-9]{24}$/.test(id), 404, 'Ride not found.');
     const ride = await Ride.findById(id), userId = String(user._id);
@@ -224,7 +230,9 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     const asPassenger = ride.passengerId === userId, asDriver = ride.driverId === userId;
     requireValue(asPassenger || asDriver, 403, 'You are not a participant in this ride.');
     requireValue(asPassenger, 403, 'Drivers report passengers instead of rating them.');
-    requireValue(ride.status === 'completed', 409, 'You can rate a ride once it is completed.');
+    requireValue(RATABLE_STATUSES.includes(ride.status), 409, 'You can rate your driver once the trip is completed or cancelled.');
+    requireValue(ride.driverId, 409, 'No driver accepted this booking, so there is no one to rate.');
+    requireValue(await User.exists({ _id: ride.driverId }), 409, "This driver's account no longer exists.");
     let fields;
     try { fields = validateRating(body, asPassenger ? 'driver' : 'passenger'); } catch (error) { throw new HttpError(400, error.message); }
     const comment = censorText(cleanText(fields.comment, 200));
@@ -240,6 +248,17 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     if (comment.censored) await warnLanguage(userId);
     return { ride: await view(ride, userId), ...(comment.censored ? { censored: true } : {}) };
   }
+  // Ends an active booking or trip on an admin's behalf: its passenger and
+  // driver see it cancelled with `reason`, and the driver is free again. Null
+  // if the ride changed meanwhile.
+  async function cancelAsAdmin(ride, reason) {
+    const ended = await Ride.findOneAndUpdate({ _id: ride._id, version: ride.version }, {
+      $set: { status: 'cancelled', active: false, cancelledAt: new Date(clock()), cancelledBy: 'admin', cancellationReason: reason },
+      $unset: { driverSlot: 1, offerId: 1, offerExpiresAt: 1 }, $inc: { version: 1 },
+    }, { returnDocument: 'after' });
+    if (ended) { notifyRide(ride); if (ride.status === 'searching') bookingsChanged(); }
+    return ended;
+  }
   // An account an admin cut off: a suspended passenger, or a driver who was
   // suspended or deleted. A request offered to the driver goes to the next
   // one; their active booking or trip is cancelled with `reason`; their app is
@@ -250,15 +269,21 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     const offered = await Ride.findOne({ active: true, status: 'searching', driverSlot: id });
     if (offered) await release(offered);
     const ride = await Ride.findOne({ active: true, $or: [{ passengerId: id }, { driverId: id }] });
-    if (ride) {
-      const ended = await Ride.findOneAndUpdate({ _id: ride._id, version: ride.version }, {
-        $set: { status: 'cancelled', active: false, cancelledAt: new Date(clock()), cancelledBy: 'admin', cancellationReason: reason },
-        $unset: { driverSlot: 1, offerId: 1, offerExpiresAt: 1 }, $inc: { version: 1 },
-      }, { returnDocument: 'after' });
-      if (ended) { notifyRide(ride); if (ride.status === 'searching') bookingsChanged(); }
-    }
+    if (ride) await cancelAsAdmin(ride, reason);
     io.in(`user:${id}`).disconnectSockets(true);
     await tickUnsafe();
+  }
+  // An admin cancels a booking or trip that has not ended (God view), at any
+  // stage: still searching, on the way to the pickup, or under way.
+  async function adminCancel(id, reason) {
+    requireValue(/^[a-f0-9]{24}$/i.test(id), 404, 'Trip not found.');
+    const ride = await Ride.findById(id);
+    requireValue(ride, 404, 'Trip not found.');
+    requireValue(ride.active, 409, 'This trip has already ended.');
+    const ended = await cancelAsAdmin(ride, reason);
+    requireValue(ended, 409, 'The trip changed. Refresh and try again.');
+    await tickUnsafe();
+    return ended;
   }
   // The driver reports the passenger of a trip they were assigned to, once,
   // after it was completed or cancelled. Admins review it in God view.
@@ -332,7 +357,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     if (ride) notifyRide(ride);
     await tickUnsafe(); notify(user._id); return { ok: true };
   }
-  return { run, view, snapshot, bookings, book, action, rate, report, suspended, location, passengerLocation, passengerLocationUnavailable, locationUnavailable, availability, disconnect, notify, tick: () => run(tickUnsafe), connected };
+  return { run, view, snapshot, bookings, book, action, rate, report, suspended, adminCancel, location, passengerLocation, passengerLocationUnavailable, locationUnavailable, availability, disconnect, notify, tick: () => run(tickUnsafe), connected };
 }
 
 module.exports = { createDispatch };

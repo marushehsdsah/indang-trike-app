@@ -2,7 +2,7 @@
 
 The web dashboard shows connected drivers and passengers on the app's shared
 service-area map, with role/search filters, active trip status, vehicle details and GPS age.
-It refreshes every 3 seconds. It is read-only and does not join mobile presence.
+It refreshes every 3 seconds. It does not join mobile presence.
 
 God view is a **separate website** in `web/god-view/`: static pages (no
 server code) that sign in and read the IndangGO API cross-origin. The API does
@@ -98,6 +98,17 @@ sharing. Background tracking and historical location storage are not added.
 The dashboard exposes names, roles, vehicles and current trip summaries; it
 does not expose phone numbers, emails, passwords or pickup notes. Existing
 private ride events still go only to the assigned passenger/driver.
+
+## Cancelling a booking
+
+An admin can cancel any booking or trip that has not ended: **Accounts**, open
+the driver's (or passenger's) account, choose **Ongoing** in its trip history,
+then **Cancel booking** on the trip. It works at every stage: still finding a
+driver, on the way to the pickup, waiting there, or under way. The admin
+confirms and may type a reason. The trip ends at once (`POST
+/api/admin/rides/<id>/cancel`): the passenger and driver see it cancelled in
+the app with that reason (or "Cancelled by an IndangGO admin"), and the driver
+can take the next booking. Trip histories then list it as cancelled by the admin.
 
 ## Checks
 
