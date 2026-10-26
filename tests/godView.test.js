@@ -133,3 +133,75 @@ test('a trip history filters by status, with searches that found no driver among
   assert.equal(cancellationLabel({ cancelledBy: 'admin', cancellationReason: 'Cancelled by an IndangGO admin' }), 'By the admin', 'an admin gave no reason');
   assert.equal(cancellationLabel({ cancelledBy: 'admin', cancellationReason: 'Duplicate booking' }), 'By the admin: Duplicate booking');
 });
+
+// A PDF's text as drawn (Latin-1, as its WinAnsi strings are stored) and its
+// page count, after checking that the cross-reference table points at every
+// object and startxref at the table.
+function readPdf(bytes) {
+  const file = Buffer.from(bytes).toString('latin1');
+  assert.ok(file.startsWith('%PDF-1.4\n') && file.endsWith('%%EOF\n'));
+  const xref = Number(file.match(/startxref\n(\d+)\n%%EOF\n$/)[1]);
+  assert.ok(file.startsWith('xref\n', xref), 'startxref points at the table');
+  const [, count, entries] = file.slice(xref).match(/^xref\n0 (\d+)\n0000000000 65535 f \n((?:\d{10} 00000 n \n)*)trailer/);
+  const offsets = entries.trim().split('\n').map(line => Number(line.slice(0, 10)));
+  assert.equal(offsets.length, Number(count) - 1);
+  offsets.forEach((offset, index) => assert.ok(file.startsWith(`${index + 1} 0 obj\n`, offset), `object ${index + 1} is where the table says`));
+  return { pages: Number(file.match(/\/Type \/Pages \/Kids \[[^\]]*\] \/Count (\d+)/)[1]),
+    text: [...file.matchAll(/\(((?:\\.|[^\\)])*)\) Tj/g)].map(([, value]) => value.replace(/\\(.)/g, '$1')) };
+}
+
+test('the PDF writer makes a well-formed file in the standard fonts, whose characters it encodes, measures and fits', async () => {
+  const { createPdf, encodeText, fitText, textWidth } = await import('../web/god-view/src/pdf.mjs');
+  const pdf = createPdf({ title: 'Test' });
+  pdf.addPage(); pdf.text('Señora (Peña) \\ ₱45 → 3:45\u202fPM', 40, 60);
+  pdf.addPage(); pdf.rect(40, 40, 100, 20, { fill: '#137a5b' }); pdf.line(40, 80, 200, 80);
+  const { pages, text } = readPdf(pdf.toBytes());
+  assert.equal(pages, 2);
+  // ñ is WinAnsi; ₱ and → are not; browsers' narrow space before PM becomes a space.
+  assert.deepEqual(text, ['Señora (Peña) \\ ?45 ? 3:45 PM']);
+  assert.deepEqual(encodeText('’…–ā'), [0x92, 0x85, 0x96, 0x61], 'curly quotes, ellipsis and dashes have WinAnsi codes; ā loses its accent');
+  assert.equal(textWidth('Hello', 'regular', 10), 22.78);
+  assert.ok(textWidth('Hello', 'bold', 10) > textWidth('Hello', 'regular', 10));
+  assert.equal(fitText('CvSU', 60), 'CvSU');
+  const fitted = fitText('Cavite State University Main Campus', 60);
+  assert.ok(fitted.endsWith('…') && textWidth(fitted) <= 60, fitted);
+});
+
+test("a driver's trip records PDF has their details, status, rating and totals, and pages through long histories", async () => {
+  const { driverReport, driverStanding, pesos, reportFilename } = await import('../web/god-view/src/driverReport.mjs');
+  const generatedAt = Date.parse('2026-10-27T07:45:00Z');
+  const trips = Array.from({ length: 30 }, (_, index) => ({
+    key: `ride${index}`, id: `#TR-${String(index).padStart(6, '0')}`, as: 'driver', status: index === 3 ? 'Cancelled' : 'Completed', stage: index === 3 ? 'cancelled' : 'completed',
+    with: 'Bea Santos', pickup: 'CvSU Main Campus', destination: 'Indang Public Market', distanceMeters: 2300, passengers: 2, fare: 40, date: new Date(generatedAt - index * 3600e3).toISOString(),
+    ...(index === 3 ? { cancelledBy: 'passenger', cancellationReason: 'Cancelled before pickup' } : {}),
+    rating: index === 1 ? { stars: 5, tags: ['Friendly', 'Safe driving'], comment: '', flagged: false } : index === 2 ? { stars: 2, tags: ['Unsafe driving'], comment: '', flagged: true } : null,
+  }));
+  const account = { key: 'a1', id: '09171234567', name: 'José Peña', email: 'jose@example.com', role: 'RIDER', status: 'Offline', toda: 'BCITODA', plate: 'NBC 1234',
+    approval: 'Approved', joined: '2026-09-01T02:00:00Z', rating: { average: 4.66, count: 12 } };
+  const data = { account, period: { days: 14, since: new Date(generatedAt - 14 * 86400e3).toISOString() }, trips,
+    summary: { trips: 30, completed: 29, cancelled: 1, noDriver: 0, ongoing: 0, fares: 1250.5 } };
+  const { bytes, filename } = driverReport(data, { generatedAt });
+  assert.equal(filename, 'indanggo-jose-pena-trips-last-14-days-2026-10-27.pdf');
+  const { pages, text } = readPdf(bytes);
+  assert.equal(pages, 2, '14 trips fit under the details, the rest on page 2');
+  for (const value of ['José Peña', '0917 123 4567', 'jose@example.com', 'NBC 1234', 'BCITODA', 'Registered', 'Approved to take bookings',
+    '4.7 out of 5 · 12 ratings', 'In this period: 3.5 from 2 ratings', 'Last 14 days', '30', '29', '1', 'PHP 1,250.5', 'From completed trips',
+    '#TR-000000', '#TR-000029', 'Bea Santos', '5 / 5', 'Friendly +1', 'Safety report', 'Not earned', 'Page 1 of 2', 'Page 2 of 2']) {
+    assert.ok(text.includes(value), `the PDF shows ${value}`);
+  }
+  assert.ok(text.some(value => value.startsWith('By the passenger')), 'who cancelled, with the reason when it fits');
+  assert.equal(text.filter(value => value === 'PASSENGER').length, 2, 'the table header repeats on each page');
+  assert.ok(!text.some(value => /Showing the newest/.test(value)), 'every trip is listed');
+
+  // A pending or suspended driver, with no trips in the period, or more trips than the server lists.
+  const none = readPdf(driverReport({ ...data, account: { ...account, approval: 'Pending', rating: { average: null, count: 0 } }, period: { ...data.period, days: 7 }, trips: [],
+    summary: { trips: 0, completed: 0, cancelled: 0, noDriver: 0, ongoing: 0, fares: 0 } }, { generatedAt }).bytes);
+  for (const value of ['Pending', 'No ratings yet', 'No ratings in this period', 'No trips were booked with this driver in the last 7 days.', 'PHP 0', 'Page 1 of 1']) assert.ok(none.text.includes(value), value);
+  const capped = readPdf(driverReport({ ...data, summary: { ...data.summary, trips: 600 } }, { generatedAt }).bytes);
+  assert.ok(capped.text.includes('Showing the newest 30 of 600 trips; the totals above cover them all.'));
+
+  assert.deepEqual(driverStanding({ approval: 'Suspended', terminatedAt: '2026-10-20T02:00:00Z', terminationReason: 'Plate did not match' }), { label: 'Suspended', note: 'Since Oct 20, 2026 · Plate did not match' });
+  assert.equal(driverStanding({}).label, 'Registered', 'drivers from before approval count as registered');
+  assert.equal(pesos(45), 'PHP 45'); assert.equal(pesos(null), '—');
+  assert.equal(reportFilename({ name: '***' }, 30, generatedAt), 'indanggo-driver-trips-last-30-days-2026-10-27.pdf');
+});

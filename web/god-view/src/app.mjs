@@ -1,5 +1,5 @@
 import { API_BASE_URL } from './config.mjs';
-import { DRIVER_ACTIONS, accountCounts, accountRole, cancellationLabel, filterAccounts, filterTrips, filterUsers, formatDistance, formatFare, formatPhone, isLive, isOnline, locationLabel, mapPeople, ratingLabel, roleCountLabel, routeSummary, languageWarningLabel, safetyReportLabel, sortAccounts, statusLabel, snapshotTiming, tripOf } from './model.mjs';
+import { DRIVER_ACTIONS, REPORT_PERIODS, accountCounts, accountRole, cancellationLabel, filterAccounts, filterTrips, filterUsers, formatDistance, formatFare, formatPhone, isLive, isOnline, locationLabel, mapPeople, ratingLabel, roleCountLabel, routeSummary, languageWarningLabel, safetyReportLabel, sortAccounts, statusLabel, snapshotTiming, tripOf } from './model.mjs';
 
 const $ = id => document.getElementById(id);
 const tokenKey = 'indanggo.god-view.session';
@@ -15,6 +15,8 @@ let historyId = null, history = null, historyUpdated = 0, historyTimer, historyP
 // trip being cancelled, and how many of either were made, so a trip history
 // asked for before one is dropped.
 let deciding = null, cancelling = null, decisions = 0;
+// A driver's trip records being made into a PDF (driverReport.mjs).
+let downloading = false;
 // The Reports view (#reports): drivers' reports about passengers.
 let reports = null, reportsUpdated = 0, reportsTimer, reportsPending = false, reportFilter = 'pending', reviewing = null;
 const now = () => Date.now() + serverOffset;
@@ -50,7 +52,7 @@ function endSession(message = '') {
   clearTimeout(accountsTimer); accountsPending = false; accounts = null; accountsUpdated = 0; showError('accounts-error', ''); renderAccounts();
   clearTimeout(historyTimer); historyPending = false; history = null; historyUpdated = 0; showError('history-error', ''); renderHistory();
   clearTimeout(reportsTimer); reportsPending = false; reports = null; reportsUpdated = 0; showError('reports-error', ''); renderReports();
-  deciding = null; cancelling = null; showError('accounts-note', ''); showError('history-note', ''); $('accounts-badge').hidden = true;
+  deciding = null; cancelling = null; closeReport(); showError('accounts-note', ''); showError('history-note', ''); $('accounts-badge').hidden = true;
   $('user-list').replaceChildren(); $('person-details').replaceChildren(); $('person-details').hidden = true;
   $('dashboard').hidden = true; $('login').hidden = false;
   $('password').value = ''; showError('login-error', message);
@@ -194,8 +196,8 @@ function showView() {
   if (previous === 'accounts' && view === 'history') listScroll = scrollY;
   const changed = account !== historyId;
   if (changed) { historyId = account; history = null; historyUpdated = 0; showError('history-error', ''); }
-  // A decision's note stays only while its page does.
-  if (previous !== view || changed) { showError('history-note', ''); if (view !== 'accounts') showError('accounts-note', ''); }
+  // A decision's note, and the PDF dialog, stay only while their page does.
+  if (previous !== view || changed) { showError('history-note', ''); closeReport(); if (view !== 'accounts') showError('accounts-note', ''); }
   $('live-view').hidden = view !== 'live'; $('accounts-view').hidden = view !== 'accounts'; $('history-view').hidden = view !== 'history'; $('reports-view').hidden = view !== 'reports';
   for (const tab of document.querySelectorAll('.view-tab')) {
     if (tab.dataset.view === (view === 'history' ? 'accounts' : view)) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
@@ -456,6 +458,8 @@ function renderHistory() {
   for (const [key, value] of Object.entries(counts)) $(`history-count-${key}`).textContent = summary ? value : '—';
   $('history-note-total').textContent = !summary ? 'Loading…' : summary.ongoing ? `${summary.ongoing} ongoing now` : driver ? 'Accepted as the driver' : 'Booked as the passenger';
   $('history-note-cancelled').textContent = !summary ? 'Loading…' : summary.noDriver ? `${summary.noDriver} found no driver` : 'By the passenger, driver or an admin';
+  // Only a driver's trip records download as a PDF.
+  $('history-download').hidden = !driver;
   $('history-fares-label').textContent = driver ? 'Fares earned' : 'Fares paid';
   $('history-fares').textContent = summary ? formatFare(summary.fares) : '—';
   $('history-with-heading').textContent = driver ? 'Passenger' : 'Driver';
@@ -473,6 +477,55 @@ function renderHistory() {
   $('history-footnote').textContent = summary && summary.trips > trips.length
     ? `Showing the newest ${trips.length} of ${summary.trips} trips; the totals above cover them all.`
     : 'Times are when each trip was booked. Refreshes every 10 seconds.';
+}
+
+// A driver's trip records as a PDF: the dialog asks which days it covers (7,
+// 14 or 30), starting from the period on screen when it is one of those.
+function openReport() {
+  const account = history?.account;
+  if (!account || accountRole(account) !== 'driver') return;
+  $('report-driver').textContent = [account.name, account.plate, account.toda].filter(Boolean).join(' · ');
+  const days = REPORT_PERIODS.includes(historyDays) ? historyDays : REPORT_PERIODS[0];
+  for (const input of $('report-form').elements.days) input.checked = Number(input.value) === days;
+  showError('report-error', ''); renderReport(); $('report-dialog').showModal();
+}
+
+function renderReport() {
+  $('report-download').disabled = downloading; $('report-cancel').disabled = downloading;
+  $('report-download').textContent = downloading ? 'Preparing…' : 'Download PDF';
+  for (const input of $('report-form').elements.days) input.disabled = downloading;
+}
+
+function closeReport() { if ($('report-dialog').open) $('report-dialog').close(); }
+
+// Loads the driver's trips for the chosen days and saves them as a PDF.
+async function downloadReport(event) {
+  event.preventDefault();
+  if (downloading) return;
+  const run = generation, id = historyId, days = Number($('report-form').elements.days.value);
+  downloading = true; showError('report-error', ''); renderReport();
+  try {
+    const [data, { driverReport }] = await Promise.all([request(`/admin/accounts/${id}?days=${days}`), import('./driverReport.mjs')]);
+    if (run !== generation || id !== historyId) return;
+    // An older API ignores the period and sends every trip.
+    if (!data.period) throw new Error('This server cannot filter trips by date yet. Deploy the latest API, then refresh.');
+    const { bytes, filename } = driverReport(data, { generatedAt: now() });
+    saveFile(bytes, filename, 'application/pdf');
+    closeReport(); showError('history-note', `Downloaded ${data.account.name}'s trips from the last ${days} days as ${filename}.`);
+  } catch (error) {
+    if (run !== generation || id !== historyId) return;
+    if (error.status === 401 || error.status === 403) { endSession(error.message); return; }
+    showError('report-error', error.missingRoute ? 'This server cannot show trip histories yet. Deploy the latest API, then refresh.' : error.message);
+  } finally { downloading = false; renderReport(); }
+}
+
+// Gives the browser a file to save, as if a link to it were clicked.
+function saveFile(bytes, filename, type) {
+  const url = URL.createObjectURL(new Blob([bytes], { type }));
+  const link = Object.assign(document.createElement('a'), { href: url, download: filename });
+  document.body.append(link); link.click(); link.remove();
+  // Long enough for the download to start.
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 // Reports load every 10 seconds on the Reports view, and every 30 elsewhere
@@ -634,6 +687,11 @@ $('history-statuses').addEventListener('click', event => {
 });
 $('history-period').addEventListener('change', event => { historyDays = Number(event.target.value); renderHistory(); loadHistory(); });
 $('history-refresh').addEventListener('click', loadHistory);
+$('history-download').addEventListener('click', openReport);
+$('report-form').addEventListener('submit', downloadReport);
+$('report-cancel').addEventListener('click', closeReport);
+// Escape closes the dialog, except while the PDF is being made.
+$('report-dialog').addEventListener('cancel', event => { if (downloading) event.preventDefault(); });
 $('reports-refresh').addEventListener('click', loadReports);
 $('report-statuses').addEventListener('click', event => {
   const button = event.target.closest('button[data-report]'); if (!button) return;

@@ -119,6 +119,10 @@ export function filterAccounts(accounts, role, status, query) {
     ([account.name, account.email, account.plate, account.toda].filter(Boolean).join(' ').toLocaleLowerCase().includes(needle) || account.id.includes(digits)));
 }
 
+// The days a driver's trip records PDF can cover (driverReport.mjs); the
+// trip history endpoint allows 1 to 30.
+export const REPORT_PERIODS = [7, 14, 30];
+
 // A driver's approval (indang-trike-backend/admin.js): Pending until an admin
 // checks them against their TODA's list of registered drivers, Approved, or
 // Suspended. The decisions open to each, in the order their buttons show.

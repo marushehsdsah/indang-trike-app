@@ -189,6 +189,7 @@ async function main() {
     await page.locator('#history-profile').getByText('Bea Pilot', { exact: true }).waitFor();
     assert.equal(await page.evaluate(() => location.hash), `#accounts/${passenger.user.id}`);
     await page.locator('#history-rows tr').first().waitFor();
+    assert.equal(await page.locator('#history-download').isHidden(), true, "only a driver's trips download as a PDF");
     assert.equal(await page.locator('#history-rows tr').count(), 1);
     assert.equal(await page.locator('#history-count-completed').textContent(), '1');
     // Drivers report passengers instead of rating them.
@@ -221,6 +222,26 @@ async function main() {
     await page.locator('#history-with-heading').filter({ hasText: 'Passenger' }).waitFor();
     await page.locator('#history-rows').getByText('Bea Pilot', { exact: true }).waitFor();
     assert.equal(await page.locator('#history-fares-label').textContent(), 'Fares earned');
+    // A driver's trip records download as a PDF, for the days the admin picks:
+    // the trip booked 10 days ago is in the last 14 days.
+    await page.locator('#history-download').click();
+    await page.locator('#report-dialog').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#report-form input[name=days]:checked').getAttribute('value'), '7', 'with All time on screen, the dialog starts at 7 days');
+    await page.locator('#report-cancel').click();
+    await page.locator('#report-dialog').waitFor({ state: 'hidden' });
+    await page.locator('#history-download').click();
+    await page.locator('#report-form label', { hasText: 'Last 14 days' }).click();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: '/tmp/indang-god-view-report-dialog.png' });
+    const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#report-download').click()]);
+    assert.match(download.suggestedFilename(), /^indanggo-alex-pilot-trips-last-14-days-\d{4}-\d{2}-\d{2}\.pdf$/);
+    const pdf = fs.readFileSync(await download.path()).toString('latin1');
+    assert.ok(pdf.startsWith('%PDF-1.4') && pdf.endsWith('%%EOF\n'));
+    for (const value of ['Alex Pilot', '0917 999 9992', '09179999992@example.com', 'TEST-101', 'Test TODA', 'Registered', 'Last 14 days', `#TR-${offer.id.slice(-6).toUpperCase()}`, 'Bea Pilot', 'Completed']) {
+      assert.ok(pdf.includes(`(${value}) Tj`), `the PDF shows ${value}`);
+    }
+    await page.locator('#report-dialog').waitFor({ state: 'hidden' });
+    await page.locator('#history-note').filter({ hasText: /^Downloaded Alex Pilot's trips from the last 14 days as indanggo-alex-pilot/ }).waitFor();
     // An ongoing trip in the driver's history can be cancelled, after the admin confirms.
     await request('/driver/location', { ...fix, timestamp: Date.now() }, driver.token);
     const { ride: booked } = await request('/rides', { trip: DEFAULT_TRIP, passengers: 1, note: '', idempotencyKey: `god-view-${randomUUID()}` }, passenger.token);
@@ -309,7 +330,7 @@ async function main() {
     assert.equal(await page.locator('#history-rows tr').count(), 0);
     assert.equal(await page.evaluate(() => sessionStorage.getItem('indanggo.god-view.session')), null);
     assert.deepEqual(errors, []);
-    console.log('Browser checks passed: separate-origin site, full-size map, places layer, requested/to-passenger/trip lines, merged trip marker, access control, real GPS markers, missing/stale GPS, safe text, role/search filters, all accounts online and offline, trip histories and their periods, cancelling a trip, driver approval, disconnect/reconnect, responsive layout and logout.');
+    console.log('Browser checks passed: separate-origin site, full-size map, places layer, requested/to-passenger/trip lines, merged trip marker, access control, real GPS markers, missing/stale GPS, safe text, role/search filters, all accounts online and offline, trip histories and their periods, driver trip records as a PDF, cancelling a trip, driver approval, disconnect/reconnect, responsive layout and logout.');
   } finally {
     await browser?.close(); sockets.forEach(socket => socket.disconnect());
     site?.close(); if (siteDir) fs.rmSync(siteDir, { recursive: true, force: true });

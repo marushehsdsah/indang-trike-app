@@ -110,6 +110,28 @@ confirms and may type a reason. The trip ends at once (`POST
 the app with that reason (or "Cancelled by an IndangGO admin"), and the driver
 can take the next booking. Trip histories then list it as cancelled by the admin.
 
+## Downloading a driver's trip records
+
+A driver's account page (**Accounts**, then the driver) has **Download PDF**
+beside the period. It asks which trips to include, the last 7, 14 or 30 days,
+then saves a PDF (`indanggo-<name>-trips-last-<days>-days-<date>.pdf`) with:
+
+- the driver's name, mobile number, email, plate, TODA and status:
+  **Registered** (approved, or from before approval), **Pending** (waiting for
+  approval) or **Suspended**, with the date and reason;
+- their rating (overall, and from the trips in the period);
+- the period's total, completed and cancelled trips, and the fares earned from
+  completed trips;
+- each trip booked in the period: when, its ID, route, passenger, fare, status
+  and rating, newest first.
+
+The site makes the PDF itself (`web/god-view/src/driverReport.mjs`, drawn by
+`pdf.mjs`) from the same trip history the page reads
+(`GET /api/admin/accounts/<id>?days=<days>`), so the API needs no change.
+Times are in Philippine time. The PDF uses the fonts every PDF reader has,
+which have no peso sign, so fares read "PHP 45". It holds personal
+information, as its footer says: keep it private.
+
 ## Checks
 
 ```sh

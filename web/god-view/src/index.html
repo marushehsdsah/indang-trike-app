@@ -117,6 +117,7 @@
     <div id="history-view" hidden>
     <section class="page-heading history-heading"><div><a class="back-link" href="#accounts">← All accounts</a><div id="history-profile" class="history-profile"></div></div><div class="sync-panel"><span id="history-updated" class="small muted">Loading trips…</span><button id="history-refresh" class="quiet">Refresh now</button></div></section>
     <div class="period-bar">
+      <button id="history-download" class="report-button dismiss download-button" type="button" hidden>Download PDF</button>
       <label class="search-label" for="history-period">Show the trips booked in</label>
       <select id="history-period" autocomplete="off"><option value="0" selected>All time</option><option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30">Last 30 days</option></select>
     </div>
@@ -142,6 +143,23 @@
       <div class="people-footer"><span id="history-footnote">Times are when each trip was booked. Refreshes every 10 seconds.</span></div>
     </section>
     </div>
+
+    <!-- A driver's trip records as a PDF (driverReport.mjs): which days it covers. -->
+    <dialog id="report-dialog" class="report-dialog" aria-labelledby="report-title" aria-describedby="report-driver">
+      <form id="report-form">
+        <span class="eyebrow">TRIP RECORDS</span>
+        <h2 id="report-title">Download as PDF</h2>
+        <p id="report-driver" class="muted small"></p>
+        <fieldset class="report-periods"><legend>Which trips should it include?</legend>
+          <label><input type="radio" name="days" value="7" checked><span>Last 7 days</span></label>
+          <label><input type="radio" name="days" value="14"><span>Last 14 days</span></label>
+          <label><input type="radio" name="days" value="30"><span>Last 30 days</span></label>
+        </fieldset>
+        <p class="muted small">The PDF has the driver's name, mobile number, email, plate, TODA, status and rating, their total trips and fares earned, and each trip booked in that time.</p>
+        <p id="report-error" class="dialog-error" role="alert" hidden></p>
+        <div class="dialog-actions"><button id="report-cancel" class="report-button dismiss" type="button">Cancel</button><button id="report-download" class="report-button approve" type="submit">Download PDF</button></div>
+      </form>
+    </dialog>
   </main>
 </body>
 </html>
