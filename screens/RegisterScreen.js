@@ -15,6 +15,7 @@ import { SegmentedControl } from '../components/ui/Surfaces';
 import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
 import { useI18n } from '../i18n';
 import { successFeedback, warningFeedback } from '../utils/feedback';
+import { maskEmail } from '../utils/maskEmail';
 import { cleanLocalPhone, getApiBaseUrl, requestRegistrationCode, sanitizeName, submitRegistration, validateRegistration } from '../utils/registration';
 
 const API_BASE_URL = getApiBaseUrl({
@@ -118,7 +119,7 @@ export default function RegisterScreen({ navigation }) {
         keyboardShouldPersistTaps="handled"
       >
         {codeSentTo ? <>
-          <Text style={[TYPE.body, styles.subtitle]}>{t('register.codeSent', { email: codeSentTo })}</Text>
+          <Text style={[TYPE.body, styles.subtitle]}>{t('register.codeSent', { email: maskEmail(codeSentTo) })}</Text>
           <Field
             label={t('field.code')}
             icon="email-check-outline"

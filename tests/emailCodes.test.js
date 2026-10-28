@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createAuth, maskEmail } = require('../indang-trike-backend/auth');
+const { createAuth } = require('../indang-trike-backend/auth');
+const { maskEmail } = require('../utils/maskEmail');
 const { createBrevoMailer } = require('../indang-trike-backend/mailer');
 
 // Just enough of the User, Session, EmailCode and ResetCode models for auth.js, in memory.

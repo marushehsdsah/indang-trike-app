@@ -2,6 +2,7 @@ const { randomBytes, randomInt, createHash } = require('node:crypto');
 const bcrypt = require('bcryptjs');
 const { HttpError, requireValue, normalizePhilippinePhone, profileFields, publicUser } = require('./policy');
 const { suspensionOf, suspensionMessage } = require('../utils/reports');
+const { maskEmail } = require('../utils/maskEmail');
 
 const hashToken = (token) => createHash('sha256').update(token).digest('hex');
 const hashCode = (email, code) => createHash('sha256').update(`${email}:${code}`).digest('hex');
@@ -10,14 +11,6 @@ const hashCode = (email, code) => createHash('sha256').update(`${email}:${code}`
 const CODE_TTL_MS = 10 * 60 * 1000, CODE_RESEND_MS = 60 * 1000, CODE_ATTEMPTS = 5;
 const validPassword = (password) => typeof password === 'string' && password.length >= 8 && Buffer.byteLength(password) <= 72;
 const PASSWORD_RULE = 'Password must have at least 8 characters and at most 72 bytes.';
-
-// "romar06.rdc@gmail.com" -> "ro********c@gmail.com": enough for the owner to
-// recognise the address without showing it to whoever holds the phone.
-function maskEmail(email) {
-  const at = email.lastIndexOf('@'), local = email.slice(0, at);
-  const head = local.length > 4 ? 2 : 1, tail = local.length > 4 ? 1 : 0;
-  return local.slice(0, head) + '*'.repeat(Math.max(1, local.length - head - tail)) + local.slice(local.length - tail) + email.slice(at);
-}
 
 function createAuth(models, clock, { sendEmail } = {}) {
   const { User, Session, EmailCode, ResetCode, Blocked } = models;
