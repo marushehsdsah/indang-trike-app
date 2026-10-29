@@ -1048,7 +1048,7 @@ const fil = {
 
   'register.title': 'Gumawa ng account',
   'register.passenger': 'Pasahero',
-  'register.driver': 'Driver',
+  'register.driver': 'Drayber',
   'register.passengerPitch': 'Mag-book ng trike na may totoong driver sa Indang.',
   'register.driverPitch': 'Tumanggap ng request at gabayan ang mga pasahero sa bayan mo.',
   'register.terms': 'Sumasang-ayon ako sa Terms of Service at Privacy Policy.',
