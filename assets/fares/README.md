@@ -13,16 +13,20 @@ recomputes every booking's fare with its own clock; the app's quote is a preview
 
 How a trip is priced:
 
-- **Special** (the whole trike): the listed fare covers two passengers; each
-  further passenger is ₱15. No student/senior/PWD discount.
-- **Regular** (per passenger): only where TARIPA lists it, between the Bancod
-  puroks and the Poblacion or the CvSU gate. 20% off with a student, senior or
-  PWD ID (TARIPA's own column).
+- **Special** (the whole trike) is the only trip the app books: the listed
+  fare covers two passengers; each further passenger is ₱15. No
+  student/senior/PWD discount. TARIPA's regular per-passenger fares (Bancod)
+  stay in the data but are not offered.
 - Both stops in the Poblacion: ₱30 by day, ₱35 at night.
 - One stop in the Poblacion: the other stop's listed fare (from the Palengke
   table when the pickup is at the Palengke sub-terminal).
-- Neither stop in the Poblacion: the listed fare of the stop farther from the
-  town plaza.
+- Neither stop in the Poblacion: priced by the barangays the road route
+  crosses. Where the route comes nearest the town plaza, each stop whose leg
+  leaves its own barangay (or reaches the Poblacion) pays its listed fare, and
+  the fares are added together. A trip through the town from Alulod (₱35) to
+  Pulo (₱75) is ₱110; end to end of Indang, Mahabang Kahoy Balagbag (₱110) to
+  Calumpang Lejos (₱50) is ₱160. A trip within one barangay, or out along one
+  road (Alulod to Banaba), pays the farther stop's fare.
 - Night is 9:00 PM to 4:00 AM, Philippine time.
 - When a barangay has several listed areas (Alulod's Bukana, School, Dulo…),
   the stop's straight-line distance from the town plaza decides, not the

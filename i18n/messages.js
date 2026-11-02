@@ -45,6 +45,7 @@ export function fareSummary(t, details) {
   if (!details) return null;
   const night = details.night && details.type !== 'flat' ? ` · ${t('fare.night')}` : '';
   if (details.type === 'flat') return t('fare.summaryFlat');
+  // Regular trips are no longer booked; rides from before still show theirs.
   if (details.type === 'regular') {
     const full = details.passengers - details.discounted;
     const parts = [

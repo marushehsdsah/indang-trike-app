@@ -289,8 +289,8 @@ export function AppProvider({ children }) {
   const bookRide = useCallback(async (payload) => {
     const generation = sessionGeneration.current;
     try {
-      const { trip, passengers, note, idempotencyKey, fareType, discounted } = payload;
-      const result = noteCensored(await request('/rides', { trip, passengers, note, idempotencyKey, fareType, discounted }));
+      const { trip, passengers, note, idempotencyKey } = payload;
+      const result = noteCensored(await request('/rides', { trip, passengers, note, idempotencyKey, fareType: 'special' }));
       if (generation !== sessionGeneration.current) return;
       refreshSequence.current += 1;
       setRide((previous) => mergeRide(previous, result.ride)); await refresh(); return result.ride;

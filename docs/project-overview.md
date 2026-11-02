@@ -42,9 +42,9 @@ Everything below runs on the device with no network call.
   picking and frames the route when you finish.
 - Trip card: minutes, distance and the fare up front, riders, a note to the
   driver, and the yellow Book button. Indang fares follow the municipal taripa
-  (`assets/fares/README.md`): the rider chooses a special trip (whole trike) or,
-  on the Bancod routes, a regular per-passenger fare with the student/senior/PWD
-  discount; the server recomputes every fare.
+  (`assets/fares/README.md`): every booking is a special trip (whole trike),
+  and a trip that crosses into other barangays pays each one's listed fare,
+  added together; the server recomputes every fare on its own road route.
 - The backend computes the authoritative road route from the selected stops.
   Persisted booking state drives searching and active-ride screens.
 

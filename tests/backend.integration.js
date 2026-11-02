@@ -7,6 +7,8 @@ const { createBackend } = require('../indang-trike-backend/app');
 const { ADMIN_CANCELLATION } = require('../indang-trike-backend/admin');
 const { DEFAULT_TRIP } = require('../data/indangMap');
 const { quoteTrip } = require('../data/fares');
+const { getRoadGraph } = require('../data/roadNetwork');
+const { calculateRoute } = require('../utils/roadGraph');
 const { SEND_LIMIT, SEND_WINDOW_MS } = require('../indang-trike-backend/chat');
 const { MAX_MESSAGES_PER_RIDE, MESSAGE_RETENTION_DAYS } = require('../utils/chat');
 const bcrypt = createRequire(require.resolve('../indang-trike-backend/package.json'))('bcryptjs');
@@ -589,8 +591,10 @@ test('real passenger/driver flow persists exclusive assignment, authorized actio
   assert.equal((await action(driver, ride.id, 'complete')).body.ride.status, 'completed');
   const history = (await request('/history', passenger.token)).body.rides;
   assert.equal(history[0].status, 'completed');
-  // The taripa's special fare for the default trip, day or night by the server clock.
-  const fare = quoteTrip({ pickup: DEFAULT_TRIP.pickup.coordinate, dropoff: DEFAULT_TRIP.dropoff.coordinate, at: now }).special.fare;
+  // The taripa's special fare for the default trip on its road route, day or
+  // night by the server clock.
+  const { route } = calculateRoute(getRoadGraph().graph, DEFAULT_TRIP.pickup.coordinate, DEFAULT_TRIP.dropoff.coordinate);
+  const fare = quoteTrip({ pickup: DEFAULT_TRIP.pickup.coordinate, dropoff: DEFAULT_TRIP.dropoff.coordinate, route: route.coordinates, at: now }).special.fare;
   assert.equal(history[0].fare, fare);
   assert.deepEqual((await request('/stats', driver.token)).body, { trips: 1, totalFare: fare, todayTrips: 1, todayFare: fare });
   assert.equal((await state(driver)).ride, null);
@@ -809,13 +813,13 @@ test('an Indang booking is charged from the taripa by the server, not the app', 
     idempotencyKey: randomUUID(), fare: 1, ...extra });
   // Bancod's puroks have different fares; the stop's distance decides, and an
   // area the app names is ignored.
-  // TARIPA, Purok III from Indang by day: ₱17 regular, ₱14 with a student/senior/PWD ID.
+  // TARIPA, Purok III from Indang by day: ₱34 for two passengers, ₱15 for the third.
   now = Date.UTC(2026, 9, 2, 2, 0); // 10:00 AM in the Philippines
-  const regular = await book({ fareType: 'regular', discounted: 1, fareAreas: { dropoff: 'bancod-purok-1' } });
-  assert.equal(regular.status, 201, JSON.stringify(regular.body));
-  assert.equal(regular.body.ride.fare, 2 * 17 + 14, 'the fare the app sent is ignored');
-  assert.equal(regular.body.ride.fareDetails.type, 'regular');
-  assert.equal((await action(passenger, regular.body.ride.id, 'cancel')).status, 200);
+  const day = await book({ fareAreas: { dropoff: 'bancod-purok-1' } });
+  assert.equal(day.status, 201, JSON.stringify(day.body));
+  assert.equal(day.body.ride.fare, 34 + 15, 'the fare the app sent is ignored');
+  assert.equal(day.body.ride.fareDetails.type, 'special');
+  assert.equal((await action(passenger, day.body.ride.id, 'cancel')).status, 200);
   // A special trip at night: ₱39 for two passengers, ₱15 for the third.
   now = Date.UTC(2026, 9, 2, 14, 0); // 10:00 PM in the Philippines
   const special = await book({ fareType: 'special' });
@@ -823,11 +827,18 @@ test('an Indang booking is charged from the taripa by the server, not the app', 
   assert.equal(special.body.ride.fare, 39 + 15);
   assert.equal(special.body.ride.fareDetails.night, true);
   assert.equal((await action(passenger, special.body.ride.id, 'cancel')).status, 200);
-  // Regular fares exist only on the Bancod routes.
-  const alulod = { name: 'Alulod Elementary School', coordinate: { latitude: 14.20623, longitude: 120.88944 } };
-  const noRegular = await request('/rides', passenger.token, { trip: { pickup: plaza, dropoff: alulod }, passengers: 1, note: '',
-    idempotencyKey: randomUUID(), fareType: 'regular' });
+  // Every trip is a special trip: an older app asking for a regular one is refused.
+  const noRegular = await book({ fareType: 'regular', discounted: 1 });
   assert.equal(noRegular.status, 400);
+  // A trip through the town pays both barangays' fares: Alulod (₱35) and Pulo (₱75).
+  now = Date.UTC(2026, 9, 2, 2, 0);
+  const alulod = { name: 'Alulod Elementary School', coordinate: { latitude: 14.20623, longitude: 120.88944 } };
+  const pulo = { name: 'Pulo', coordinate: { latitude: 14.16990, longitude: 120.87269 } };
+  const across = await request('/rides', passenger.token, { trip: { pickup: alulod, dropoff: pulo }, passengers: 1, note: '',
+    idempotencyKey: randomUUID() });
+  assert.equal(across.status, 201, JSON.stringify(across.body));
+  assert.equal(across.body.ride.fare, 35 + 75);
+  assert.equal((await action(passenger, across.body.ride.id, 'cancel')).status, 200);
   now = Date.now();
 });
 

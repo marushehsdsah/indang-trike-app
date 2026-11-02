@@ -15,6 +15,8 @@ const CVSU = at(14.19782, 120.88149); // Kaytapos
 const ALULOD_NEAR = at(14.19503, 120.88874), ALULOD_MID = at(14.19616, 120.89526), ALULOD_FAR = at(14.21201, 120.89707);
 const BANCOD_PUROK_2 = at(14.2101, 120.87569), BANCOD_PUROK_3 = at(14.2186, 120.87265);
 const PULO = at(14.16990, 120.87269);
+// Near Indang's southern and northern tips.
+const MAHABANGKAHOY_LEJOS = at(14.124982, 120.925313), CALUMPANG_LEJOS = at(14.242597, 120.861345);
 const BUNA_CERCA_JUNCTION = at(14.18569, 120.88727);
 const OUTSIDE_INDANG = at(14.386264, 120.880802); // General Trias City Hall
 // 2026-10-02 in Philippine time (UTC+8).
@@ -62,34 +64,38 @@ test('from the Palengke sub-terminal its own table applies', () => {
   assert.equal(quoteTrip({ pickup: MARKET, dropoff: upland, at: DAY }).special.fare, 35);
 });
 
-test('Bancod has special and regular fares per purok (TARIPA), by distance', () => {
+test('Bancod has special fares per purok (TARIPA), by distance; regular trips are not offered', () => {
   const day = quoteTrip({ pickup: PLAZA, dropoff: BANCOD_PUROK_3, at: DAY });
   assert.equal(day.special.area.label, 'Bancod · Purok III');
   assert.equal(day.special.fare, 34);
-  assert.deepEqual([day.regular.price, day.regular.student], [17, 14]);
-  const night = quoteTrip({ pickup: PLAZA, dropoff: BANCOD_PUROK_3, at: NIGHT });
-  assert.equal(night.special.fare, 39);
-  assert.deepEqual([night.regular.price, night.regular.student], [19, 16]);
-  const fromCvsu = quoteTrip({ pickup: CVSU, dropoff: BANCOD_PUROK_2, at: DAY });
-  assert.equal(fromCvsu.special.fare, 30);
-  assert.deepEqual([fromCvsu.regular.price, fromCvsu.regular.student], [15, 12]);
-  // Only the Bancod routes have regular fares.
-  assert.equal(quoteTrip({ pickup: PLAZA, dropoff: ALULOD_MID, at: DAY }).regular, null);
+  assert.equal(day.regular, undefined);
+  assert.equal(quoteTrip({ pickup: PLAZA, dropoff: BANCOD_PUROK_3, at: NIGHT }).special.fare, 39);
+  assert.equal(quoteTrip({ pickup: CVSU, dropoff: BANCOD_PUROK_2, at: DAY }).special.fare, 30);
 });
 
-test('a special trip covers two passengers, then ₱15 each; regular is per passenger with the ID discount', () => {
+test('a special trip covers two passengers, then ₱15 each', () => {
   const quote = quoteTrip({ pickup: PLAZA, dropoff: BANCOD_PUROK_3, at: DAY });
-  assert.equal(fareTotal(quote, { type: 'special', passengers: 2 }), 34);
-  assert.equal(fareTotal(quote, { type: 'special', passengers: 4 }), 34 + 30);
-  assert.equal(fareTotal(quote, { type: 'regular', passengers: 3, discounted: 1 }), 2 * 17 + 14);
-  assert.deepEqual(fareDetails(quote, { type: 'regular', passengers: 3, discounted: 1 }),
-    { type: 'regular', night: false, total: 48, area: 'Bancod · Purok III', price: 17, student: 14, passengers: 3, discounted: 1 });
+  assert.equal(fareTotal(quote, { passengers: 2 }), 34);
+  assert.equal(fareTotal(quote, { passengers: 4 }), 34 + 30);
+  assert.deepEqual(fareDetails(quote, { passengers: 3 }),
+    { type: 'special', night: false, total: 49, area: 'Bancod · Purok III', origin: 'poblacion', base: 34, extraPassengers: 1, extraFare: 15 });
 });
 
-test('a trip between two barangays uses the farther stop\'s fare', () => {
+test('a trip through the town pays both barangays\' listed fares, added together', () => {
   const quote = quoteTrip({ pickup: ALULOD_SCHOOL, dropoff: PULO, at: DAY });
-  assert.equal(quote.special.fare, 75);
-  assert.equal(quote.special.area.id, 'pulo');
+  assert.equal(quote.special.fare, 35 + 75);
+  assert.equal(quote.special.area.label, 'Alulod · Bukana / Barangay Hall / Patilyo + Pulo');
+  // End to end of Indang: Mahabang Kahoy Balagbag (₱110) and Calumpang Lejos Dulo (₱50).
+  const across = quoteTrip({ pickup: MAHABANGKAHOY_LEJOS, dropoff: CALUMPANG_LEJOS, at: DAY });
+  assert.equal(across.special.fare, 110 + 50);
+  assert.equal(fareTotal(across, { passengers: 1 }), 160);
+});
+
+test('a trip within one barangay pays its farther stop\'s fare, unless its route goes through the town', () => {
+  assert.equal(quoteTrip({ pickup: ALULOD_FAR, dropoff: ALULOD_NEAR, at: DAY }).special.fare, 50);
+  // The road route decides: here it passes the plaza, so both legs pay.
+  const viaTown = quoteTrip({ pickup: ALULOD_FAR, dropoff: ALULOD_NEAR, route: [ALULOD_FAR, PLAZA, ALULOD_NEAR], at: DAY });
+  assert.equal(viaTown.special.fare, 50 + 35);
 });
 
 test('from the Buna Cerca junction to the Plaza is ₱25', () => {

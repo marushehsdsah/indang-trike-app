@@ -51,16 +51,14 @@ function publicUser(user) {
   };
 }
 // The fare is set here from the taripa (data/fares.js) and the server's own
-// clock; the app's quote is only a preview.
-function fareFields(body, trip, now) {
-  requireValue(body.fareType === undefined || ['special', 'regular'].includes(body.fareType), 400, 'Choose a special or regular trip.');
-  requireValue(body.discounted === undefined || (Number.isInteger(body.discounted) && body.discounted >= 0 && body.discounted <= body.passengers),
-    400, 'Choose how many passengers have a student, senior or PWD ID.');
-  // A barangay's area is set by the stop's distance from the town (data/fares.js).
-  const quote = quoteTrip({ pickup: trip.pickup.coordinate, dropoff: trip.dropoff.coordinate, at: now });
-  const type = body.fareType ?? 'special';
-  requireValue(type !== 'regular' || quote.regular || quote.flat !== null, 400, 'Regular fares are listed only for the Bancod routes; book a special trip.');
-  const details = fareDetails(quote, { type, passengers: body.passengers, discounted: body.discounted ?? 0 });
+// clock and the trip's road route; the app's quote is only a preview.
+function fareFields(body, trip, route, now) {
+  // Every booking is a special trip; regular (per-passenger) trips are not offered.
+  requireValue(body.fareType === undefined || body.fareType === 'special', 400, 'Only special trips can be booked. Update the app and try again.');
+  // A barangay's area is set by the stop's distance from the town, and each
+  // barangay the trip crosses into adds its listed fare (data/fares.js).
+  const quote = quoteTrip({ pickup: trip.pickup.coordinate, dropoff: trip.dropoff.coordinate, route: route.coordinates, at: now });
+  const details = fareDetails(quote, { passengers: body.passengers });
   requireValue(Number.isFinite(details.total), 400, 'This trip has no listed fare.');
   return { fare: details.total, fareDetails: details };
 }
@@ -81,7 +79,7 @@ function bookingFields(body, now = Date.now()) {
   requireValue(body.note === undefined || (typeof body.note === 'string' && body.note.length <= 200), 400, 'Pickup notes can have at most 200 characters.');
   const result = resolveBookingRoute({ roadGraph: getRoadGraph(), pickup: trip.pickup, destination: trip.dropoff, isInServiceArea: isInIndangServiceArea, getMunicipalityAt });
   requireValue(result.status === 'ok' && result.details.distanceMeters > 0, 400, 'No drivable route connects those stops.');
-  return { ...createBookingPayload({ trip, route: result.details, passengers: body.passengers, note: body.note }), ...fareFields(body, trip, now),
+  return { ...createBookingPayload({ trip, route: result.details, passengers: body.passengers, note: body.note }), ...fareFields(body, trip, result.details, now),
     idempotencyKey: body.idempotencyKey };
 }
 

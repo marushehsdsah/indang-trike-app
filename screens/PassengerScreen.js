@@ -112,11 +112,6 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
   const [passengers, setPassengers] = useState(1);
   const [note, setNote] = useState('');
   const [noteOpen, setNoteOpen] = useState(false);
-  // The fare: a special trip (whole trike) or a regular one (per passenger,
-  // where the taripa lists it), riders with a discount ID, and which listed
-  // area a stop is in when its barangay has several.
-  const [fareType, setFareType] = useState('special');
-  const [discounted, setDiscounted] = useState(0);
   // Day and night fares change at 9 PM and 4 AM, so the quote is redone each minute.
   const [fareClock, setFareClock] = useState(Date.now);
   const [notice, setNotice] = useState(null);
@@ -159,7 +154,6 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
     const timer = setInterval(() => setFareClock(Date.now()), 60000);
     return () => clearInterval(timer);
   }, [destination]);
-  useEffect(() => { setDiscounted((count) => Math.min(count, passengers)); }, [passengers]);
 
   // The GPS pickup moves with every fix; the route is searched again only
   // once it has moved 25 m, so standing still costs no searches.
@@ -193,11 +187,13 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
   // pickup chosen inside: no driver should wait for an absent rider.
   const blockedReason = !online ? t('trip.blockedOffline') : !connected || !config ? t('trip.blockedConnecting')
     : location.outsideServiceArea ? t('trip.blockedOutside') : null;
-  const quote = useMemo(() => (pickup && destination && routeState.canConfirm
-    ? quoteTrip({ pickup: routePickup, dropoff: destination.coordinate, at: fareClock }) : null),
-  [pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude, routeState.canConfirm, fareClock]);
-  const tripType = quote?.regular ? fareType : quote?.flat !== null && quote?.flat !== undefined ? 'flat' : 'special';
-  const total = quote ? fareTotal(quote, { type: tripType, passengers, discounted }) : null;
+  // Every trip is a special trip (the whole trike), priced by the barangays
+  // its road route crosses (data/fares.js).
+  const quote = useMemo(() => (pickup && destination && routeState.canConfirm && route
+    ? quoteTrip({ pickup: routePickup, dropoff: destination.coordinate, route: route.coordinates, at: fareClock }) : null),
+  [pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude, routeState.canConfirm, route, fareClock]);
+  const tripType = quote?.flat !== null && quote?.flat !== undefined ? 'flat' : 'special';
+  const total = quote ? fareTotal(quote, { passengers }) : null;
   const canBook = routeState.canConfirm && !blockedReason && total !== null;
   const fare = total !== null ? formatPeso(total) : null;
 
@@ -317,12 +313,11 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
     setSubmitting(true);
     if (!bookingKeyRef.current) bookingKeyRef.current = `booking-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     try {
-      await bookRide({ ...createPayload(), idempotencyKey: bookingKeyRef.current,
-        fareType: tripType === 'regular' ? 'regular' : 'special', discounted: tripType === 'regular' ? discounted : 0 });
+      await bookRide({ ...createPayload(), idempotencyKey: bookingKeyRef.current });
       // The booking is made: the next one is a new request with a new key.
       bookingKeyRef.current = null;
       followLocationRef.current = true;
-      setDestination(null); setNote(''); setPassengers(1); setNoteOpen(false); setFareType('special'); setDiscounted(0);
+      setDestination(null); setNote(''); setPassengers(1); setNoteOpen(false);
       navigation.navigate('Searching');
     } catch (failure) { Alert.alert(t('trip.unableToBook'), failure.message); }
     finally { setSubmitting(false); }
@@ -505,33 +500,20 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
                   <View style={styles.fareBox} accessibilityLiveRegion="polite">
                     {total !== null ? <Money amount={total} size={28} /> : <Text style={TYPE.metric}>—</Text>}
                     <Text style={TYPE.caption} numberOfLines={1}>
-                      {t(tripType === 'flat' ? 'trip.flatFare' : tripType === 'regular' ? 'fare.regularShort' : 'fare.specialShort')}
+                      {t(tripType === 'flat' ? 'trip.flatFare' : 'fare.specialShort')}
                       {quote?.night && tripType !== 'flat' ? ` · ${t('fare.night')}` : ''}
                     </Text>
                   </View>
                 </View>
-                {quote?.regular && (
-                  <SegmentedControl value={tripType} onChange={setFareType} style={styles.fareType} options={[
-                    { value: 'special', label: t('fare.special'), accessibilityLabel: t('fare.specialA11y') },
-                    { value: 'regular', label: t('fare.regular'), accessibilityLabel: t('fare.regularA11y') },
-                  ]} />
-                )}
                 <View style={styles.options}>
                   <Stepper value={passengers} onChange={setPassengers} min={MIN_PASSENGERS} max={MAX_PASSENGERS} icon="account"
                     label={t('trip.ridersLabel', { count: passengers })} fewerLabel={t('trip.fewerRiders')} moreLabel={t('trip.moreRiders')} />
                   <Chip tone="map" icon="message-reply-text-outline" label={note || t('trip.addNote')} onPress={() => setNoteOpen(true)}
                     accessibilityLabel={note ? t('trip.editNote', { note }) : t('trip.addNote')} style={styles.noteChip} />
                 </View>
-                {tripType === 'regular' && (
-                  <View style={styles.idRow}>
-                    <Text style={[TYPE.label, styles.flex]}>{t('fare.withId')}</Text>
-                    <Stepper value={discounted} onChange={setDiscounted} min={0} max={passengers} icon="card-account-details-outline"
-                      label={t('fare.withIdA11y', { count: discounted })} fewerLabel={t('fare.fewerId')} moreLabel={t('fare.moreId')} />
-                  </View>
-                )}
                 {tripType !== 'flat' && quote && (
                   <Text style={[TYPE.caption, styles.fareRule]}>
-                    {tripType === 'regular' ? t('fare.regularRule') : t('fare.specialRule', { extra: formatPeso(SPECIAL_RULES.extraPassenger) })}
+                    {t('fare.specialRule', { extra: formatPeso(SPECIAL_RULES.extraPassenger) })}
                     {' '}{t('fare.kidsFree')}
                   </Text>
                 )}
@@ -620,9 +602,6 @@ const styles = StyleSheet.create({
   stepperButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   stepperValue: { minWidth: 20, textAlign: 'center', marginLeft: 2 },
   noteChip: { flexShrink: 1 },
-  flex: { flex: 1 },
-  fareType: { marginTop: SPACE.md },
-  idRow: { flexDirection: 'row', alignItems: 'center', marginBottom: SPACE.md },
   fareRule: { marginBottom: SPACE.md },
   noteInput: {
     borderWidth: 1.5, borderColor: COLORS.lineStrong, borderRadius: RADIUS.lg,

@@ -966,6 +966,6 @@
     "The sheet does not say which Mahabang Kahoy places are in Cerca or Lejos, so riders in either barangay choose among all four.",
     "The Buna Cerca junction (pilahan) is placed at the Buna Cerca barangay hall; its table lists Buna Lejos without a fare, which is left out.",
     "Within the Poblacion proper, PCI-PTT Station, Green Valley Subdivision, and Tulay Binambangan count within 200 m of the points found on the map; Ilaya, Lintiw Road, Ramirez and Subdivision sa Palengke are inside Barangay 1 to 4 or could not be placed.",
-    "Other Indang trips (neither stop in the Poblacion) use the fare listed for whichever stop is farther from the town plaza (decision 2026-10-02)."
+    "Other Indang trips (neither stop in the Poblacion) are priced by the barangays the road route crosses: where the route comes nearest the town plaza, each stop whose leg leaves its own barangay (or reaches the Poblacion) pays its listed fare, added together; a trip within one barangay, or out along one road, pays the farther stop's fare (decisions 2026-10-02, 2026-11-02). Only special trips are booked in the app; the regular fares above are kept as source data (decision 2026-11-02)."
   ]
 }
