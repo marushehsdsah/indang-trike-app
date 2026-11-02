@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import Screen from '../components/ui/Screen';
 import AppHeader from '../components/ui/AppHeader';
 import Button from '../components/ui/Button';
@@ -37,7 +37,8 @@ export default function HistoryScreen({ navigation }) {
         : !loading && visible.length === 0 ? <EmptyState icon="history" title={t('history.emptyTitle')} message={t(driver ? 'history.emptyDriver' : 'history.emptyPassenger')} />
         : visible.map((ride) => {
           const completed = ride.status === 'completed';
-          return <Card key={ride.id} style={styles.card}>
+          return <Pressable key={ride.id} onPress={() => navigation.navigate('TripDetails', { ride })} accessibilityRole="button"
+            accessibilityHint={t('history.openA11y')} style={({ pressed }) => pressed && styles.pressed}><Card style={styles.card}>
             <View style={styles.row}>
               <Text style={[TYPE.caption, styles.flex]}>{new Date(ride.createdAt).toLocaleString(locale, { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</Text>
               <Text style={[TYPE.captionStrong, { color: completed ? COLORS.success : COLORS.danger }]}>{t(`ride.status.${ride.status}`)}</Text>
@@ -57,7 +58,7 @@ export default function HistoryScreen({ navigation }) {
             {driver && ride.reportable && <ReportPrompt ride={ride} onDone={reload} style={styles.ratingCard} />}
             {!driver && ride.ratable && rating === ride.id && !ride.myRating && <RatingPrompt ride={ride} asDriver={driver} style={styles.ratingCard}
               onSkip={() => setRating(null)} onRated={() => { setRating(null); reload(); }} />}
-          </Card>;
+          </Card></Pressable>;
         })}
     </KeyboardAwareScrollView>
     <BottomNav active="history" navigation={navigation} />
@@ -69,6 +70,7 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.xxl },
   flex: { flex: 1 },
   card: { marginTop: SPACE.md },
+  pressed: { opacity: 0.7 },
   row: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
   stops: { marginTop: SPACE.md },
   footer: { marginTop: SPACE.md, minHeight: 40 },

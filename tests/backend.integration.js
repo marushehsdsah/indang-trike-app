@@ -910,6 +910,7 @@ test('after a completed ride each side rates the other once, and the next trip s
   assert.deepEqual((await state(passenger)).user.rating, { average: null, count: 0 }, 'a report is not a rating');
   const history = (await request('/history', driver.token)).body.rides;
   assert.equal(history.find((entry) => entry.id === ride.id).myReport.reason, 'did_not_pay');
+  assert.equal(history.some((entry) => 'passenger' in entry), false, "a driver's history never names the passenger");
   assert.equal(await backend.models.Rating.countDocuments({ rideId: ride.id }), 1);
 
   // On the next booking the driver sees the passenger's average on the offer,

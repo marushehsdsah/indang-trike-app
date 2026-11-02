@@ -13,6 +13,7 @@ import SearchingScreen from '../screens/SearchingScreen';
 import ActiveRideScreen from '../screens/ActiveRideScreen'; 
 import NavigationScreen from '../screens/NavigationScreen';
 import HistoryScreen from '../screens/HistoryScreen';
+import TripDetailsScreen from '../screens/TripDetailsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import DriverScreen from '../screens/DriverScreen';
 import BookingsScreen from '../screens/BookingsScreen';
@@ -56,6 +57,7 @@ export default function AppNavigator() {
       <Stack.Screen name="ActiveRide" component={ActiveRideScreen} /> 
       <Stack.Screen name="Navigation" component={NavigationScreen} />
       <Stack.Screen name="History" component={HistoryScreen} />
+      <Stack.Screen name="TripDetails" component={TripDetailsScreen} />
       <Stack.Screen name="Profile" component={ProfileScreen} />
       </>}
     </Stack.Navigator>

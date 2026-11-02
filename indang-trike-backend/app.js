@@ -134,7 +134,13 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
     // The viewer's ratings for the whole list in one query.
     const given = await models.Rating.find({ rideId: { $in: rides.map((ride) => String(ride._id)) }, raterId: String(req.user._id) });
     const ratings = new Map(given.map((rating) => [rating.rideId, rating]));
-    res.json({ rides: await Promise.all(rides.map((ride) => dispatch.view(ride, req.user._id, false, ratings))) });
+    // A driver's past trips show only the trip, never who the passenger was.
+    const driver = req.user.role === 'driver';
+    res.json({ rides: await Promise.all(rides.map(async (ride) => {
+      const view = await dispatch.view(ride, req.user._id, false, ratings);
+      if (driver) delete view.passenger;
+      return view;
+    })) });
   });
   app.get('/api/stats', async (req, res) => {
     const identity = req.user.role === 'driver' ? { driverId: String(req.user._id) } : { passengerId: String(req.user._id) };
