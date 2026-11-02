@@ -19,6 +19,7 @@ import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n';
 import { fareSummary } from '../i18n/messages';
 import { RatingBadge } from '../components/RatingPrompt';
+import confirmLogOut from '../components/confirmLogOut';
 import useAccountHistory from '../hooks/useAccountHistory';
 import { ACTIVE_STATUSES, formatPeso, isFreshFix } from '../utils/rideState';
 import { getMunicipalityAt } from '../data/indangMap';
@@ -233,7 +234,7 @@ export default function DriverScreen({ navigation, route }) {
               </>}
               {active ? <Button label={t('driver.returnToTrip')} variant="brand" onPress={() => navigation.navigate('ActiveRide')} style={styles.mainAction} />
                 : pending ? <Button label={t('profile.logOut')} variant="outline" size="md" style={styles.mainAction}
-                  onPress={() => signOut().catch(() => Alert.alert(t('profile.loggedOutTitle'), t('profile.loggedOutMessage')))} />
+                  onPress={() => confirmLogOut(t, signOut, true)} />
                 : <View style={styles.homeActions}>
                   {user.available && !fresh && <Button label={t('common.retryGps')} variant="tonal" size="md" onPress={gps.retry} style={styles.flex} />}
                   <Button label={t(user.available ? 'driver.goOffline' : 'driver.goOnline')} variant={user.available ? 'outline' : 'brand'}

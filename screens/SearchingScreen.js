@@ -58,6 +58,8 @@ export default function SearchingScreen({ navigation }) {
     catch (failure) { Alert.alert(t('searching.unableToCancel'), failure.message); }
     finally { setBusy(false); }
   };
+  const confirmCancel = () => Alert.alert(t('searching.confirmTitle'), t('searching.confirmMessage'),
+    [{ text: t('searching.keepLooking'), style: 'cancel' }, { text: t('searching.cancel'), style: 'destructive', onPress: cancel }]);
   const searching = ride?.status === 'searching';
   const liveFix = gps.status === 'ready' ? gps.fix : null;
   const home = () => navigation.navigate('Home');
@@ -90,7 +92,7 @@ export default function SearchingScreen({ navigation }) {
         </View>
         {ride && <TripFacts ride={ride} style={styles.facts} />}
         {searching ? <View style={styles.actions}>
-          <Button label={t('searching.cancel')} variant="danger" size="md" disabled={!connected} loading={busy} onPress={cancel} style={styles.action} />
+          <Button label={t('searching.cancel')} variant="danger" size="md" disabled={!connected} loading={busy} onPress={confirmCancel} style={styles.action} />
         </View> : <View style={styles.actions}>
           <Button label={t('common.home')} variant="outline" size="md" onPress={() => { dismissRide(); home(); }} style={styles.action} />
           {ride?.status === 'no_driver' && <Button label={t('searching.bookAgain')} variant="hire" size="md" onPress={bookAgain} style={styles.action} />}

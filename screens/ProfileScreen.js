@@ -9,6 +9,7 @@ import KeyboardAwareScrollView from '../components/ui/KeyboardAwareScrollView';
 import { Avatar, Card, Money } from '../components/ui/Surfaces';
 import BottomNav from '../components/BottomNav';
 import ConnectionBanner from '../components/ConnectionBanner';
+import confirmLogOut from '../components/confirmLogOut';
 import OfflineMapCard from '../components/OfflineMapCard';
 import { RatingBadge } from '../components/RatingPrompt';
 import TodaPicker from '../components/TodaPicker';
@@ -41,7 +42,7 @@ export default function ProfileScreen({ navigation }) {
     } catch (failure) { Alert.alert(t('profile.unableToSave'), failure.message); }
     finally { setBusy(false); }
   };
-  const logOut = () => signOut().catch(() => Alert.alert(t('profile.loggedOutTitle'), t('profile.loggedOutMessage')));
+  const logOut = () => confirmLogOut(t, signOut, driver);
   return <Screen>
     <AppHeader title={t('profile.title')} />
     <KeyboardAwareScrollView style={styles.flex} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">

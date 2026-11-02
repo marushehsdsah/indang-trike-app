@@ -32,7 +32,7 @@ export default function ProfileScreen({ navigation }) {
     { icon: 'shield-checkmark-outline', label: 'Role', value: admin.role },
   ];
 
-  const handleLogout = () => {
+  const logOut = () => {
     if (!signOut) {
       navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
       return;
@@ -40,6 +40,10 @@ export default function ProfileScreen({ navigation }) {
     // The session is removed from this phone even when the server can't be told.
     signOut().catch(() => Alert.alert('Logged out on this phone', 'The server couldn’t be reached. Your session was removed from this phone.'));
   };
+  const handleLogout = () => Alert.alert('Log out?', 'You will need your phone number and password to log in again.', [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Log out', style: 'destructive', onPress: logOut },
+  ]);
 
   return (
     <View style={styles.screen}>
