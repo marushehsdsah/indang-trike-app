@@ -36,13 +36,26 @@ function profileFields(body, role, current) {
 // A driver who signed up gets no bookings until an admin approves them.
 const awaitingApproval = (user) => user?.role === 'driver' && user.approval === 'pending';
 const AWAITING_APPROVAL = 'Your driver account is waiting for admin approval.';
+// The profile picture's version, or null without one: the app adds it to the
+// photo's address, so a new picture is not hidden by the old one in a cache.
+const photoVersion = (user) => (user?.photoAt ? new Date(user.photoAt).getTime() : null);
+// A profile picture is a JPEG the app has already cut to a small square.
+const MAX_PHOTO_BYTES = 150 * 1024;
+function photoBytes(photo) {
+  const match = typeof photo === 'string' && /^data:image\/jpeg;base64,([A-Za-z0-9+/]+=*)$/.exec(photo);
+  requireValue(match, 400, 'Choose a photo for your profile picture.');
+  const bytes = Buffer.from(match[1], 'base64');
+  requireValue(bytes.length <= MAX_PHOTO_BYTES, 413, 'This photo is too large. Choose another one.');
+  requireValue(bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff, 400, 'Choose a photo for your profile picture.');
+  return bytes;
+}
 // A TODA saved under a former name ("ITODA PITODA") is shown by its current one.
 function publicUser(user) {
   if (!user) return null;
   return {
     id: String(user._id), phone: user.phone, firstName: user.firstName || '', lastName: user.lastName || '',
     email: user.email || '', role: user.role || 'passenger', plate: user.plate, toda: todaName(user.toda), capacity: user.capacity,
-    available: Boolean(user.available), createdAt: user.createdAt, rating: ratingSummary(user),
+    available: Boolean(user.available), createdAt: user.createdAt, rating: ratingSummary(user), photoAt: photoVersion(user),
     profileComplete: Boolean(user.firstName && user.lastName && user.email && (user.role !== 'driver' || (user.plate && user.toda && user.capacity))),
     ...(awaitingApproval(user) ? { pendingApproval: true } : {}),
     // Only the TODA tester may pick another TODA in the profile, and cancel a
@@ -83,4 +96,4 @@ function bookingFields(body, now = Date.now()) {
     idempotencyKey: body.idempotencyKey };
 }
 
-module.exports = { HttpError, requireValue, cleanText, profileFields, publicUser, bookingFields, normalizePhilippinePhone, awaitingApproval, AWAITING_APPROVAL };
+module.exports = { HttpError, requireValue, cleanText, profileFields, publicUser, bookingFields, normalizePhilippinePhone, awaitingApproval, AWAITING_APPROVAL, photoBytes, photoVersion };

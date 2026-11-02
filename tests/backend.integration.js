@@ -737,6 +737,38 @@ test('a driver stays online when the phone disconnects or loses GPS, and gets re
   assert.equal((await backend.models.User.findById(driver.user.id)).available, false);
 });
 
+test('a profile picture is shown to its owner and to the other person on a trip, and can be removed', async () => {
+  const passenger = await account(), driver = await account('driver'), stranger = await account();
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 7)]);
+  const photo = `data:image/jpeg;base64,${jpeg.toString('base64')}`;
+  const fetchPhoto = (viewer, owner) => fetch(`${base}/api/users/${owner.user.id}/photo`, { headers: { Authorization: `Bearer ${viewer.token}` } });
+
+  assert.equal((await request('/me/photo', passenger.token, { photo: 'data:image/png;base64,iVBORw0KGgo=' }, 'PUT')).status, 400);
+  const tooLarge = `data:image/jpeg;base64,${Buffer.concat([jpeg, Buffer.alloc(160 * 1024)]).toString('base64')}`;
+  assert.equal((await request('/me/photo', passenger.token, { photo: tooLarge }, 'PUT')).status, 413);
+  const saved = await request('/me/photo', passenger.token, { photo }, 'PUT');
+  assert.equal(saved.status, 200);
+  assert.ok(saved.body.user.photoAt);
+
+  const own = await fetchPhoto(passenger, passenger);
+  assert.equal(own.status, 200);
+  assert.equal(own.headers.get('content-type'), 'image/jpeg');
+  assert.deepEqual(Buffer.from(await own.arrayBuffer()), jpeg);
+  assert.equal((await fetchPhoto(stranger, passenger)).status, 404, 'a stranger cannot see it');
+
+  // The driver offered the booking sees it, along with its photoAt on the offer.
+  await online(driver);
+  const booked = await book(passenger);
+  const offer = (await state(driver)).offer;
+  assert.equal(offer.passenger.photoAt, saved.body.user.photoAt);
+  assert.equal((await fetchPhoto(driver, passenger)).status, 200);
+  await action(passenger, booked.body.ride.id, 'cancel');
+  await request('/driver/availability', driver.token, { available: false });
+
+  assert.equal((await request('/me/photo', passenger.token, { photo: null }, 'PUT')).body.user.photoAt, null);
+  assert.equal((await fetchPhoto(passenger, passenger)).status, 404);
+});
+
 test('GPS invalidation preserves an assigned ride but marks its last position unavailable', async () => {
   const passenger = await account(), driver = await account('driver');
   await online(driver);

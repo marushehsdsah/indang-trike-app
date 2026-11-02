@@ -6,7 +6,8 @@ import StatusPill from '../components/StatusPill';
 import ChatNotice from '../components/ChatNotice';
 import Screen from '../components/ui/Screen';
 import Button from '../components/ui/Button';
-import { Avatar, Card, Chip, Divider } from '../components/ui/Surfaces';
+import { Card, Chip, Divider } from '../components/ui/Surfaces';
+import UserAvatar from '../components/UserAvatar';
 import { MUNICIPALITIES, getMunicipalityAt } from '../data/indangMap';
 import { MAX_PASSENGERS } from '../utils/bookingRoute';
 import { tapFeedback } from '../utils/feedback';
@@ -14,7 +15,7 @@ import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n';
 import useAccountHistory from '../hooks/useAccountHistory';
 import useMapStatus from '../hooks/useMapStatus';
-import { ACTIVE_STATUSES, userName } from '../utils/rideState';
+import { ACTIVE_STATUSES } from '../utils/rideState';
 import { COLORS, ELEVATION, RADIUS, SPACE, TYPE } from '../theme';
 
 // Tapping one opens booking with the destination search already filled in, so
@@ -68,7 +69,7 @@ export default function HomeScreen({ navigation }) {
   return (
     <Screen>
       <View style={styles.header}>
-        <Avatar name={userName(user)} size={44} />
+        <UserAvatar person={user} size={44} />
         <View style={styles.headerText}>
           <Text style={TYPE.caption}>{t(greetingKey())}</Text>
           <Text style={TYPE.subheading} numberOfLines={1}>{user.firstName || user.phone}</Text>

@@ -28,6 +28,9 @@ function createModels(connection) {
     // driver an admin suspends is disabled, and terminatedAt says so.
     approval: { type: String, enum: ['pending', 'approved'] }, approvedAt: Date,
     terminatedAt: Date, terminationReason: String,
+    // The profile picture: a small square JPEG, loaded only when asked for
+    // (GET /api/users/:id/photo); photoAt changes with each new one.
+    photo: { type: Buffer, select: false }, photoAt: Date,
   }, { timestamps: true, bufferCommands: false });
   const sessionSchema = new Schema({
     tokenHash: { type: String, unique: true, required: true },

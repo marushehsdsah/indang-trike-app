@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Screen from '../components/ui/Screen';
 import AppHeader from '../components/ui/AppHeader';
 import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
 import KeyboardAwareScrollView from '../components/ui/KeyboardAwareScrollView';
-import { Avatar, Card, Money } from '../components/ui/Surfaces';
+import { Card, Money } from '../components/ui/Surfaces';
+import UserAvatar from '../components/UserAvatar';
+import pickProfilePhoto from '../components/pickProfilePhoto';
+import OptionSheet from '../components/OptionSheet';
 import BottomNav from '../components/BottomNav';
 import ConnectionBanner from '../components/ConnectionBanner';
 import confirmLogOut from '../components/confirmLogOut';
@@ -43,13 +46,40 @@ export default function ProfileScreen({ navigation }) {
     finally { setBusy(false); }
   };
   const logOut = () => confirmLogOut(t, signOut, driver);
+  // The profile picture: taken or picked, cut to a square, and sent to the server.
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const savePhoto = async (choose) => {
+    setPhotoBusy(true);
+    try {
+      const photo = await choose();
+      if (photo === undefined) return;
+      await request('/me/photo', { photo }, 'PUT');
+      await refresh();
+    } catch (failure) {
+      Alert.alert(t('profile.photoFailed'), failure.message === 'camera-denied' ? t('profile.cameraDenied') : failure.message);
+    } finally { setPhotoBusy(false); }
+  };
+  const [photoMenu, setPhotoMenu] = useState(false);
+  const pick = (camera) => savePhoto(async () => (await pickProfilePhoto({ camera })) ?? undefined);
+  const photoOptions = [
+    { label: t('profile.takePhoto'), icon: 'camera-outline', onPress: () => pick(true) },
+    { label: t('profile.choosePhoto'), icon: 'image-outline', onPress: () => pick(false) },
+    ...(user.photoAt ? [{ label: t('profile.removePhoto'), icon: 'delete-outline', danger: true, onPress: () => savePhoto(async () => null) }] : []),
+  ];
   return <Screen>
     <AppHeader title={t('profile.title')} />
     <KeyboardAwareScrollView style={styles.flex} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <ConnectionBanner />
       <Card>
         <View style={styles.row}>
-          <Avatar name={userName(user)} size={56} />
+          <Pressable onPress={() => setPhotoMenu(true)} accessibilityRole="button" accessibilityLabel={t('profile.photoTitle')} disabled={photoBusy}
+            style={({ pressed }) => pressed && styles.pressed}>
+            <UserAvatar person={user} size={64} />
+            <View style={styles.photoBadge}>
+              {photoBusy ? <ActivityIndicator size="small" color={COLORS.onBrand} />
+                : <MaterialCommunityIcons name="camera" size={14} color={COLORS.onBrand} />}
+            </View>
+          </Pressable>
           <View style={styles.flex}>
             <Text style={TYPE.heading} numberOfLines={1}>{userName(user)}</Text>
             <Text style={TYPE.caption}>{user.phone} · {t(driver ? 'profile.roleDriver' : 'profile.rolePassenger')}</Text>
@@ -110,11 +140,17 @@ export default function ProfileScreen({ navigation }) {
       <Button label={t('profile.logOut')} variant="danger" size="md" onPress={logOut} />
     </KeyboardAwareScrollView>
     <BottomNav active="profile" navigation={navigation} />
+    <OptionSheet visible={photoMenu} title={t('profile.photoTitle')} options={photoOptions} onClose={() => setPhotoMenu(false)} />
   </Screen>;
 }
 
 const styles = StyleSheet.create({
   rating: { marginTop: SPACE.xs },
+  pressed: { opacity: 0.7 },
+  photoBadge: {
+    position: 'absolute', right: -2, bottom: -2, width: 26, height: 26, borderRadius: 13,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.ink, borderWidth: 2, borderColor: COLORS.surface,
+  },
   flex: { flex: 1 },
   content: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.xxxl },
   row: { flexDirection: 'row', alignItems: 'center', gap: SPACE.md },

@@ -1,7 +1,8 @@
 import React from 'react';
 import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Avatar, Money } from './ui/Surfaces';
+import { Money } from './ui/Surfaces';
+import UserAvatar from './UserAvatar';
 import IconButton from './ui/IconButton';
 import TripStops from './TripStops';
 import { RatingBadge } from './RatingPrompt';
@@ -35,7 +36,7 @@ export function PersonRow({ person, subtitle, style, onChat, unread = 0 }) {
   const name = userName(person);
   return (
     <View style={[styles.person, style]}>
-      <Avatar name={userName(person)} size={44} />
+      <UserAvatar person={person} size={44} />
       <View style={styles.personText}>
         <View style={styles.nameRow}>
           <Text style={[TYPE.subheading, styles.name]} numberOfLines={1}>{userName(person)}</Text>

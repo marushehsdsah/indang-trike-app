@@ -1,5 +1,5 @@
-import React from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, ELEVATION, FONTS, HIT_SLOP, RADIUS, SPACE, TYPE } from '../../theme';
 import { selectionFeedback, tapFeedback } from '../../utils/feedback';
@@ -64,16 +64,22 @@ export function Chip({ label, selected = false, onPress, icon, tone = 'outline',
   );
 }
 
-export function Avatar({ name, size = 48, style }) {
+// A round profile picture (`source`), or the name's initials while it loads,
+// without one, or if it fails.
+export function Avatar({ name, size = 48, source, style }) {
+  const [failed, setFailed] = useState(null);
   const initials = (name ?? '')
     .split(' ')
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0].toUpperCase())
     .join('');
+  const showPhoto = source?.uri && failed !== source.uri;
   return (
     <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }, style]}>
-      {initials
+      {showPhoto ? <Image source={source} onError={() => setFailed(source.uri)} accessibilityIgnoresInvertColors
+        style={[StyleSheet.absoluteFill, { borderRadius: size / 2 }]} /> : null}
+      {showPhoto ? null : initials
         ? <Text style={{ fontFamily: FONTS.semibold, color: COLORS.onBrand, fontSize: Math.round(size * 0.4) }}>{initials}</Text>
         : <MaterialCommunityIcons name="account" size={size * 0.55} color={COLORS.onBrand} />}
     </View>
@@ -148,7 +154,7 @@ const styles = StyleSheet.create({
   chipIcon: { marginRight: SPACE.xs + 2 },
   chipTextSelected: { color: COLORS.brandDark },
 
-  avatar: { alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.brand },
+  avatar: { alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.brand, overflow: 'hidden' },
 
   empty: { alignItems: 'center', paddingVertical: SPACE.xxxl, paddingHorizontal: SPACE.xl },
   emptyTitle: { textAlign: 'center', marginTop: SPACE.md },

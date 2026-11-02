@@ -40,7 +40,15 @@
       ],
       "expo-secure-store",
       "@maplibre/maplibre-react-native",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow IndangGO to use a photo from your gallery as your profile picture.",
+          "cameraPermission": "Allow IndangGO to use the camera to take your profile picture.",
+          "microphonePermission": false
+        }
+      ]
     ],
     "extra": {
       "eas": {

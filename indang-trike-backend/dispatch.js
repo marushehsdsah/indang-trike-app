@@ -2,7 +2,7 @@ const { randomUUID } = require('node:crypto');
 const { ASSIGNED_STATUSES, GPS_MAX_AGE_MS, isFreshFix, rankDrivers, validateFix, nextRideStatus } = require('../utils/rideState');
 const { getMunicipalityAt } = require('../data/indangMap');
 const { findToda, todaCovers, todaName } = require('../data/todaZones');
-const { HttpError, requireValue, publicUser, bookingFields, cleanText, awaitingApproval, AWAITING_APPROVAL } = require('./policy');
+const { HttpError, requireValue, publicUser, bookingFields, cleanText, awaitingApproval, AWAITING_APPROVAL, photoVersion } = require('./policy');
 const { RATABLE_STATUSES, ratingSummary, validateRating } = require('../utils/rating');
 const { censorText } = require('../utils/profanity');
 const { REPORTABLE_STATUSES, validateReport } = require('../utils/reports');
@@ -35,7 +35,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     // Each side sees the other's average rating: the driver on the offer, the
     // passenger once a driver is assigned.
     const contact = (user, allowPhone) => user ? {
-      id: String(user._id), firstName: user.firstName || '', lastName: user.lastName || '', rating: ratingSummary(user),
+      id: String(user._id), firstName: user.firstName || '', lastName: user.lastName || '', rating: ratingSummary(user), photoAt: photoVersion(user),
       ...(allowPhone ? { phone: user.phone } : {}),
       ...(user.role === 'driver' ? { plate: user.plate, toda: todaName(user.toda), capacity: user.capacity } : {}),
     } : null;

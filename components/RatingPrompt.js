@@ -3,7 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Button from './ui/Button';
 import Field from './ui/Field';
-import { Avatar, Chip } from './ui/Surfaces';
+import { Chip } from './ui/Surfaces';
+import UserAvatar from './UserAvatar';
 import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n';
 import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
@@ -85,7 +86,7 @@ export default function RatingPrompt({ ride, asDriver, onSkip, onRated, style })
   return (
     <View style={[styles.card, style]}>
       <View style={styles.header}>
-        {person && <Avatar name={userName(person)} size={44} />}
+        {person && <UserAvatar person={person} size={44} />}
         <View style={styles.headerText}>
           <Text style={TYPE.subheading}>{t(`rating.title.${rateeRole}`)}</Text>
           <Text style={TYPE.caption}>{question}</Text>

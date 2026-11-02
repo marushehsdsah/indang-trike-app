@@ -5,7 +5,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import IconButton from './ui/IconButton';
-import { Avatar, Chip } from './ui/Surfaces';
+import { Chip } from './ui/Surfaces';
+import UserAvatar from './UserAvatar';
 import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n';
 import useKeyboardHeight from '../hooks/useKeyboardHeight';
@@ -112,7 +113,7 @@ export default function ChatSheet({ ride, person, asDriver, onClose }) {
             <View style={styles.handle} />
           </Pressable>
           <View style={styles.header}>
-            <Avatar name={name} size={40} />
+            <UserAvatar person={person} size={40} />
             <View style={styles.headerText}>
               <Text style={TYPE.subheading} numberOfLines={1}>{name}</Text>
               <Text style={TYPE.caption} numberOfLines={1}>{asDriver ? t('chat.yourPassenger') : [t('chat.yourDriver'), person.plate].filter(Boolean).join(' · ')}</Text>

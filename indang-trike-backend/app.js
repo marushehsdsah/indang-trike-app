@@ -9,7 +9,7 @@ const { createDispatch } = require('./dispatch');
 const { createAdmin } = require('./admin');
 const { createChat } = require('./chat');
 const { createBrevoMailer } = require('./mailer');
-const { requireValue, profileFields, publicUser } = require('./policy');
+const { requireValue, profileFields, publicUser, photoBytes } = require('./policy');
 const { SERVICE_AREA_NAME, INDANG_BOUNDARY_SHAPE } = require('../data/indangMap');
 const { FLAT_FARE } = require('../data/fares');
 const SERVICE_AREA_PLACES = require('../assets/places/service-area-places.json');
@@ -35,6 +35,8 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   // The God view website (web/god-view) is hosted separately and calls this
   // API cross-origin with a bearer token; CORS_ORIGIN can restrict callers.
   app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
+  // A profile picture is the one larger body (policy.js MAX_PHOTO_BYTES, in base64).
+  app.use('/api/me/photo', express.json({ limit: '256kb' }));
   app.use(express.json({ limit: '32kb' }));
   const attempts = new Map();
   app.use(['/api/register', '/api/login', '/api/password'], (req, res, next) => {
@@ -103,6 +105,29 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
       return models.User.findByIdAndUpdate(req.user._id, { $set: profileFields(req.body, req.user.role || 'passenger', req.user) }, { returnDocument: 'after', runValidators: true });
     });
     dispatch.notify(req.user._id); res.json({ user: publicUser(user) });
+  });
+  // Sets the profile picture, or removes it with { photo: null }.
+  app.put('/api/me/photo', async (req, res) => {
+    const update = req.body?.photo === null
+      ? { $unset: { photo: 1, photoAt: 1 } }
+      : { $set: { photo: photoBytes(req.body?.photo), photoAt: new Date(clock()) } };
+    const user = await models.User.findByIdAndUpdate(req.user._id, update, { returnDocument: 'after' });
+    dispatch.notify(req.user._id); res.json({ user: publicUser(user) });
+  });
+  // A profile picture is shown to its owner, to admins, and to the other person
+  // on a trip they share or a booking a driver can see; to no one else.
+  app.get('/api/users/:id/photo', async (req, res) => {
+    const id = req.params.id, me = String(req.user._id);
+    requireValue(/^[a-f0-9]{24}$/i.test(id), 404, 'No photo.');
+    const allowed = id === me || req.user.role === 'admin' || await models.Ride.exists({ $or: [
+      { passengerId: me, $or: [{ driverId: id }, { driverSlot: id }] },
+      { passengerId: id, $or: [{ driverId: me }, { driverSlot: me }] },
+      ...(req.user.role === 'driver' ? [{ passengerId: id, status: 'searching', active: true }] : []),
+    ] });
+    requireValue(allowed, 404, 'No photo.');
+    const user = await models.User.findById(id).select('+photo');
+    requireValue(user?.photo?.length, 404, 'No photo.');
+    res.set({ 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400' }).send(user.photo);
   });
   app.get('/api/state', async (req, res) => { await dispatch.tick(); res.json(await chat.addUnread(await dispatch.snapshot(req.user._id), req.user._id)); });
   app.post('/api/logout', async (req, res) => {
