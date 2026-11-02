@@ -79,6 +79,8 @@ export default function ActiveRideScreen({ navigation, route }) {
   const mapRef = useRef(null);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const driver = user.role === 'driver', home = driver ? 'Driver' : 'Home';
+  // Where a finished trip leads: the passenger back to booking, the driver to work.
+  const next = driver ? 'Driver' : 'Passenger';
   // This phone's own fixes carry its clock; the other side's come through the
   // server stamped on the server's clock.
   const serverNow = now + serverOffset;
@@ -164,7 +166,13 @@ export default function ActiveRideScreen({ navigation, route }) {
   // No countdown once the driver is waiting at the pickup.
   const eta = ride?.status === 'arrived' ? null : leg?.route?.durationLabel ?? null;
 
-  const finish = (screen) => { dismissRide(); navigation.navigate(screen); };
+  // Booking starts afresh, with Home behind it: the old booking, searching and
+  // ride screens close, even for a ride restored after the app restarted.
+  const finish = (screen) => {
+    dismissRide();
+    if (screen === 'Passenger') navigation.reset({ index: 1, routes: [{ name: 'Home' }, { name: 'Passenger' }] });
+    else navigation.navigate(screen);
+  };
   const person = driver ? ride?.passenger : ride?.driver;
 
   // The trip chat: opened from the person row, a new-message notice, or the
@@ -233,13 +241,15 @@ export default function ActiveRideScreen({ navigation, route }) {
           </View>}
           {/* Once a ride with a driver ends, completed or cancelled by anyone, the
               passenger rates the driver and the driver can report the passenger. */}
-          {!driver && ride?.ratable && !ratingSkipped && <RatingPrompt ride={ride} asDriver={false} onSkip={() => setRatingSkipped(true)} style={styles.rating} />}
+          {/* Once the rating is sent the trip is over: back to booking. */}
+          {!driver && ride?.ratable && !ratingSkipped && <RatingPrompt ride={ride} asDriver={false} onSkip={() => setRatingSkipped(true)}
+            onRated={() => finish(next)} style={styles.rating} />}
           {driver && <ReportPrompt ride={ride} style={styles.rating} />}
           {person && messageCount > 0 && <Button label={t('chat.viewMessages', { count: messageCount })} icon="chat-outline"
             variant="tonal" size="md" onPress={() => setChatVisible(true)} style={styles.messages} />}
           <View style={styles.actions}>
             <Button label={t('active.history')} variant="outline" size="md" onPress={() => finish('History')} style={styles.action} />
-            <Button label={t('common.done')} variant="brand" size="md" onPress={() => finish(home)} style={styles.action} />
+            <Button label={t('common.done')} variant="brand" size="md" onPress={() => finish(next)} style={styles.action} />
           </View>
         </KeyboardAwareScrollView> : <>
           <View style={styles.header}>
