@@ -234,7 +234,7 @@ export default function DriverScreen({ navigation, route }) {
               </>}
               {active ? <Button label={t('driver.returnToTrip')} variant="brand" onPress={() => navigation.navigate('ActiveRide')} style={styles.mainAction} />
                 : pending ? <Button label={t('profile.logOut')} variant="outline" size="md" style={styles.mainAction}
-                  onPress={() => confirmLogOut(t, signOut, true)} />
+                  onPress={() => confirmLogOut(t, signOut, false)} />
                 : <View style={styles.homeActions}>
                   {user.available && !fresh && <Button label={t('common.retryGps')} variant="tonal" size="md" onPress={gps.retry} style={styles.flex} />}
                   <Button label={t(user.available ? 'driver.goOffline' : 'driver.goOnline')} variant={user.available ? 'outline' : 'brand'}

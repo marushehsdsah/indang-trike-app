@@ -51,8 +51,12 @@ export default function SearchingScreen({ navigation }) {
     });
     return () => handler.remove();
   }, [navigation]);
+  // The confirmation can still be open when a driver accepts; the trip they
+  // took is then not cancelled from here.
+  const status = useRef(ride?.status);
+  status.current = ride?.status;
   const cancel = async () => {
-    if (busy || !ride) return;
+    if (busy || !ride || status.current !== 'searching') return;
     setBusy(true);
     try { await rideAction(ride.id, 'cancel', { reason: 'Passenger cancelled the request' }); }
     catch (failure) { Alert.alert(t('searching.unableToCancel'), failure.message); }

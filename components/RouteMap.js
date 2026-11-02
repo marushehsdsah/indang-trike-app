@@ -56,6 +56,10 @@ const RouteMap = forwardRef(function RouteMap({
 }, ref) {
   const cameraRef = useRef(null);
   const [mapReady, setMapReady] = useState(false);
+  // The map's size: a map that is laid out again (a small map in a scrolling
+  // screen, for one) frames the route again for its final size.
+  const [size, setSize] = useState('');
+  const handleLayout = useCallback(({ nativeEvent: { layout } }) => setSize(`${Math.round(layout.width)}x${Math.round(layout.height)}`), []);
   const latestRef = useRef(null);
   latestRef.current = { pickup, destination, route, currentLocation, topInset, bottomInset };
   const routeCoordinates = route?.coordinates?.length > 1 ? route.coordinates : null;
@@ -100,7 +104,7 @@ const RouteMap = forwardRef(function RouteMap({
     if (!mapReady || !autoFit) return undefined;
     const timer = setTimeout(fitCamera, CAMERA_SETTLE_MS);
     return () => clearTimeout(timer);
-  }, [mapReady, autoFit, fitTrigger, pickupKey, destinationKey, hasCurrentLocation, topInset, bottomInset, fitCamera]);
+  }, [mapReady, autoFit, fitTrigger, pickupKey, destinationKey, hasCurrentLocation, topInset, bottomInset, size, fitCamera]);
 
   useImperativeHandle(ref, () => ({ fit: fitCamera }), [fitCamera]);
 
@@ -112,7 +116,7 @@ const RouteMap = forwardRef(function RouteMap({
   }, [onMapPress]);
 
   return (
-    <View style={[styles.container, style]}>
+    <View style={[styles.container, style]} onLayout={handleLayout}>
       <Map
         style={StyleSheet.absoluteFill}
         androidView={ANDROID_VIEW}
