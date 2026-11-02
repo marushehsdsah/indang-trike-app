@@ -716,6 +716,27 @@ test('GPS invalidation immediately releases an offer and disables matching', asy
   await action(passenger, booked.body.ride.id, 'cancel');
 });
 
+test('a driver stays online when the phone disconnects or loses GPS, and gets requests again on reconnecting', async () => {
+  const passenger = await account(), driver = await account('driver');
+  const socket = await connect(driver.token);
+  assert.equal((await request('/driver/location', driver.token, fix())).status, 200);
+  assert.equal((await request('/driver/availability', driver.token, { available: true })).status, 200);
+  socket.disconnect();
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await request('/driver/location/unavailable', driver.token, { reason: 'stale' });
+  assert.equal((await state(driver)).user.available, true);
+  const booked = await book(passenger);
+  assert.equal((await state(driver)).offer, null, 'no request while the phone is away');
+  await connect(driver.token);
+  now += 1000;
+  assert.equal((await request('/driver/location', driver.token, fix())).status, 200);
+  assert.equal((await state(driver)).offer?.id, booked.body.ride.id);
+  await action(passenger, booked.body.ride.id, 'cancel');
+  // Logging out is going offline.
+  assert.equal((await request('/logout', driver.token, {})).status, 200);
+  assert.equal((await backend.models.User.findById(driver.user.id)).available, false);
+});
+
 test('GPS invalidation preserves an assigned ride but marks its last position unavailable', async () => {
   const passenger = await account(), driver = await account('driver');
   await online(driver);

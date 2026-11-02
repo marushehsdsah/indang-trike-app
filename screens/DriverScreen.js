@@ -49,8 +49,8 @@ function OfferCountdown({ offerId, seconds }) {
   );
 }
 
-export default function DriverScreen({ navigation }) {
-  const { user, ride, offer, setAvailable, rideAction, gps, connected, serverOffset, signOut } = useApp();
+export default function DriverScreen({ navigation, route }) {
+  const { user, ride, offer, setAvailable, rideAction, gps, connected, serverOffset, signOut, request, bookingsVersion } = useApp();
   const { t } = useI18n();
   const { stats } = useAccountHistory();
   const connection = useConnectionStatus();
@@ -60,6 +60,37 @@ export default function DriverScreen({ navigation }) {
   const [zoneOpen, setZoneOpen] = useState(false);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const active = ride && ACTIVE_STATUSES.includes(ride.status);
+  // A booking the driver opened from the Bookings list, shown here with its
+  // route until they take it or close it. A request offered to them comes first.
+  const [picked, setPicked] = useState(null);
+  const openedBooking = route?.params?.booking;
+  useEffect(() => {
+    if (!openedBooking) return;
+    setPicked(openedBooking);
+    navigation.setParams({ booking: undefined });
+  }, [openedBooking, navigation]);
+  useEffect(() => { if (active || !user.available) setPicked(null); }, [active, user.available]);
+  // When the bookings change, the open one is refreshed, or closed once another
+  // driver has it, it was cancelled, or its search ran out.
+  // The list is empty while the driver's own GPS or link is down, so it is only
+  // checked on a change while both are up, not as they come back.
+  const pickedId = picked?.id;
+  const listReady = connected && gps.status === 'ready' && isFreshFix(gps.fix, Date.now());
+  const listReadyRef = useRef(listReady);
+  listReadyRef.current = listReady;
+  useEffect(() => {
+    if (!pickedId || !listReadyRef.current) return undefined;
+    let current = true;
+    request('/driver/bookings').then(({ bookings }) => {
+      if (!current) return;
+      const latest = bookings.find((booking) => booking.id === pickedId);
+      setPicked((previous) => (previous?.id !== pickedId ? previous : latest ?? null));
+    }).catch(() => {});
+    return () => { current = false; };
+  }, [pickedId, bookingsVersion, request]);
+  const pickedExpiry = picked?.searchExpiresAt ? new Date(picked.searchExpiresAt).getTime() : null;
+  useEffect(() => { if (pickedExpiry && now + serverOffset >= pickedExpiry) setPicked(null); }, [pickedExpiry, now, serverOffset]);
+  const shown = offer ?? picked;
   // A driver who signed up waits for an admin to check them against their
   // TODA's list; until then they cannot go online. Approval updates `user`.
   const pending = Boolean(user.pendingApproval);
@@ -87,6 +118,13 @@ export default function DriverScreen({ navigation }) {
     await rideAction(offer.id, action, { offerId: offer.offerId });
     if (action === 'accept') navigation.navigate('ActiveRide');
   });
+  const take = async () => {
+    if (busy) return;
+    setBusy(true);
+    try { await rideAction(picked.id, 'claim'); setPicked(null); navigation.navigate('ActiveRide'); }
+    catch (failure) { setPicked(null); Alert.alert(t('bookings.unableToTake'), failure.message); }
+    finally { setBusy(false); }
+  };
 
   // The pill: connection first, then GPS, then where the driver is relative
   // to the areas their requests come from.
@@ -108,7 +146,7 @@ export default function DriverScreen({ navigation }) {
 
   return <BleedScreen>
     <View style={styles.mapArea}>
-      <RouteMap ref={mapRef} pickup={offer?.trip.pickup} destination={offer?.trip.dropoff} route={offer?.route}
+      <RouteMap ref={mapRef} pickup={shown?.trip.pickup} destination={shown?.trip.dropoff} route={shown?.route}
         currentLocation={fresh ? gps.fix : null} bottomInset={bottomHeight}>
         {todaZone && <TodaZoneLayer shape={todaZone} />}
         {/* MapLibre draws a marker into a bitmap on every layout and crashes on a
@@ -127,37 +165,42 @@ export default function DriverScreen({ navigation }) {
       </MapTop>
 
       <MapBottom edge={false} onHeight={setBottomHeight}
-        rail={fresh && !offer ? <IconButton icon="crosshairs-gps" label={t('map.recenter')} onPress={() => mapRef.current?.fit()} /> : null}>
-        {offer && !active ? (
+        rail={fresh && !shown ? <IconButton icon="crosshairs-gps" label={t('map.recenter')} onPress={() => mapRef.current?.fit()} /> : null}>
+        {shown && !active ? (
           <FloatingCard style={styles.offerCard}>
-            <OfferCountdown offerId={offer.offerId} seconds={seconds} />
+            {offer && <OfferCountdown offerId={offer.offerId} seconds={seconds} />}
             <View style={styles.offerBody}>
               <View style={styles.offerHeader} accessibilityLiveRegion="polite">
-                <Text style={[TYPE.heading, styles.flex]}>{t('driver.newRequest')}</Text>
-                <Text style={[TYPE.metric, styles.seconds]} accessibilityLabel={t('driver.secondsLeft', { seconds })}>{seconds}s</Text>
+                <Text style={[TYPE.heading, styles.flex]}>{t(offer ? 'driver.newRequest' : 'bookings.details')}</Text>
+                {offer && <Text style={[TYPE.metric, styles.seconds]} accessibilityLabel={t('driver.secondsLeft', { seconds })}>{seconds}s</Text>}
               </View>
               {/* The passenger's average, before the driver decides. */}
-              {offer.passenger && <View style={styles.offerRider}>
-                <Text style={[TYPE.bodyStrong, styles.flexShrink]} numberOfLines={1}>{offer.passenger.firstName || t('rating.your.passenger')}</Text>
-                <RatingBadge rating={offer.passenger.rating} />
+              {shown.passenger && <View style={styles.offerRider}>
+                <Text style={[TYPE.bodyStrong, styles.flexShrink]} numberOfLines={1}>{shown.passenger.firstName || t('rating.your.passenger')}</Text>
+                <RatingBadge rating={shown.passenger.rating} />
               </View>}
-              <TripStops pickup={offer.trip.pickup.name} dropoff={offer.trip.dropoff.name} lines={2} style={styles.offerStops} />
-              {offer.note ? <View style={styles.offerNote}>
+              <TripStops pickup={shown.trip.pickup.name} dropoff={shown.trip.dropoff.name} lines={2} style={styles.offerStops} />
+              {shown.note ? <View style={styles.offerNote}>
                 <MaterialCommunityIcons name="message-reply-text-outline" size={18} color={COLORS.inkSecondary} />
-                <Text style={[TYPE.body, styles.flex]}>{offer.note}</Text>
+                <Text style={[TYPE.body, styles.flex]}>{shown.note}</Text>
               </View> : null}
               <View style={styles.offerFacts}>
                 <Text style={[TYPE.caption, styles.flex]}>
-                  {[offer.route?.durationLabel, offer.route?.distanceLabel, t('trip.riders', { count: offer.passengers })].filter(Boolean).join(' · ')}
+                  {[shown.route?.durationLabel, shown.route?.distanceLabel, t('trip.riders', { count: shown.passengers })].filter(Boolean).join(' · ')}
                 </Text>
-                <Money amount={offer.fare} size={26} color={COLORS.brand} />
+                <Money amount={shown.fare} size={26} color={COLORS.brand} />
               </View>
-              {offer.fareDetails ? <Text style={[TYPE.caption, styles.offerFare]}>{fareSummary(t, offer.fareDetails)}</Text> : null}
-              <View style={styles.offerActions}>
+              {shown.fareDetails ? <Text style={[TYPE.caption, styles.offerFare]}>{fareSummary(t, shown.fareDetails)}</Text> : null}
+              {offer ? <View style={styles.offerActions}>
                 <Button label={t('driver.decline')} variant="outline" disabled={busy || !connected} onPress={() => respond('decline')} style={styles.decline} />
                 <Button label={t('driver.accept')} variant="hire" loading={busy} disabled={!connected || seconds === 0 || !fresh}
                   onPress={() => respond('accept')} style={styles.accept} />
               </View>
+                : <View style={styles.offerActions}>
+                  <Button label={t('common.back')} variant="outline" disabled={busy} onPress={() => setPicked(null)} style={styles.decline} />
+                  <Button label={t('bookings.take')} variant="hire" loading={busy} disabled={!connected || !fresh || !user.available}
+                    onPress={take} style={styles.accept} />
+                </View>}
             </View>
           </FloatingCard>
         ) : (

@@ -201,7 +201,6 @@ export function AppProvider({ children }) {
     const subscription = AppState.addEventListener('change', (state) => {
       const active = state === 'active'; setForeground(active);
       if (!active) {
-        if (current.current.user?.role === 'driver') request('/driver/availability', { available: false }).catch(() => {});
         socketRef.current?.disconnect(); setConnected(false);
       }
     });

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Screen from '../components/ui/Screen';
@@ -54,6 +54,10 @@ export default function BookingsScreen({ navigation }) {
     finally { setTaking(null); }
   };
 
+  // The Drive screen shows the booking on the map with its details, so a
+  // driver who missed the request can still look it over and take it there.
+  const open = (booking) => navigation.navigate('Driver', { booking });
+
   // Why the list cannot be used yet, if it cannot.
   const blocked = user.pendingApproval ? { icon: 'account-clock-outline', title: t('driver.pending'), message: t('bookings.pending'), action: t('bookings.toDrive'), onPress: () => navigation.navigate('Driver') }
     : active ? { icon: 'rickshaw', title: t('driver.onTrip'), message: t('bookings.onTrip'), action: t('driver.returnToTrip'), onPress: () => navigation.navigate('ActiveRide') }
@@ -75,7 +79,8 @@ export default function BookingsScreen({ navigation }) {
           <Button label={t('common.retry')} variant="brand" size="md" onPress={reload} />
         </View>
         : !loading && bookings.length === 0 ? <EmptyState icon="clipboard-text-search-outline" title={t('bookings.emptyTitle')} message={t('bookings.emptyMessage')} />
-        : bookings.map((booking) => <Card key={booking.id} style={styles.card}>
+        : bookings.map((booking) => <Pressable key={booking.id} onPress={() => open(booking)} accessibilityRole="button" accessibilityHint={t('bookings.openA11y')}
+          style={({ pressed }) => pressed && styles.pressed}><Card style={styles.card}>
           <View style={styles.row}>
             <Text style={[TYPE.bodyStrong, styles.shrink]} numberOfLines={1}>{booking.passenger?.firstName || t('rating.your.passenger')}</Text>
             {booking.passenger && <RatingBadge rating={booking.passenger.rating} />}
@@ -99,7 +104,7 @@ export default function BookingsScreen({ navigation }) {
             <Button label={t('bookings.take')} variant="hire" size="md" full={false} loading={taking === booking.id}
               disabled={Boolean(taking) || !connected} onPress={() => take(booking)} />
           </View>
-        </Card>)}
+        </Card></Pressable>)}
     </KeyboardAwareScrollView>
     <BottomNav active="bookings" navigation={navigation} />
   </Screen>;
@@ -110,6 +115,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   shrink: { flexShrink: 1 },
   card: { marginTop: SPACE.md },
+  pressed: { opacity: 0.7 },
   row: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
   away: { marginTop: SPACE.xs },
   stops: { marginTop: SPACE.md },

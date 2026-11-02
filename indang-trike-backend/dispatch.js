@@ -147,7 +147,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
         ride = await release(ride);
         if (!ride) continue;
       }
-      const [users, occupied] = await Promise.all([User.find({ role: 'driver', available: true }), Ride.find({ active: true, driverSlot: { $exists: true } }).select('driverSlot')]);
+      const [users, occupied] = await Promise.all([User.find({ role: 'driver', available: true, locationAvailable: true }), Ride.find({ active: true, driverSlot: { $exists: true } }).select('driverSlot')]);
       const slots = new Set(occupied.map((entry) => entry.driverSlot));
       const town = getMunicipalityAt(ride.trip.pickup.coordinate);
       const candidates = rankDrivers(users.filter((user) => inScope(user, ride) && !ride.attemptedDrivers.includes(String(user._id)))
@@ -343,16 +343,20 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     if (assigned) notifyRide(assigned);
     await tickUnsafe(); notify(user._id); return snapshot(user._id);
   }
-  async function disconnect(userId) {
+  // A driver stays online (available) until they go offline themselves: a
+  // phone that sleeps, loses signal or loses GPS only stops their position
+  // counting, and requests reach them again once the app sends a fresh fix.
+  // Logging out (`offline`) is going offline on purpose.
+  async function disconnect(userId, { offline = false } = {}) {
     if (connected(userId)) return;
-    await User.updateOne({ _id: userId, role: 'driver' }, { $set: { available: false, locationAvailable: false } });
+    await User.updateOne({ _id: userId, role: 'driver' }, { $set: { locationAvailable: false, ...(offline ? { available: false } : {}) } });
     const ride = await Ride.findOne({ driverId: String(userId), active: true });
     if (ride) notifyRide(ride);
     await tickUnsafe();
   }
   async function locationUnavailable(user) {
     requireValue(user.role === 'driver', 403, 'Driver account required.');
-    await User.updateOne({ _id: user._id }, { $set: { available: false, locationAvailable: false } });
+    await User.updateOne({ _id: user._id }, { $set: { locationAvailable: false } });
     const ride = await Ride.findOne({ driverId: String(user._id), active: true });
     if (ride) notifyRide(ride);
     await tickUnsafe(); notify(user._id); return { ok: true };

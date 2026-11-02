@@ -21,7 +21,8 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   // Drops the code collections' earlier cleanup index on expiresAt, which let a
   // server clock running behind the database's lose fresh codes.
   await Promise.all([models.EmailCode.syncIndexes(), models.ResetCode.syncIndexes()]);
-  await models.User.updateMany({ role: 'driver' }, { $set: { available: false, locationAvailable: false } });
+  // Drivers stay online across a restart; their positions count again once their apps reconnect.
+  await models.User.updateMany({ role: 'driver' }, { $set: { locationAvailable: false } });
   const app = express(), server = createServer(app);
   const io = new Server(server, { cors: { origin: process.env.CORS_ORIGIN || '*' }, maxHttpBufferSize: 20000 });
   const presence = new Map(), auth = createAuth(models, clock, { sendEmail });
@@ -107,7 +108,7 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   app.post('/api/logout', async (req, res) => {
     await models.Session.deleteOne({ _id: req.session._id });
     io.in(`session:${req.session._id}`).disconnectSockets(true);
-    await dispatch.run(() => dispatch.disconnect(req.user._id));
+    await dispatch.run(() => dispatch.disconnect(req.user._id, { offline: true }));
     res.json({ ok: true });
   });
   app.post('/api/driver/location', async (req, res) => res.json(await dispatch.run(() => dispatch.location(req.user, req.body))));
