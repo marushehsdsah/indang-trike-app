@@ -18,6 +18,10 @@ const CAMERA_SETTLE_MS = 150;
 const POINT_ZOOM = 14.5;
 const POINT_MS = 500;
 const INITIAL_VIEW = { bounds: INDANG_BOUNDS, padding: { top: 24, right: 24, bottom: 24, left: 24 } };
+// Android draws the map in a TextureView, inside the screen's own layer. The
+// default SurfaceView sits outside it, so the map of a screen still open
+// underneath (the booking map behind the ride or home screen) showed through.
+const ANDROID_VIEW = 'texture';
 
 // Changes when a stop is set, cleared, or replaced, but not when the
 // current-location pickup follows GPS, so live updates never move the camera.
@@ -111,6 +115,7 @@ const RouteMap = forwardRef(function RouteMap({
     <View style={[styles.container, style]}>
       <Map
         style={StyleSheet.absoluteFill}
+        androidView={ANDROID_VIEW}
         mapStyle={MAP_STYLE_URL}
         onDidFinishLoadingMap={handleMapReady}
         onPress={onMapPress ? handlePress : undefined}

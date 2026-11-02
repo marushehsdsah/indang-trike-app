@@ -335,6 +335,8 @@ function NavigationGuide({ navigation, trip, initialRoute }) {
       {DARK_STATUS_BAR}
       <Map
         style={StyleSheet.absoluteFill}
+        // A TextureView, like RouteMap's: a SurfaceView shows through the screens above it.
+        androidView="texture"
         mapStyle={NAVIGATION_STYLE_URL}
         onDidFinishLoadingMap={handleMapReady}
         onRegionWillChange={handleRegionWillChange}
