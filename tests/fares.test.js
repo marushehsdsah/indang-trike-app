@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { FARE_AREAS, FLAT_FARE, fareDetails, fareTotal, isNightAt, quoteTrip } = require('../data/fares');
+const { FARE_AREAS, FLAT_FARE, TARIPA_PRICES, fareDetails, farePrices, fareTotal, isNightAt, quoteTrip } = require('../data/fares');
 const { BARANGAY_NAMES, getBarangayAt } = require('../data/todaZones');
 
 // Fares from TODAs_coordinates (1).xlsx: sheet 2 (Municipal Ordinance No. 267
@@ -114,4 +114,72 @@ test('every Indang barangay outside the Poblacion has a listed fare', () => {
   assert.deepEqual(BARANGAY_NAMES.filter((name) => !priced.has(name) && !poblacion.includes(name)), []);
   assert.deepEqual([...priced].filter((name) => !BARANGAY_NAMES.includes(name)), []);
   assert.equal(getBarangayAt(PULO), 'Pulo');
+});
+
+// Fares an admin changed in God view (indang-trike-backend/fares.js), by key.
+test('every taripa amount has a key, and the prices in force fill in the taripa for any not changed', () => {
+  assert.equal(TARIPA_PRICES.flat, FLAT_FARE);
+  assert.equal(TARIPA_PRICES.extraPassenger, 15);
+  assert.deepEqual([TARIPA_PRICES['poblacion/day'], TARIPA_PRICES['poblacion/night']], [30, 35]);
+  assert.deepEqual([TARIPA_PRICES['bunaCerca/poblacion/day'], TARIPA_PRICES['bunaCerca/mahabangkahoy-cerca/night']], [25, 40]);
+  assert.equal(TARIPA_PRICES['area/alulod-school/special/palengke/day'], 45);
+  assert.equal(Object.keys(TARIPA_PRICES).some((key) => key.includes('/regular/')), false, 'regular trips are not offered, so they have no fares to change');
+  assert.ok(Object.isFrozen(TARIPA_PRICES));
+  const prices = farePrices({ 'poblacion/day': 32, flat: 0, extraPassenger: 'x', unknown: 9 });
+  assert.equal(prices['poblacion/day'], 32);
+  assert.equal(prices.flat, FLAT_FARE, 'a zero, a word or an unknown key leaves the taripa in force');
+  assert.equal(prices.extraPassenger, 15);
+  assert.equal('unknown' in prices, false);
+  assert.deepEqual(Object.keys(prices), Object.keys(TARIPA_PRICES));
+});
+
+test('a quote charges the fares changed in God view: special, Buna Cerca, flat and extra passengers', () => {
+  const prices = {
+    'poblacion/day': 32, 'area/bancod-purok-3/special/poblacion/night': 45, 'bunaCerca/poblacion/day': 28, flat: 50, extraPassenger: 20,
+  };
+  assert.equal(quoteTrip({ pickup: PLAZA, dropoff: MARKET, at: DAY, prices }).special.fare, 32);
+  assert.equal(quoteTrip({ pickup: PLAZA, dropoff: MARKET, at: NIGHT, prices }).special.fare, 35, 'the night fare was not changed');
+  const night = quoteTrip({ pickup: PLAZA, dropoff: BANCOD_PUROK_3, at: NIGHT, prices });
+  assert.equal(night.special.fare, 45);
+  assert.equal(fareTotal(night, { passengers: 4 }), 45 + 2 * 20);
+  assert.deepEqual(fareDetails(night, { passengers: 3 }).extraFare, 20);
+  assert.equal(quoteTrip({ pickup: PLAZA, dropoff: BANCOD_PUROK_3, at: DAY, prices }).special.fare, 34, 'the day fare was not changed');
+  assert.equal(quoteTrip({ pickup: BUNA_CERCA_JUNCTION, dropoff: PLAZA, at: DAY, prices }).special.fare, 28);
+  const outside = quoteTrip({ pickup: OUTSIDE_INDANG, dropoff: at(14.3852, 120.8806), at: DAY, prices });
+  assert.equal(fareTotal(outside, { passengers: 4 }), 50);
+  // Without prices, or with the taripa's, the quote is the taripa's.
+  assert.deepEqual(quoteTrip({ pickup: PLAZA, dropoff: BANCOD_PUROK_3, at: NIGHT, prices: farePrices() }), quoteTrip({ pickup: PLAZA, dropoff: BANCOD_PUROK_3, at: NIGHT }));
+  // A quote saved before extraPassenger existed still totals with the taripa's.
+  const { extraPassenger, ...older } = quoteTrip({ pickup: PLAZA, dropoff: BANCOD_PUROK_3, at: DAY });
+  assert.equal(extraPassenger, 15);
+  assert.equal(fareTotal(older, { passengers: 3 }), 34 + 15);
+});
+
+test('a trip through the town pays both barangays\' fares as changed in God view', () => {
+  const taripa = quoteTrip({ pickup: ALULOD_SCHOOL, dropoff: PULO, at: DAY });
+  assert.equal(taripa.special.legs.length, 2);
+  const prices = Object.fromEntries(taripa.special.legs.map((leg, index) => [`area/${leg.area.id}/special/${leg.origin}/day`, leg.fare + 5 * (index + 1)]));
+  const changed = quoteTrip({ pickup: ALULOD_SCHOOL, dropoff: PULO, at: DAY, prices });
+  assert.equal(changed.special.fare, 35 + 5 + 75 + 10);
+  assert.deepEqual(changed.special.legs.map((leg) => leg.area.id), taripa.special.legs.map((leg) => leg.area.id), 'a changed fare never moves a stop to another area');
+});
+
+test('changing a fare never moves a stop into another area of its barangay', () => {
+  // Alulod's bands follow the taripa (Bukana nearest the town): making
+  // Bukana the dearest does not price the far end as Bukana.
+  const prices = { 'area/alulod-bukana/special/poblacion/day': 90, 'area/alulod-bukana/special/poblacion/night': 95 };
+  const near = quoteTrip({ pickup: PLAZA, dropoff: ALULOD_NEAR, at: DAY, prices });
+  assert.equal(near.special.area.id, 'alulod-bukana');
+  assert.equal(near.special.fare, 90);
+  const far = quoteTrip({ pickup: PLAZA, dropoff: ALULOD_FAR, at: DAY, prices });
+  assert.equal(far.special.area.id, 'alulod-dulo');
+  assert.equal(far.special.fare, 50);
+  // Kaytapos's two areas cost the same from the Poblacion, so either stop is
+  // the CvSU area; once they differ, its far Upland side gets its own fare.
+  const upland = at(14.19339, 120.88396);
+  assert.equal(quoteTrip({ pickup: PLAZA, dropoff: upland, at: DAY }).special.area.id, 'kaytapos-cvsu');
+  const apart = quoteTrip({ pickup: PLAZA, dropoff: upland, at: DAY, prices: { 'area/kaytapos-upland/special/poblacion/day': 33 } });
+  assert.equal(apart.special.area.id, 'kaytapos-upland');
+  assert.equal(apart.special.fare, 33);
+  assert.equal(quoteTrip({ pickup: PLAZA, dropoff: CVSU, at: DAY, prices: { 'area/kaytapos-upland/special/poblacion/day': 33 } }).special.fare, 30);
 });

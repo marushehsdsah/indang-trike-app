@@ -22,7 +22,7 @@ import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n';
 import { placeName, routeMessage } from '../i18n/messages';
 import { ACTIVE_STATUSES, formatPeso } from '../utils/rideState';
-import { SPECIAL_RULES, fareTotal, quoteTrip } from '../data/fares';
+import { fareTotal, quoteTrip } from '../data/fares';
 import { getRoadGraph, getSearchablePlaces } from '../data/roadNetwork';
 import { MAX_PASSENGERS, MIN_PASSENGERS, createBookingPayload, getBookingState, resolveBookingRoute } from '../utils/bookingRoute';
 import { findNearestRoadNode, getRoadNameAtNode } from '../utils/roadGraph';
@@ -188,10 +188,12 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
   const blockedReason = !online ? t('trip.blockedOffline') : !connected || !config ? t('trip.blockedConnecting')
     : location.outsideServiceArea ? t('trip.blockedOutside') : null;
   // Every trip is a special trip (the whole trike), priced by the barangays
-  // its road route crosses (data/fares.js).
+  // its road route crosses (data/fares.js), with the fares the server sent (an
+  // admin can change them in God view); the server charges the same ones.
+  const farePrices = config?.fares?.prices ?? null;
   const quote = useMemo(() => (pickup && destination && routeState.canConfirm && route
-    ? quoteTrip({ pickup: routePickup, dropoff: destination.coordinate, route: route.coordinates, at: fareClock }) : null),
-  [pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude, routeState.canConfirm, route, fareClock]);
+    ? quoteTrip({ pickup: routePickup, dropoff: destination.coordinate, route: route.coordinates, at: fareClock, prices: farePrices }) : null),
+  [pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude, routeState.canConfirm, route, fareClock, farePrices]);
   const tripType = quote?.flat !== null && quote?.flat !== undefined ? 'flat' : 'special';
   const total = quote ? fareTotal(quote, { passengers }) : null;
   const canBook = routeState.canConfirm && !blockedReason && total !== null;
@@ -313,7 +315,9 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
     setSubmitting(true);
     if (!bookingKeyRef.current) bookingKeyRef.current = `booking-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     try {
-      await bookRide({ ...createPayload(), idempotencyKey: bookingKeyRef.current });
+      // fareRevision names the fares this quote used; the server refuses the
+      // booking if they changed since, and the app then shows the new fare.
+      await bookRide({ ...createPayload(), idempotencyKey: bookingKeyRef.current, fareRevision: config?.fares?.revision });
       // The booking is made: the next one is a new request with a new key.
       bookingKeyRef.current = null;
       followLocationRef.current = true;
@@ -513,7 +517,7 @@ export default function PassengerScreen({ navigation, route: screenRoute }) {
                 </View>
                 {tripType !== 'flat' && quote && (
                   <Text style={[TYPE.caption, styles.fareRule]}>
-                    {t('fare.specialRule', { extra: formatPeso(SPECIAL_RULES.extraPassenger) })}
+                    {t('fare.specialRule', { extra: formatPeso(quote.extraPassenger) })}
                     {' '}{t('fare.kidsFree')}
                   </Text>
                 )}

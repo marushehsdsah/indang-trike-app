@@ -63,20 +63,27 @@ function publicUser(user) {
     ...(user.role === 'driver' && user.todaTester ? { todaChoices: TODA_NAMES, tester: true } : {}),
   };
 }
-// The fare is set here from the taripa (data/fares.js) and the server's own
-// clock and the trip's road route; the app's quote is only a preview.
-function fareFields(body, trip, route, now) {
+// The fare is set here from the taripa (data/fares.js), with the fares set in
+// God view (`fares`: { prices, revision }, indang-trike-backend/fares.js), the
+// server's own clock and the trip's road route; the app's quote is only a
+// preview.
+const FARES_CHANGED = 'Fares were just updated. Check the new fare, then book again.';
+function fareFields(body, trip, route, now, fares) {
   // Every booking is a special trip; regular (per-passenger) trips are not offered.
   requireValue(body.fareType === undefined || body.fareType === 'special', 400, 'Only special trips can be booked. Update the app and try again.');
+  // The app names the fares it quoted with; a booking quoted with fares that
+  // have since changed is refused, so the passenger sees the new fare first.
+  // Older apps send none and are charged the fares in force.
+  requireValue(body.fareRevision === undefined || body.fareRevision === null || !fares || body.fareRevision === fares.revision, 409, FARES_CHANGED);
   // A barangay's area is set by the stop's distance from the town, and each
-  // barangay the trip crosses into adds its listed fare (data/fares.js).
-  const quote = quoteTrip({ pickup: trip.pickup.coordinate, dropoff: trip.dropoff.coordinate, route: route.coordinates, at: now });
+  // barangay the trip crosses into adds its fare (data/fares.js).
+  const quote = quoteTrip({ pickup: trip.pickup.coordinate, dropoff: trip.dropoff.coordinate, route: route.coordinates, at: now, prices: fares?.prices });
   const details = fareDetails(quote, { passengers: body.passengers });
   requireValue(Number.isFinite(details.total), 400, 'This trip has no listed fare.');
   return { fare: details.total, fareDetails: details };
 }
 
-function bookingFields(body, now = Date.now()) {
+function bookingFields(body, now = Date.now(), fares = null) {
   requireValue(typeof body.idempotencyKey === 'string' && /^[\w-]{10,100}$/.test(body.idempotencyKey), 400, 'A booking request key is required.');
   const trip = body.trip;
   requireValue(trip?.pickup?.coordinate && trip?.dropoff?.coordinate, 400, 'Choose pickup and destination.');
@@ -92,8 +99,8 @@ function bookingFields(body, now = Date.now()) {
   requireValue(body.note === undefined || (typeof body.note === 'string' && body.note.length <= 200), 400, 'Pickup notes can have at most 200 characters.');
   const result = resolveBookingRoute({ roadGraph: getRoadGraph(), pickup: trip.pickup, destination: trip.dropoff, isInServiceArea: isInIndangServiceArea, getMunicipalityAt });
   requireValue(result.status === 'ok' && result.details.distanceMeters > 0, 400, 'No drivable route connects those stops.');
-  return { ...createBookingPayload({ trip, route: result.details, passengers: body.passengers, note: body.note }), ...fareFields(body, trip, result.details, now),
+  return { ...createBookingPayload({ trip, route: result.details, passengers: body.passengers, note: body.note }), ...fareFields(body, trip, result.details, now, fares),
     idempotencyKey: body.idempotencyKey };
 }
 
-module.exports = { HttpError, requireValue, cleanText, profileFields, publicUser, bookingFields, normalizePhilippinePhone, awaitingApproval, AWAITING_APPROVAL, photoBytes, photoVersion };
+module.exports = { HttpError, requireValue, cleanText, profileFields, publicUser, bookingFields, normalizePhilippinePhone, awaitingApproval, AWAITING_APPROVAL, photoBytes, photoVersion, FARES_CHANGED };

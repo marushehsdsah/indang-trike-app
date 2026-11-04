@@ -108,6 +108,11 @@ test('the Accounts view lists every passenger and driver, online first, filtered
   assert.deepEqual(keys(filterAccounts(accounts, 'all', 'all', ' pitoda ')), ['d2']);
   assert.deepEqual(keys(filterAccounts(accounts, 'all', 'all', 'DI@EXAMPLE')), ['p2']);
   assert.deepEqual(filterAccounts(accounts, 'all', 'all', 'nobody'), []);
+  // An admin's own account shows unless the admin hides admin accounts.
+  const withAdmin = [...accounts, { key: 'a1', id: '09211234567', name: 'Ed Admin', email: '', role: 'PASSENGER', status: 'Online', admin: true }];
+  assert.deepEqual(keys(filterAccounts(withAdmin, 'all', 'online', '')), ['d1', 'p2', 'a1']);
+  assert.deepEqual(keys(filterAccounts(withAdmin, 'all', 'online', '', true)), ['d1', 'p2']);
+  assert.deepEqual(keys(filterAccounts(withAdmin, 'passenger', 'all', 'ed', true)), []);
   const counts = accountCounts(accounts);
   assert.deepEqual(counts, { all: { total: 4, driver: 2, passenger: 2 }, online: { total: 2, driver: 1, passenger: 1 }, offline: { total: 2, driver: 1, passenger: 1 } });
   assert.equal(roleCountLabel(counts.online), '1 driver · 1 passenger');
@@ -204,4 +209,83 @@ test("a driver's trip records PDF has their details, status, rating and totals, 
   assert.equal(driverStanding({}).label, 'Registered', 'drivers from before approval count as registered');
   assert.equal(pesos(45), 'PHP 45'); assert.equal(pesos(null), '—');
   assert.equal(reportFilename({ name: '***' }, 30, generatedAt), 'indanggo-driver-trips-last-30-days-2026-10-27.pdf');
+});
+
+// The Fares tab's sheet, as /api/admin/fares sends it (indang-trike-backend/fares.js).
+function fareSheet() {
+  const { FARE_GROUPS, FARE_TODAS, MIN_FARE, MAX_FARE } = require('../indang-trike-backend/fares');
+  const { TARIPA_PRICES, farePrices } = require('../data/fares');
+  return { prices: farePrices({ 'poblacion/day': 32 }), taripa: TARIPA_PRICES, limits: { min: MIN_FARE, max: MAX_FARE },
+    town: [{ key: 'extraPassenger', label: 'Each passenger past two', note: '' }, { key: 'flat', label: 'Flat fare', note: '' }], groups: FARE_GROUPS, todas: FARE_TODAS };
+}
+
+test('fares are typed as whole pesos within the limits', async () => {
+  const { parseFare } = await model();
+  const limits = { min: 1, max: 1000 };
+  assert.equal(parseFare('35', limits), 35);
+  assert.equal(parseFare(' 040 ', limits), 40);
+  for (const text of ['', '0', '1001', '35.5', '-5', '3e1', 'abc', '₱35', '12345', null]) assert.equal(parseFare(text, limits), null, String(text));
+});
+
+test('each TODA lists the fares of the barangays it serves, and a shared place says who else lists it', async () => {
+  const { todaGroups, sharedWith, sortTodas, groupKeys, fareLabels } = await model();
+  const sheet = fareSheet();
+  assert.deepEqual(todaGroups(sheet, 'bitoda').map(group => group.id), ['bancod-purok-1', 'bancod-purok-2', 'bancod-purok-3', 'bancod-purok-4', 'bancod-purok-5']);
+  assert.deepEqual(todaGroups(sheet, 'pitoda').map(group => group.id), ['poblacion'], 'the Poblacion TODA charges the Poblacion fare');
+  assert.equal(todaGroups(sheet, 'itoda').length, sheet.groups.length, 'ITODA serves every barangay');
+  assert.deepEqual(todaGroups(sheet, 'itoda', 'purok iii').map(group => group.id), ['bancod-purok-3', 'kaytambog-3']);
+  assert.deepEqual(todaGroups(sheet, 'itoda', 'guyam munti').map(group => group.id), ['guyam-pilipit'], 'searches barangays too');
+  assert.deepEqual(todaGroups(sheet, 'missing'), []);
+  assert.deepEqual(sharedWith(sheet, 'banaba-cerca', 'bcitoda'), ['ITODA']);
+  assert.equal(sortTodas(sheet.todas)[0].name, 'ALITODA');
+  const purok = sheet.groups.find(group => group.id === 'bancod-purok-3');
+  assert.equal(groupKeys(purok).length, 2 * 2, 'two origins, special day and night; regular trips are not offered');
+  assert.equal(sheet.groups.some(group => 'regular' in group), false);
+  const labels = fareLabels(sheet);
+  assert.equal(labels.get('area/bancod-purok-3/special/cvsu/night'), 'Bancod · Purok III, from the cvsu gate, at night');
+  assert.equal(labels.get('poblacion/day'), 'Within the Poblacion, anywhere in the poblacion, by day');
+  assert.equal(labels.get('flat'), 'Flat fare');
+  assert.equal(labels.size, Object.keys(sheet.prices).length, 'every fare has a name');
+});
+
+test('typed fares become changes from the amount on screen; wrong ones block saving', async () => {
+  const { fareChanges, keepDrafts } = await model();
+  const sheet = fareSheet();
+  const drafts = new Map([['poblacion/day', '35'], ['poblacion/night', '35'], ['flat', 'abc']]);
+  assert.deepEqual(fareChanges(sheet, drafts), { changes: [{ key: 'poblacion/day', from: 32, to: 35 }], invalid: ['flat'] });
+  // Fresh fares keep only what still differs from them.
+  const fresh = { ...sheet, prices: { ...sheet.prices, 'poblacion/day': 35 } };
+  assert.deepEqual([...keepDrafts(fresh, drafts).keys()], ['flat']);
+  assert.deepEqual([...keepDrafts(fresh, new Map([['gone', '5']])).keys()], [], 'a fare no longer listed is dropped');
+});
+
+test('the TODAs view shows ratings as "4.8 ★ (12)", lists other TODAs last, and searches and sorts a TODA\'s drivers', async () => {
+  const { OTHER_TODAS, driverCounts, driverTodas, starRating, todaDrivers } = await model();
+  assert.deepEqual(starRating({ average: 4.8, count: 12 }), { average: '4.8', count: 12, label: 'Rated 4.8 out of 5 from 12 ratings' });
+  assert.deepEqual(starRating({ average: 5, count: 1 }), { average: '5.0', count: 1, label: 'Rated 5.0 out of 5 from 1 rating' });
+  assert.equal(starRating({ average: null, count: 0 }), null, 'no rating before the first one');
+  assert.equal(starRating(undefined), null);
+
+  const driver = (key, name, fields = {}) => ({ key, id: `0917000000${key}`, name, plate: `P-${key}`, toda: 'BITODA', status: 'Offline', approval: 'Approved', rating: { average: null, count: 0 }, ...fields });
+  const drivers = [
+    driver('1', 'Ana Cruz', { status: 'Available', rating: { average: 4.5, count: 2 } }),
+    driver('2', 'Ben Reyes', { approval: 'Pending' }),
+    driver('3', 'Cy Lim', { status: 'Online', rating: { average: 4.5, count: 8 } }),
+    driver('4', 'Di Go', { approval: 'Suspended', rating: { average: 5, count: 1 } }),
+  ];
+  const sheet = { todas: [{ id: 'kitoda', name: 'KITODA', drivers: [] }, { id: 'bitoda', name: 'BITODA', drivers }], other: { drivers: [], rating: { average: null, count: 0 } } };
+  assert.deepEqual(driverTodas(sheet).map((toda) => toda.id), ['bitoda', 'kitoda'], 'no other TODAs without drivers');
+  const withOther = driverTodas({ ...sheet, other: { drivers: [driver('5', 'Ed Uy', { toda: 'Pilot TODA' })], rating: { average: null, count: 0 } } });
+  assert.deepEqual(withOther.map((toda) => [toda.id, toda.name, toda.drivers.length]), [['bitoda', 'BITODA', 4], ['kitoda', 'KITODA', 0], [OTHER_TODAS, 'Other TODAs', 1]]);
+  assert.deepEqual(driverTodas(null), []);
+
+  assert.deepEqual(driverCounts(drivers), { total: 4, online: 2, pending: 1, suspended: 1 });
+  const toda = sheet.todas[1], names = (list) => list.map((item) => item.name);
+  assert.deepEqual(names(todaDrivers(toda)), ['Ana Cruz', 'Ben Reyes', 'Cy Lim', 'Di Go']);
+  assert.deepEqual(names(todaDrivers(toda, '', 'rating')), ['Di Go', 'Cy Lim', 'Ana Cruz', 'Ben Reyes'], 'highest first, more ratings breaking a tie, unrated last');
+  assert.deepEqual(names(todaDrivers(toda, 'p-3')), ['Cy Lim'], 'by plate');
+  assert.deepEqual(names(todaDrivers(toda, '0917 000 0002')), ['Ben Reyes'], 'by mobile number, with spaces');
+  assert.deepEqual(names(todaDrivers(toda, 'REYES')), ['Ben Reyes']);
+  assert.deepEqual(todaDrivers(toda, 'nobody'), []);
+  assert.deepEqual(todaDrivers(null), []);
 });

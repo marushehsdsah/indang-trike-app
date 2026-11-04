@@ -14,9 +14,11 @@
   <script type="module" src="./app.mjs"></script>
 </head>
 <body>
+  <!-- The app's title mark: its rickshaw icon (Material Design Icons "rickshaw", as the app's login screen draws it). -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="rickshaw" viewBox="0 0 24 24"><path d="M20.02 14.06V12.75Q20.02 12 19.55 11.44L15.61 6.7Q15 6 14.06 6H3.98Q3.19 6 2.6 6.59Q2.02 7.17 2.02 8.02V15Q2.02 15.84 2.6 16.43Q3.19 17.02 3.98 17.02H4.03Q4.22 17.86 4.9 18.42Q5.58 18.98 6.49 18.98Q7.41 18.98 8.09 18.42Q8.77 17.86 8.95 17.02H17.06Q17.2 17.86 17.91 18.42Q18.61 18.98 19.5 18.98Q20.53 18.98 21.26 18.26Q21.98 17.53 21.98 16.5Q21.98 15.61 21.42 14.91Q20.86 14.2 20.02 14.06ZM3.52 8.02Q3.52 7.78 3.66 7.64Q3.8 7.5 3.98 7.5H6.98V12H3.52ZM6.52 17.48Q6.09 17.48 5.79 17.2Q5.48 16.92 5.48 16.5Q5.48 16.08 5.79 15.8Q6.09 15.52 6.49 15.52Q6.89 15.52 7.2 15.8Q7.5 16.08 7.5 16.5Q7.5 16.92 7.2 17.2Q6.89 17.48 6.52 17.48ZM12.98 15.52H9V14.02H11.02V12H9V7.5H12.98ZM15 8.34 18.05 12H15ZM19.5 17.48Q19.08 17.48 18.8 17.2Q18.52 16.92 18.52 16.5Q18.52 16.08 18.8 15.8Q19.08 15.52 19.5 15.52Q19.92 15.52 20.2 15.8Q20.48 16.08 20.48 16.5Q20.48 16.92 20.2 17.2Q19.92 17.48 19.5 17.48Z"/></symbol></svg>
   <main id="login" class="login-screen">
     <section class="login-story">
-      <a class="brand" href="./"><span class="brand-mark">iG</span>IndangGO <span class="brand-tag">PILOT OPERATIONS</span></a>
+      <a class="brand" href="./"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#rickshaw"/></svg></span><span class="brand-name">Indang<span class="brand-go">GO</span></span></a>
       <div class="story-copy"><span class="eyebrow">A clearer view of every journey</span><h1>Your city.<br>Your people.<br>One live view.</h1><p>See who's connected, where they are, and how your pilot is moving.</p><div class="story-area"><span class="pulse-dot"></span> Cavite pilot operations</div></div>
       <p class="story-foot">Built for the people keeping the pilot moving.</p>
     </section>
@@ -34,10 +36,10 @@
   </main>
 
   <main id="dashboard" class="dashboard" hidden>
-    <header class="topbar"><a class="brand" href="./"><span class="brand-mark">iG</span>IndangGO</a><span class="topbar-divider"></span><span class="workspace-name">God view</span><span class="pilot-tag">PILOT</span><div class="topbar-right"><span id="admin-name"></span><button id="sign-out" class="quiet light">Sign out</button></div></header>
-    <nav class="view-tabs" aria-label="God view"><a class="view-tab" href="#live" data-view="live" aria-current="page">Live map</a><a class="view-tab" href="#accounts" data-view="accounts">Accounts<span id="accounts-badge" class="tab-badge pending" hidden></span></a><a class="view-tab" href="#reports" data-view="reports">Reports<span id="reports-badge" class="tab-badge" hidden></span></a></nav>
+    <header class="topbar"><a class="brand" href="./"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#rickshaw"/></svg></span><span class="brand-name">Indang<span class="brand-go">GO</span></span></a><span class="topbar-divider"></span><span class="topbar-account"><span class="topbar-role">Administrator</span><span id="admin-name" class="admin-name"></span></span><div class="topbar-right"><button id="sign-out" class="quiet light">Sign out</button></div></header>
+    <nav class="view-tabs" aria-label="God view"><a class="view-tab" href="#live" data-view="live" aria-current="page">Live map</a><a class="view-tab" href="#accounts" data-view="accounts">Accounts<span id="accounts-badge" class="tab-badge pending" hidden></span></a><a class="view-tab" href="#todas" data-view="todas">TODAs</a><a class="view-tab" href="#reports" data-view="reports">Reports<span id="reports-badge" class="tab-badge" hidden></span></a><a class="view-tab" href="#fares" data-view="fares">Fares<span id="fares-badge" class="tab-badge pending" title="Unsaved fare changes" hidden></span></a></nav>
     <div id="live-view">
-    <section class="page-heading"><div><span class="eyebrow">PILOT OPERATIONS</span><h1>Live overview <span id="area-name" class="area-chip">Service area</span></h1><p class="muted">The people moving through your city, right now.</p></div><div class="sync-panel"><span id="connection-status" class="connection" role="status">Connecting</span><span id="last-updated" class="small muted">Waiting for the first update</span><button id="refresh" class="quiet">Refresh now</button></div></section>
+    <section class="page-heading"><div><h1>Live overview <span id="area-name" class="area-chip">Service area</span></h1><p class="muted">The people moving through your city, right now.</p></div><div class="sync-panel"><span id="connection-status" class="connection" role="status">Connecting</span><span id="last-updated" class="small muted">Waiting for the first update</span><button id="refresh" class="quiet">Refresh now</button></div></section>
     <section class="metrics" aria-label="Online user summary">
       <div class="metric"><span class="metric-label">People online</span><strong id="count-online">—</strong><span class="metric-note">Connected to the app</span></div>
       <div class="metric"><span class="metric-label"><i class="legend-dot driver"></i> Drivers</span><strong id="count-drivers">—</strong><span id="available-note" class="metric-note">Waiting for an update</span></div>
@@ -79,6 +81,7 @@
         <label class="search-label" for="account-search">Search accounts</label><input id="account-search" type="search" placeholder="Search a name, mobile number, email, plate or TODA…" autocomplete="off">
         <div id="account-types" class="filters" role="group" aria-label="Filter by account type"><button data-type="all" aria-pressed="true">Everyone</button><button data-type="driver" aria-pressed="false">Drivers</button><button data-type="passenger" aria-pressed="false">Passengers</button><button data-type="pending" aria-pressed="false">Pending approval</button></div>
         <div id="account-statuses" class="filters" role="group" aria-label="Filter by online or offline"><button data-status="all" aria-pressed="true">All</button><button data-status="online" aria-pressed="false">Online</button><button data-status="offline" aria-pressed="false">Offline</button></div>
+        <label class="hide-admins" for="hide-admins"><input id="hide-admins" type="checkbox"> Hide admin accounts</label>
         <span id="account-result-count" class="count-pill">0 shown</span>
       </div>
       <table id="accounts-table" class="accounts-table">
@@ -87,6 +90,29 @@
       </table>
       <div id="accounts-empty" class="empty-state"><span aria-hidden="true">◎</span><h3>Loading accounts</h3><p>Getting every driver and passenger account.</p></div>
       <div class="people-footer"><span id="accounts-footnote">Online means the app is open and connected. Refreshes every 10 seconds.</span></div>
+    </section>
+    </div>
+
+    <div id="todas-view" hidden>
+    <section class="page-heading"><div><span class="eyebrow">TODA DRIVERS</span><h1>TODAs</h1><p class="muted">Every TODA and the drivers who signed up under it, with their ratings from passengers.</p></div><div class="sync-panel"><span id="todas-updated" class="small muted">Loading drivers…</span><button id="todas-refresh" class="quiet">Refresh now</button></div></section>
+    <p id="todas-error" class="notice" role="alert" hidden></p>
+    <section class="fares-layout">
+      <nav class="toda-panel" aria-label="TODAs">
+        <div class="people-heading"><h2>TODAs</h2><span id="driver-toda-count" class="count-pill">0</span></div>
+        <div id="driver-toda-list" class="toda-list"></div>
+      </nav>
+      <section id="todas-panel" class="fares-panel" aria-labelledby="driver-toda-title">
+        <div class="accounts-toolbar fares-toolbar">
+          <div class="toda-heading"><h2 id="driver-toda-title" class="panel-title">Loading drivers…</h2><p id="driver-toda-serves" class="muted small"></p><div id="driver-toda-summary" class="toda-summary"></div></div>
+          <div class="driver-tools"><label class="search-label" for="driver-search">Search drivers</label><input id="driver-search" type="search" placeholder="Search a name, plate or mobile number…" autocomplete="off"><label class="search-label" for="driver-sort">Sort drivers</label><select id="driver-sort"><option value="name">By name</option><option value="rating">Highest rated first</option></select></div>
+        </div>
+        <table id="drivers-table" class="accounts-table drivers-table">
+          <thead><tr><th scope="col">Driver</th><th scope="col">Mobile number</th><th scope="col">Rating</th><th scope="col">Status</th></tr></thead>
+          <tbody id="driver-rows"></tbody>
+        </table>
+        <div id="drivers-empty" class="empty-state"><span aria-hidden="true">◎</span><h3>Loading drivers</h3><p>Getting every TODA's drivers.</p></div>
+        <div class="people-footer"><span>A rating is the average of the 1 to 5 stars passengers gave the driver after their trips; the number in brackets is how many ratings it is from. Online means the app is open. Refreshes every 15 seconds.</span></div>
+      </section>
     </section>
     </div>
 
@@ -142,6 +168,39 @@
       <div id="history-empty" class="empty-state"><span aria-hidden="true">◎</span><h3>Loading trips</h3><p>Getting every trip this account booked or drove.</p></div>
       <div class="people-footer"><span id="history-footnote">Times are when each trip was booked. Refreshes every 10 seconds.</span></div>
     </section>
+    </div>
+
+    <!-- Each TODA's fares (/api/admin/fares), which an admin changes when the fares change. -->
+    <div id="fares-view" hidden>
+    <section class="page-heading"><div><span class="eyebrow">TODA FARES</span><h1>Fares</h1><p class="muted">What each TODA charges. When the fares change, change them here: new bookings are charged the saved fares at once.</p><p id="fares-status" class="fares-status small muted"></p></div><div class="sync-panel"><span id="fares-updated" class="small muted">Loading fares…</span><button id="fares-refresh" class="quiet">Refresh now</button></div></section>
+    <p id="fares-error" class="notice" role="alert" hidden></p>
+    <p id="fares-note" class="notice success" role="status" hidden></p>
+    <section class="town-fares" aria-labelledby="town-fares-title">
+      <h2 id="town-fares-title" class="panel-title">Every TODA</h2>
+      <div id="town-fares" class="town-fare-list"></div>
+    </section>
+    <section class="fares-layout">
+      <nav class="toda-panel" aria-label="TODAs">
+        <div class="people-heading"><h2>TODAs</h2><span id="toda-count" class="count-pill">0</span></div>
+        <div id="toda-list" class="toda-list"></div>
+      </nav>
+      <section id="fares-panel" class="fares-panel" aria-labelledby="toda-title">
+        <div class="accounts-toolbar fares-toolbar">
+          <div class="toda-heading"><h2 id="toda-title" class="panel-title">Loading fares…</h2><p id="toda-serves" class="muted small"></p><p id="toda-stops" class="muted small" hidden></p></div>
+          <label class="search-label" for="fare-search">Search areas</label><input id="fare-search" type="search" placeholder="Search an area or barangay…" autocomplete="off">
+        </div>
+        <table id="special-table" class="fare-table">
+          <caption><strong>Special trips</strong> · the whole trike, per trip, for up to two passengers</caption>
+          <thead><tr><th scope="col">Area</th><th scope="col">Trip</th><th scope="col">Day</th><th scope="col">Night</th></tr></thead>
+        </table>
+        <div id="fares-empty" class="empty-state"><span aria-hidden="true">◎</span><h3>Loading fares</h3><p>Getting each TODA's fares.</p></div>
+        <div class="people-footer"><span>A fare belongs to a place, not to one TODA: changing it changes it under every TODA that lists it. Night is 9:00 PM to 4:00 AM. Trips already booked keep their fare.</span></div>
+      </section>
+    </section>
+    <div id="fare-savebar" class="fare-savebar" role="region" aria-label="Unsaved fare changes" hidden>
+      <div class="savebar-copy"><strong id="fare-change-count"></strong><span id="fare-problem" class="savebar-problem"></span></div>
+      <div class="savebar-actions"><button id="fare-discard" class="report-button dismiss" type="button">Discard</button><button id="fare-save" class="report-button approve" type="button">Save changes</button></div>
+    </div>
     </div>
 
     <!-- A driver's trip records as a PDF (driverReport.mjs): which days it covers. -->

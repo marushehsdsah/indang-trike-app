@@ -60,6 +60,7 @@ async function main() {
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await page.goto(`${siteUrl}/`);
     await page.screenshot({ path: '/tmp/indang-god-view-login.png', fullPage: true });
+    assert.equal(await page.locator('#login .brand').textContent(), 'IndangGO', 'the sign-in title is the wordmark alone');
     // Ordinary app credentials cannot open the admin dashboard.
     await page.locator('#phone').fill('09179999992');
     await page.locator('#password').fill('pilot-test-password');
@@ -70,6 +71,11 @@ async function main() {
     const mapData = page.waitForResponse((response) => response.url().endsWith('/api/admin/map'));
     await page.locator('#sign-in').click();
     await page.locator('#dashboard').waitFor({ state: 'visible' });
+    // The top bar names the role and the signed-in account.
+    assert.equal(await page.locator('.topbar-role').textContent(), 'Administrator');
+    assert.equal(await page.locator('#admin-name').textContent(), 'Admin Pilot');
+    assert.equal(await page.locator('.topbar').getByText('PILOT', { exact: true }).count(), 0, 'no pilot tag in the top bar');
+    assert.equal(await page.locator('#live-view').getByText('PILOT OPERATIONS').count(), 0, 'no pilot label on the live map');
     assert.equal((await (await mapData).json()).places.features.length, SERVICE_AREA_PLACES.features.length, 'establishments and landmarks reach the map');
     await page.waitForFunction(() => document.querySelector('#count-online').textContent === '3');
     await page.waitForFunction(() => document.querySelectorAll('.person-marker').length === 2);
@@ -98,6 +104,15 @@ async function main() {
     assert.equal(await page.locator('#account-count-offline').textContent(), '1');
     assert.equal(await page.locator('#account-rows tr').count(), 4);
     assert.equal(await page.locator('#account-rows img').count(), 0, 'account markup stays text');
+    // The admin's own account is marked Admin, and can be hidden.
+    await page.locator('#account-rows tr', { hasText: 'Admin Pilot' }).locator('.admin-tag').filter({ hasText: 'Admin' }).waitFor();
+    assert.equal(await page.locator('#account-rows .admin-tag').count(), 1);
+    await page.locator('#hide-admins').check();
+    assert.equal(await page.locator('#account-rows tr').count(), 3);
+    assert.equal(await page.locator('#account-rows').getByText('Admin Pilot').count(), 0);
+    assert.equal(await page.locator('#account-result-count').textContent(), '3 shown');
+    await page.locator('#hide-admins').uncheck();
+    assert.equal(await page.locator('#account-rows tr').count(), 4);
     await page.locator('#account-statuses [data-status=offline]').click();
     assert.equal(await page.locator('#account-rows tr').count(), 1);
     await page.locator('#account-rows').getByText('Admin Pilot', { exact: true }).waitFor();
@@ -110,6 +125,7 @@ async function main() {
     await page.reload();
     await page.locator('#account-rows tr').first().waitFor();
     assert.equal(await page.locator('.view-tab[aria-current=page]').textContent(), 'Accounts', 'a reload keeps the view');
+    await page.locator('#admin-name').filter({ hasText: 'Admin Pilot' }).waitFor();
     await page.locator('#account-search').fill('0917 999 9992');
     // An online account opens on the map, and the map fills its panel again.
     await page.locator('#account-rows').getByRole('button', { name: 'Show on map' }).click();
@@ -308,11 +324,144 @@ async function main() {
     await page.locator('#account-types [data-type=all]').click();
     await page.locator('#account-rows tr').first().waitFor();
     assert.equal(await page.locator('#account-rows').getByText('Cora Pilot').count(), 0);
+    // TODAs: every TODA lists the drivers who signed up under it, each with
+    // their average rating and how many ratings it is from.
+    await account('09179999996', 'driver', 'Dina');
+    await backend.models.User.updateOne({ phone: '+639179999996' }, { $set: { toda: 'bitoda', plate: 'BIT-202', ratingSum: 9, ratingCount: 2 } });
+    await page.locator('.view-tab[data-view=todas]').click();
+    await page.locator('#driver-toda-list .toda-row').first().waitFor();
+    assert.equal(await page.evaluate(() => location.hash), '#todas');
+    // The Indang TODAs by name, then the drivers whose TODA is none of them.
+    const todaIds = await page.locator('#driver-toda-list .toda-row').evaluateAll((rows) => rows.map((row) => row.dataset.toda));
+    assert.equal(todaIds.length, 17);
+    assert.deepEqual([todaIds[0], todaIds.at(-1)], ['alitoda', 'other']);
+    assert.equal(await page.locator('#driver-toda-count').textContent(), '16', 'Indang has 16 TODAs');
+    assert.equal(await page.locator('#driver-toda-title').textContent(), 'ALITODA');
+    await page.locator('#drivers-empty').getByText('No driver has signed up under ALITODA yet.').waitFor();
+    await page.locator('#driver-toda-list [data-toda=bitoda]').click();
+    await page.waitForFunction(() => document.querySelector('#driver-toda-title').textContent === 'BITODA');
+    assert.equal(await page.evaluate(() => location.hash), '#todas/bitoda');
+    assert.equal(await page.locator('#driver-toda-list [data-toda=bitoda] .toda-driver-count').textContent(), '1 driver');
+    assert.equal(await page.locator('#driver-rows tr').count(), 1);
+    const dina = page.locator('#driver-rows tr', { hasText: 'Dina Pilot' });
+    await dina.getByText('BIT-202', { exact: true }).waitFor();
+    assert.equal(await dina.locator('.driver-rating').textContent(), '4.5★(2)');
+    assert.equal(await dina.locator('.driver-rating').getAttribute('aria-label'), 'Rated 4.5 out of 5 from 2 ratings');
+    await dina.getByText('Offline', { exact: true }).waitFor();
+    await page.locator('#driver-toda-serves').getByText('Serves Bancod; also picks up at CvSU (Kaytapos).').waitFor();
+    await page.locator('#driver-toda-summary').getByText('1 driver', { exact: true }).waitFor();
+    assert.equal(await page.locator('#driver-toda-summary .driver-rating').textContent(), '4.5★(2)');
+    await page.screenshot({ path: '/tmp/indang-god-view-todas.png', fullPage: true });
+    // A driver whose TODA is not an Indang TODA is listed with the TODA they gave.
+    await page.locator('#driver-toda-list [data-toda=other]').click();
+    await page.waitForFunction(() => document.querySelector('#driver-toda-title').textContent === 'Other TODAs');
+    const alex = page.locator('#driver-rows tr', { hasText: 'Alex Pilot' });
+    await alex.getByText('TEST-101 · Test TODA', { exact: true }).waitFor();
+    await alex.getByText('Online', { exact: true }).waitFor();
+    assert.equal(await page.locator('#driver-toda-summary .driver-rating').count(), 0, 'no TODA rating for drivers of other TODAs');
+    await page.locator('#driver-search').fill('0917 999 9992');
+    assert.equal(await page.locator('#driver-rows tr').count(), 1);
+    await page.locator('#driver-search').fill('nobody');
+    await page.locator('#drivers-empty').getByText('No matching drivers').waitFor();
+    assert.equal(await page.locator('#drivers-table').isVisible(), false);
+    await page.locator('#driver-search').fill('');
+    // A driver's name opens their account; its back link returns to their TODA.
+    await page.locator('#driver-toda-list [data-toda=bitoda]').click();
+    await page.locator('#driver-rows').getByRole('link', { name: 'Dina Pilot' }).click();
+    await page.locator('#history-profile').getByText('Dina Pilot').first().waitFor();
+    assert.equal(await page.locator('.view-tab[aria-current=page]').textContent(), 'TODAs');
+    assert.equal(await page.locator('#history-view .back-link').textContent(), '← BITODA drivers');
+    await page.locator('#history-view .back-link').click();
+    await page.waitForFunction(() => document.querySelector('#driver-toda-title').textContent === 'BITODA');
+    assert.equal(await page.evaluate(() => location.hash), '#todas/bitoda');
+    // From Accounts, the back link still returns to Accounts.
+    await page.locator('.view-tab[data-view=accounts]').click();
+    await page.locator('#account-rows').getByRole('link', { name: 'Dina Pilot' }).click();
+    await page.locator('#history-profile').getByText('Dina Pilot').first().waitFor();
+    assert.equal(await page.locator('#history-view .back-link').textContent(), '← All accounts');
+    assert.equal(await page.locator('.view-tab[aria-current=page]').textContent(), 'Accounts');
+    // Fares: each TODA's fares. Changes wait until the admin saves and
+    // confirms; then new bookings are charged them.
+    const adminSession = await request('/login', { phone: '09179999991', password: 'pilot-test-password' });
+    const purok3Key = 'area/bancod-purok-3/special/poblacion/night';
+    await page.locator('.view-tab[data-view=fares]').click();
+    await page.locator('#toda-list .toda-row').first().waitFor();
+    assert.equal(await page.evaluate(() => location.hash), '#fares');
+    await page.waitForFunction(() => document.querySelector('#toda-title').textContent === 'ALITODA');
+    await page.locator('#toda-list [data-toda=bitoda]').click();
+    await page.waitForFunction(() => document.querySelector('#toda-title').textContent === 'BITODA');
+    assert.equal(await page.evaluate(() => location.hash), '#fares/bitoda');
+    assert.equal(await page.locator('#special-table tbody').count(), 5, "Bancod's five puroks");
+    assert.equal(await page.locator('#regular-table').count(), 0, 'regular trips are not offered, so they have no fares');
+    await page.locator('#toda-stops').filter({ hasText: 'Also picks up at CvSU (Kaytapos)' }).waitFor();
+    const purok3Night = page.locator(`#special-table [data-fare-key="${purok3Key}"]`);
+    assert.equal(await purok3Night.inputValue(), '39');
+    assert.equal(await purok3Night.getAttribute('aria-label'), 'Bancod · Purok III, from the poblacion, at night');
+    assert.equal(await page.locator('#fare-savebar').isVisible(), false);
+    await purok3Night.fill('45');
+    await page.locator('#fare-savebar').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#fares-badge').textContent(), '1');
+    assert.equal(await page.locator('[data-toda-changes=bitoda]').textContent(), '1 unsaved');
+    await page.locator(`#special-table [data-fare-key="${purok3Key}"]`).locator('xpath=ancestor::*[contains(@class,"fare-cell")]').filter({ hasText: 'Was ₱39' }).waitFor();
+    // A fare that is not whole pesos cannot be saved.
+    const extra = page.locator('#town-fares [data-fare-key=extraPassenger]');
+    await extra.fill('2O');
+    await page.locator('#fare-problem').filter({ hasText: 'whole pesos from ₱1 to ₱1,000' }).waitFor();
+    assert.equal(await page.locator('#fare-save').isDisabled(), true);
+    await extra.fill('20');
+    await page.locator('#fare-change-count').filter({ hasText: '2 unsaved fare changes' }).waitFor();
+    assert.equal(await page.locator('#fare-save').isDisabled(), false);
+    // Typed fares stay while another TODA is shown; ITODA lists the same Bancod fares.
+    await page.locator('#toda-list [data-toda=itoda]').click();
+    await page.waitForFunction(() => document.querySelector('#toda-title').textContent === 'ITODA');
+    assert.equal(await purok3Night.inputValue(), '45');
+    await page.locator('#fare-search').fill('purok iii');
+    assert.equal(await page.locator('#special-table tbody').count(), 2, 'Bancod and Kaytambog each have a Purok III');
+    await page.locator('#fare-search').fill('');
+    await page.screenshot({ path: '/tmp/indang-god-view-fares.png', fullPage: true });
+    // Nothing is saved until the admin confirms.
+    page.once('dialog', (dialog) => dialog.dismiss());
+    await page.locator('#fare-save').click();
+    assert.equal(await backend.models.FareSheet.countDocuments(), 0);
+    page.once('dialog', (dialog) => {
+      assert.match(dialog.message(), /^Save 2 fare changes\?/);
+      assert.match(dialog.message(), /Bancod · Purok III, from the poblacion, at night: ₱39 → ₱45/);
+      assert.match(dialog.message(), /Each passenger past two: ₱15 → ₱20/);
+      dialog.accept();
+    });
+    await page.locator('#fare-save').click();
+    await page.locator('#fares-note').filter({ hasText: 'Saved 2 fare changes. New bookings are charged the new fares.' }).waitFor();
+    assert.equal(await page.locator('#fare-savebar').isVisible(), false);
+    assert.equal(await page.locator('#fares-badge').isVisible(), false);
+    await page.locator('#fares-status').filter({ hasText: '2 fares differ from the municipal taripa' }).waitFor();
+    await page.locator('#fares-status').filter({ hasText: 'by Admin Pilot' }).waitFor();
+    const charged = await request('/config', null, passenger.token);
+    assert.equal(charged.fares.prices[purok3Key], 45);
+    assert.equal(charged.fares.prices.extraPassenger, 20);
+    // Another admin saves the same fare meanwhile: the page says so, keeps what
+    // was typed, and saves it only when asked again.
+    await purok3Night.fill('50');
+    await request('/admin/fares', { changes: [{ key: purok3Key, from: 45, to: 48 }] }, adminSession.token);
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.locator('#fare-save').click();
+    await page.locator('#fares-error').filter({ hasText: 'Another admin changed fares you are editing: Bancod · Purok III, from the poblacion, at night is now ₱48' }).waitFor();
+    assert.equal(await purok3Night.inputValue(), '50');
+    assert.equal((await request('/admin/fares', null, adminSession.token)).prices[purok3Key], 48, 'not overwritten unseen');
+    page.once('dialog', (dialog) => { assert.match(dialog.message(), /₱48 → ₱50/); dialog.accept(); });
+    await page.locator('#fare-save').click();
+    await page.locator('#fares-note').filter({ hasText: 'Saved 1 fare change.' }).waitFor();
+    assert.equal((await request('/admin/fares', null, adminSession.token)).prices[purok3Key], 50);
+    // Back to the taripa, for what follows.
+    await request('/admin/fares', { changes: [{ key: purok3Key, from: 50, to: 39 }, { key: 'extraPassenger', from: 20, to: 15 }] }, adminSession.token);
+    await page.locator('#fares-refresh').click();
+    await page.locator('#fares-status').filter({ hasText: 'Every fare matches the municipal taripa' }).waitFor();
+
     await page.locator('.view-tab[data-view=live]').click();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.locator('#fit-area').click();
     await page.waitForTimeout(800);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no horizontal overflow on phones');
+    assert.equal(await page.locator('#admin-name').isVisible(), true, 'phones show the account name too');
     await page.screenshot({ path: '/tmp/indang-god-view-mobile.png', fullPage: true });
     await page.locator('.view-tab[data-view=accounts]').click();
     await page.locator('#account-rows tr').first().waitFor();
@@ -322,15 +471,46 @@ async function main() {
     await page.locator('#history-rows tr').first().waitFor();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'trip histories fit phones too');
     await page.screenshot({ path: '/tmp/indang-god-view-history-mobile.png', fullPage: true });
+    await page.locator('.view-tab[data-view=todas]').click();
+    await page.locator('#driver-rows tr').first().waitFor();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'TODA drivers fit phones too');
+    await page.screenshot({ path: '/tmp/indang-god-view-todas-mobile.png', fullPage: true });
+    await page.locator('.view-tab[data-view=fares]').click();
+    await page.locator('#special-table tbody').first().waitFor();
+    await page.locator('#toda-list [data-toda=bitoda]').click();
+    await page.waitForFunction(() => document.querySelector('#toda-title').textContent === 'BITODA');
+    await page.locator('#special-table [data-fare-key$="/night"]').first().fill('41');
+    await page.locator('#fare-savebar').waitFor({ state: 'visible' });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'fares fit phones too');
+    await page.screenshot({ path: '/tmp/indang-god-view-fares-mobile.png', fullPage: true });
+    // Signing out with fares typed but not saved asks first.
+    page.once('dialog', (dialog) => { assert.match(dialog.message(), /^Sign out and discard 1 unsaved fare change\?/); dialog.dismiss(); });
+    await page.locator('#sign-out').click();
+    assert.equal(await page.locator('#dashboard').isVisible(), true);
+    page.once('dialog', (dialog) => dialog.accept());
     await page.locator('#sign-out').click();
     await page.locator('#login').waitFor({ state: 'visible' });
+    assert.equal(await backend.models.FareSheet.countDocuments({ 'prices.area/bancod-purok-1/special/poblacion/night': { $exists: true } }), 0, 'the unsaved fare was not saved');
+    // The next admin to sign in starts with no typed fares.
+    assert.equal(await page.locator('#fares-badge').isVisible(), false);
+    await page.locator('#phone').fill('09179999991');
+    await page.locator('#password').fill('pilot-test-password');
+    await page.locator('#sign-in').click();
+    await page.locator('#dashboard').waitFor({ state: 'visible' });
+    await page.locator('#special-table tbody').first().waitFor();
+    assert.equal(await page.locator('#fare-savebar').isVisible(), false);
+    assert.equal(await page.locator('#special-table [data-fare-key$="/night"]').first().inputValue(), '35');
+    await page.locator('#sign-out').click();
+    await page.locator('#login').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#admin-name').textContent(), '', 'signing out clears the name');
     assert.equal(await page.locator('.person-marker').count(), 0);
     assert.equal(await page.locator('.user-row').count(), 0);
     assert.equal(await page.locator('#account-rows tr').count(), 0);
+    assert.equal(await page.locator('#driver-rows tr').count(), 0);
     assert.equal(await page.locator('#history-rows tr').count(), 0);
     assert.equal(await page.evaluate(() => sessionStorage.getItem('indanggo.god-view.session')), null);
     assert.deepEqual(errors, []);
-    console.log('Browser checks passed: separate-origin site, full-size map, places layer, requested/to-passenger/trip lines, merged trip marker, access control, real GPS markers, missing/stale GPS, safe text, role/search filters, all accounts online and offline, trip histories and their periods, driver trip records as a PDF, cancelling a trip, driver approval, disconnect/reconnect, responsive layout and logout.');
+    console.log('Browser checks passed: separate-origin site, full-size map, places layer, requested/to-passenger/trip lines, merged trip marker, access control, real GPS markers, missing/stale GPS, safe text, role/search filters, all accounts online and offline, trip histories and their periods, driver trip records as a PDF, cancelling a trip, driver approval, TODA drivers and their ratings, changing TODA fares, disconnect/reconnect, responsive layout and logout.');
   } finally {
     await browser?.close(); sockets.forEach(socket => socket.disconnect());
     site?.close(); if (siteDir) fs.rmSync(siteDir, { recursive: true, force: true });

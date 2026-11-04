@@ -132,6 +132,50 @@ Times are in Philippine time. The PDF uses the fonts every PDF reader has,
 which have no peso sign, so fares read "PHP 45". It holds personal
 information, as its footer says: keep it private.
 
+## TODAs and their drivers
+
+The **TODAs** tab lists every Indang TODA, each with the drivers who signed up
+under it (`GET /api/admin/todas`): name, plate, mobile number, rating, and
+whether they are online, waiting for approval or suspended. A rating reads
+**4.8 ★ (12)**: the average of the 1 to 5 stars passengers gave the driver
+after their trips, and how many ratings that is. A TODA's rating is the same
+over all its drivers' ratings. Drivers whose TODA is not an Indang TODA are
+listed last, under **Other TODAs**, with the TODA they gave. Search by name,
+plate or mobile number, or sort the highest rated first. A driver's name opens
+their account and trips; its back link returns to their TODA.
+
+## Changing fares
+
+The **Fares** tab lists each TODA with the fares of the barangays it serves
+(ITODA, which serves every barangay, lists them all), plus the two amounts
+every TODA shares: what each passenger past two adds to a special trip, and
+the flat fare. Each fare is a special trip's (the whole trike, the only trip
+the app books) and has a day and a night amount. Fares start as the municipal
+taripa (`assets/fares/indang-fares.json`); its regular per-passenger fares are
+not offered, so they are not listed.
+
+To change fares, type the new amounts (whole pesos, ₱1 to ₱1,000), then
+**Save changes** and confirm. Typed fares are highlighted and kept while you
+look at other TODAs; **Discard** drops them. A fare that differs from the
+taripa shows the taripa's amount beside it, and typing the taripa's amount
+back restores it.
+
+- A fare belongs to a place, not to a TODA: a barangay two TODAs serve has one
+  set of fares, so changing it there changes it under both (the area says
+  which other TODAs list it).
+- New bookings are charged the saved fares at once (`GET`/`POST
+  /api/admin/fares`). Trips already booked keep their fare.
+- Phones with the updated app fetch the new fares within about 15 seconds, so
+  the fare shown before booking is the one charged; a booking quoted with old
+  fares is refused with "Fares were just updated", and the app then shows the
+  new fare. Older app builds are still charged the new fares and see them on
+  the trip, but show the taripa's amount before booking until they update.
+- If another admin saved a fare you are typing, the page says so and keeps your
+  amount; save again to replace theirs.
+
+Only amounts change here. The areas, their barangays, the night hours and the
+pricing rules come from the taripa file.
+
 ## Checks
 
 ```sh

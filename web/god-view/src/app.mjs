@@ -1,5 +1,7 @@
 import { API_BASE_URL } from './config.mjs';
-import { DRIVER_ACTIONS, REPORT_PERIODS, accountCounts, accountRole, cancellationLabel, filterAccounts, filterTrips, filterUsers, formatDistance, formatFare, formatPhone, isLive, isOnline, locationLabel, mapPeople, ratingLabel, roleCountLabel, routeSummary, languageWarningLabel, safetyReportLabel, sortAccounts, statusLabel, snapshotTiming, tripOf } from './model.mjs';
+import { DRIVER_ACTIONS, REPORT_PERIODS, accountCounts, accountRole, cancellationLabel, filterAccounts, filterTrips, filterUsers, formatDistance, formatFare, formatPhone, isLive, isOnline, locationLabel, mapPeople, ratingLabel, roleCountLabel, routeSummary, languageWarningLabel, safetyReportLabel, sortAccounts, statusLabel, snapshotTiming, tripOf,
+  SPECIAL_CELLS, fareChanges, fareLabels, groupKeys, keepDrafts, parseFare, sharedWith, sortTodas, todaGroups,
+  OTHER_TODAS, driverCounts, driverTodas, starRating, todaDrivers } from './model.mjs';
 
 const $ = id => document.getElementById(id);
 const tokenKey = 'indanggo.god-view.session';
@@ -19,6 +21,14 @@ let deciding = null, cancelling = null, decisions = 0;
 let downloading = false;
 // The Reports view (#reports): drivers' reports about passengers.
 let reports = null, reportsUpdated = 0, reportsTimer, reportsPending = false, reportFilter = 'pending', reviewing = null;
+// The Fares view (#fares, or #fares/<TODA id>): each TODA's fares, the TODA
+// shown, and the fares typed but not saved yet (fare key → text), which stay
+// while the admin looks at other TODAs or views.
+let fares = null, fareNames = new Map(), faresUpdated = 0, faresPending = false, faresSaving = false, fareToda = null, fareDrafts = new Map();
+// The TODAs view (#todas, or #todas/<TODA id>): every TODA's drivers and the
+// TODA shown. historyFrom: the list a trip history was opened from (accounts
+// or todas), which its back link and the tabs return to.
+let todaSheet = null, todaUpdated = 0, todaTimer, todaPending = false, driverToda = null, historyFrom = 'accounts';
 const now = () => Date.now() + serverOffset;
 const visibleUsers = () => filterUsers(snapshot?.users || [], role, $('search').value);
 const routeFor = (user) => user && (snapshot?.routes || []).find(route => route.driverId === user.id || route.passengerId === user.id);
@@ -27,6 +37,8 @@ const visibleRoutes = (users) => { const ids = new Set(users.map(user => user.id
 const text = (tag, value, className = '') => { const node = document.createElement(tag); node.textContent = value; node.className = className; return node; };
 const initials = name => name.split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase();
 function storeToken(value) { token = value; try { value ? sessionStorage.setItem(tokenKey, value) : sessionStorage.removeItem(tokenKey); } catch {} }
+// The top bar's "Administrator · <name>": the signed-in account's full name.
+function showAdminName(user) { $('admin-name').textContent = [user?.firstName, user?.lastName].map(part => (part || '').trim()).filter(Boolean).join(' '); }
 function showError(id, message) { $(id).textContent = message; $(id).hidden = !message; }
 
 async function request(path, { auth = token, body, signal } = {}) {
@@ -47,11 +59,14 @@ async function request(path, { auth = token, body, signal } = {}) {
 
 function endSession(message = '') {
   generation += 1; clearTimeout(timer); controller?.abort(); pending = false;
-  storeToken(''); snapshot = null; selected = null; connected = false;
+  storeToken(''); snapshot = null; selected = null; connected = false; showAdminName(null);
   fleetMap?.remove(); fleetMap = null; mapStarting = false;
   clearTimeout(accountsTimer); accountsPending = false; accounts = null; accountsUpdated = 0; showError('accounts-error', ''); renderAccounts();
   clearTimeout(historyTimer); historyPending = false; history = null; historyUpdated = 0; showError('history-error', ''); renderHistory();
   clearTimeout(reportsTimer); reportsPending = false; reports = null; reportsUpdated = 0; showError('reports-error', ''); renderReports();
+  faresPending = false; faresSaving = false; fares = null; fareNames = new Map(); faresUpdated = 0; fareDrafts = new Map();
+  showError('fares-error', ''); showError('fares-note', ''); $('fare-search').value = ''; renderFares();
+  clearTimeout(todaTimer); todaPending = false; todaSheet = null; todaUpdated = 0; $('driver-search').value = ''; showError('todas-error', ''); renderTodas();
   deciding = null; cancelling = null; closeReport(); showError('accounts-note', ''); showError('history-note', ''); $('accounts-badge').hidden = true;
   $('user-list').replaceChildren(); $('person-details').replaceChildren(); $('person-details').hidden = true;
   $('dashboard').hidden = true; $('login').hidden = false;
@@ -192,30 +207,165 @@ function render() {
 // the view.
 function showView() {
   const previous = view, account = location.hash.match(/^#accounts\/([a-f\d]{24})$/i)?.[1] ?? null;
-  view = account ? 'history' : location.hash === '#accounts' ? 'accounts' : location.hash === '#reports' ? 'reports' : 'live';
-  if (previous === 'accounts' && view === 'history') listScroll = scrollY;
+  const faresPage = location.hash.match(/^#fares(?:\/([a-z\d-]{1,40}))?$/i), todasPage = location.hash.match(/^#todas(?:\/([a-z\d-]{1,40}))?$/i);
+  view = account ? 'history' : location.hash === '#accounts' ? 'accounts' : location.hash === '#reports' ? 'reports' : faresPage ? 'fares' : todasPage ? 'todas' : 'live';
+  // A trip history opened from Accounts or from a TODA's drivers goes back there.
+  if (view === 'history' && previous !== 'history') {
+    historyFrom = previous === 'todas' ? 'todas' : 'accounts';
+    if (previous === 'accounts' || previous === 'todas') listScroll = scrollY;
+  }
   const changed = account !== historyId;
   if (changed) { historyId = account; history = null; historyUpdated = 0; showError('history-error', ''); }
   // A decision's note, and the PDF dialog, stay only while their page does.
   if (previous !== view || changed) { showError('history-note', ''); closeReport(); if (view !== 'accounts') showError('accounts-note', ''); }
+  if (previous !== view) showError('fares-note', '');
   $('live-view').hidden = view !== 'live'; $('accounts-view').hidden = view !== 'accounts'; $('history-view').hidden = view !== 'history'; $('reports-view').hidden = view !== 'reports';
+  $('fares-view').hidden = view !== 'fares'; $('todas-view').hidden = view !== 'todas';
   for (const tab of document.querySelectorAll('.view-tab')) {
-    if (tab.dataset.view === (view === 'history' ? 'accounts' : view)) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
+    if (tab.dataset.view === (view === 'history' ? historyFrom : view)) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
   }
   if (view === 'live') startMap();
   else if (view === 'reports') { renderReports(); loadReports(); }
+  else if (view === 'fares') {
+    const toda = faresPage[1]?.toLowerCase() ?? null, switched = previous === 'fares' && toda !== fareToda;
+    if (toda) fareToda = toda;
+    renderFares();
+    // Fares load when the view opens; picking another TODA only shows its fares.
+    if (previous !== 'fares' || !fares) loadFares();
+    // From far down a long list, back to the top of the TODA picked.
+    if (switched && $('toda-title').getBoundingClientRect().top < 0) $('fares-panel').scrollIntoView({ block: 'start' });
+  }
+  else if (view === 'todas') {
+    const toda = todasPage[1]?.toLowerCase() ?? null, switched = previous === 'todas' && toda !== driverToda;
+    if (toda) driverToda = toda;
+    renderTodas();
+    // Drivers load when the view opens; picking another TODA only shows its drivers.
+    if (previous !== 'todas' || !todaSheet) loadTodas();
+    if (previous === 'history' && historyFrom === 'todas') scrollTo(0, listScroll);
+    else if (switched && $('driver-toda-title').getBoundingClientRect().top < 0) $('todas-panel').scrollIntoView({ block: 'start' });
+  }
   else if (view === 'accounts') {
     renderAccounts(); loadAccounts();
     // Back from a trip history to where the list was.
-    if (previous === 'history') scrollTo(0, listScroll);
+    if (previous === 'history' && historyFrom === 'accounts') scrollTo(0, listScroll);
   } else {
     if (changed) scrollTo(0, 0);
+    // The back link returns to the list the history was opened from.
+    const back = document.querySelector('#history-view .back-link'), fromTodas = historyFrom === 'todas', toda = fromTodas ? shownDriverToda() : null;
+    back.href = fromTodas ? `#todas${toda ? `/${toda.id}` : ''}` : '#accounts';
+    back.textContent = fromTodas ? `← ${toda ? `${toda.name} drivers` : 'TODAs'}` : '← All accounts';
     renderHistory(); loadHistory();
   }
 }
 
 function showOnMap(id) {
   location.hash = 'live'; showView(); selectUser(id);
+}
+
+// The TODAs view: the TODA picked, or the first in the list.
+function shownDriverToda() {
+  const list = driverTodas(todaSheet);
+  return list.find(toda => toda.id === driverToda) ?? list[0] ?? null;
+}
+
+async function loadTodas() {
+  if (!token || view !== 'todas' || todaPending || document.hidden) return;
+  clearTimeout(todaTimer); todaPending = true;
+  const run = generation;
+  try {
+    const data = await request('/admin/todas');
+    if (run !== generation) return;
+    todaSheet = data; todaUpdated = Date.now();
+    showError('todas-error', '');
+  } catch (error) {
+    if (run !== generation) return;
+    if (error.status === 401 || error.status === 403) { endSession(error.message); return; }
+    showError('todas-error', error.missingRoute ? 'This server cannot list TODA drivers yet. Deploy the latest API, then refresh.' : `${error.message}${todaSheet ? ' Showing the last list loaded.' : ''}`);
+  } finally {
+    if (run === generation) {
+      todaPending = false; renderTodas();
+      if (view === 'todas' && !document.hidden) todaTimer = setTimeout(loadTodas, 15000);
+    }
+  }
+}
+
+// "4.8 ★ (12)": the driver's average and how many ratings it is from.
+function ratingBadge(rating) {
+  const stars = starRating(rating);
+  if (!stars) return text('span', 'No ratings yet', 'cell-note no-rating');
+  const badge = document.createElement('span'); badge.className = 'driver-rating';
+  badge.setAttribute('role', 'img'); badge.setAttribute('aria-label', stars.label); badge.title = stars.label;
+  badge.append(text('strong', stars.average), text('span', '★', 'rating-star'), text('span', `(${stars.count})`, 'rating-count'));
+  return badge;
+}
+
+function driverRow(driver, showToda) {
+  const row = document.createElement('tr'), online = isOnline(driver);
+  const cell = (className, ...children) => { const node = document.createElement('td'); node.className = className; node.append(...children); return node; };
+  // The name opens the driver's account and trips, as does a click anywhere else on the row.
+  const link = text('a', driver.name, 'account-link'); link.href = `#accounts/${driver.key}`; link.dataset.driverKey = driver.key;
+  const name = document.createElement('strong'); name.append(link);
+  const copy = document.createElement('span'); copy.className = 'user-copy';
+  copy.append(name, text('span', [driver.plate || 'No plate', showToda ? driver.toda || 'No TODA given' : ''].filter(Boolean).join(' · '), 'user-subtitle'));
+  const who = document.createElement('div'); who.className = 'account-who';
+  who.append(text('span', initials(driver.name), 'avatar driver'), copy);
+  row.className = 'account-row';
+  row.addEventListener('click', event => { if (!event.target.closest('a, button')) link.click(); });
+  const status = [text('span', online ? 'Online' : 'Offline', `status-pill ${online ? 'online' : 'offline'}`)];
+  if (driver.approval && driver.approval !== 'Approved') status.push(text('span', driver.approval, `status-pill ${driver.approval.toLowerCase()}`));
+  if (driver.status === 'Available') status.push(text('span', 'Ready for requests', 'cell-note'));
+  row.append(cell('cell-who', who), cell('cell-phone', formatPhone(driver.id)), cell('cell-rating', ratingBadge(driver.rating)), cell('cell-status', ...status));
+  return row;
+}
+
+function renderTodas() {
+  const list = driverTodas(todaSheet), toda = shownDriverToda(), failed = !todaSheet && !$('todas-error').hidden;
+  $('todas-updated').textContent = todaUpdated ? `Updated ${new Date(todaUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Loading drivers…';
+  // Indang's TODAs; "Other TODAs" is not one.
+  $('driver-toda-count').textContent = todaSheet ? todaSheet.todas.length : 0;
+  const focusedToda = document.activeElement?.closest?.('#driver-toda-list') ? document.activeElement.dataset.toda : null;
+  $('driver-toda-list').replaceChildren(...list.map(item => {
+    const counts = driverCounts(item.drivers), button = text('button', '', 'toda-row'); button.type = 'button'; button.dataset.toda = item.id;
+    if (item.id === toda?.id) button.setAttribute('aria-current', 'true');
+    const copy = document.createElement('span'); copy.className = 'user-copy';
+    copy.append(text('strong', item.name), text('span', !counts.total ? 'No drivers yet' : counts.online ? `${counts.online} online` : 'None online', 'user-subtitle'));
+    const count = text('span', String(counts.total), 'toda-driver-count'); count.append(text('span', counts.total === 1 ? ' driver' : ' drivers', 'search-label'));
+    button.append(copy, count);
+    button.addEventListener('click', () => { location.hash = `todas/${item.id}`; });
+    return button;
+  }));
+  if (focusedToda) $('driver-toda-list').querySelector(`[data-toda="${CSS.escape(focusedToda)}"]`)?.focus({ preventScroll: true });
+
+  const other = toda?.id === OTHER_TODAS, counts = driverCounts(toda?.drivers || []);
+  $('driver-toda-title').textContent = toda ? toda.name : todaSheet ? 'No TODAs' : failed ? 'Drivers unavailable' : 'Loading drivers…';
+  const stops = toda?.stops?.length ? `; also picks up at ${toda.stops.map(stop => `${stop.name} (${stop.barangay})`).join(', ')}` : '';
+  $('driver-toda-serves').textContent = !toda ? '' : other ? 'Drivers whose TODA is not one of Indang’s TODAs, with the TODA they signed up with.'
+    : `${toda.wholeTown ? 'Serves every barangay in Indang' : `Serves ${toda.barangays.join(', ')}`}${stops}.`;
+  const summary = [];
+  if (toda) {
+    summary.push(text('span', plural(counts.total, 'driver'), 'summary-chip'));
+    if (counts.total) summary.push(text('span', `${counts.online} online`, 'summary-chip'));
+    if (counts.pending) summary.push(text('span', `${counts.pending} waiting for approval`, 'summary-chip pending'));
+    if (counts.suspended) summary.push(text('span', `${counts.suspended} suspended`, 'summary-chip suspended'));
+    if (!other) {
+      const rating = document.createElement('span'); rating.className = 'summary-chip';
+      rating.append(text('span', 'TODA rating ', 'chip-label'), ratingBadge(toda.rating));
+      summary.push(rating);
+    }
+  }
+  $('driver-toda-summary').replaceChildren(...summary);
+  $('driver-search').disabled = $('driver-sort').disabled = !todaSheet;
+
+  const shown = todaDrivers(toda, $('driver-search').value, $('driver-sort').value);
+  const focusedDriver = document.activeElement?.dataset?.driverKey;
+  $('driver-rows').replaceChildren(...shown.map(driver => driverRow(driver, other)));
+  if (focusedDriver) $('driver-rows').querySelector(`[data-driver-key="${CSS.escape(focusedDriver)}"]`)?.focus({ preventScroll: true });
+  $('drivers-table').hidden = !shown.length;
+  const empty = $('drivers-empty');
+  empty.hidden = shown.length > 0;
+  empty.querySelector('h3').textContent = failed ? 'Drivers unavailable' : !todaSheet ? 'Loading drivers' : !toda ? 'No TODAs' : counts.total ? 'No matching drivers' : 'No drivers yet';
+  empty.querySelector('p').textContent = failed ? 'Use Refresh now to try again.' : !todaSheet ? 'Getting every TODA’s drivers.' : !toda ? 'The TODA list is empty.'
+    : counts.total ? 'Try another name, plate or mobile number.' : `No driver has signed up under ${toda.name} yet.`;
 }
 
 async function loadAccounts() {
@@ -261,6 +411,8 @@ function accountRow(account) {
   }
   const type = [text('span', kind === 'driver' ? 'Driver' : 'Passenger', `role-tag ${kind}`)];
   if (account.approval && account.approval !== 'Approved') type.push(text('span', account.approval, `status-pill ${account.approval.toLowerCase()}`));
+  // A God view admin's own account (GOD_VIEW_ADMIN_PHONES).
+  if (account.admin) type.push(text('span', 'Admin', 'admin-tag'));
   row.append(cell('cell-who', who), cell('cell-type', ...type),
     cell('cell-phone', formatPhone(account.id)), cell(`cell-vehicle${kind === 'driver' ? '' : ' is-empty'}`, ...vehicle), cell('cell-status', ...status), cell('cell-action', ...action));
   return row;
@@ -268,7 +420,7 @@ function accountRow(account) {
 
 function renderAccounts() {
   const list = accounts || [], counts = accountCounts(list);
-  const shown = filterAccounts(list, accountFilters.type, accountFilters.status, $('account-search').value);
+  const shown = filterAccounts(list, accountFilters.type, accountFilters.status, $('account-search').value, $('hide-admins').checked);
   for (const group of ['all', 'online', 'offline']) {
     $(`account-count-${group}`).textContent = accounts ? (group === 'all' ? accountsTotal : counts[group].total) : '—';
     $(`account-note-${group}`).textContent = accounts ? roleCountLabel(counts[group]) : 'Loading…';
@@ -636,6 +788,197 @@ function renderReports() {
   empty.querySelector('p').textContent = failed ? 'Use Refresh now to try again.' : !reports ? "Getting drivers' reports about passengers." : reportFilter === 'pending' ? 'New reports from drivers appear here for review.' : 'Try another filter.';
 }
 
+// The Fares view. Loads each TODA's fares; the fares typed but not saved stay.
+// A fare typed while another admin saved a new amount for it is pointed out,
+// so nothing they saved is overwritten unseen.
+// keepError: leave the error shown (why a save failed) unless there is news
+// about the fares being typed.
+async function loadFares({ keepError = false } = {}) {
+  if (!token || faresPending) return;
+  faresPending = true;
+  const run = generation;
+  try {
+    const data = await request('/admin/fares');
+    if (run !== generation) return;
+    const notice = applyFares(data);
+    if (notice || !keepError) showError('fares-error', notice);
+  } catch (error) {
+    if (run !== generation) return;
+    if (error.status === 401 || error.status === 403) { endSession(error.message); return; }
+    showError('fares-error', error.missingRoute ? 'This server cannot show fares yet. Deploy the latest API, then refresh.' : `${error.message}${fares ? ' Showing the fares last loaded.' : ''}`);
+  } finally {
+    if (run === generation) { faresPending = false; renderFares(); }
+  }
+}
+
+// Takes the fares the server sent. Returns what to tell the admin when a fare
+// they typed has a new amount in force since (another admin saved it), or ''.
+function applyFares(data) {
+  const before = fares;
+  const moved = before ? [...fareDrafts.keys()].filter(key => Object.hasOwn(data.prices, key) && before.prices[key] !== data.prices[key]) : [];
+  fares = data; fareNames = fareLabels(data); faresUpdated = Date.now(); fareDrafts = keepDrafts(data, fareDrafts);
+  const kept = moved.filter(key => fareDrafts.has(key));
+  if (!kept.length) return '';
+  const list = kept.slice(0, 3).map(key => `${fareNames.get(key) ?? key} is now ${pesos(data.prices[key])}`).join('; ');
+  return `Another admin changed fares you are editing: ${list}${kept.length > 3 ? `, and ${plural(kept.length - 3, 'more')}` : ''}. Check your changes, then save again.`;
+}
+
+const pesos = amount => `₱${Number(amount).toLocaleString('en-PH')}`;
+const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
+const shownToda = () => fares && (fares.todas.find(toda => toda.id === fareToda) ?? sortTodas(fares.todas)[0]);
+
+// One fare's box: ₱ and the amount, with what it was or the taripa's amount below.
+function fareBox(tag, key, label) {
+  const box = document.createElement(tag); box.className = 'fare-cell';
+  const field = document.createElement('label'); field.className = 'fare-field';
+  const input = document.createElement('input');
+  Object.assign(input, { type: 'text', inputMode: 'numeric', autocomplete: 'off', maxLength: 4, spellcheck: false, value: fareDrafts.get(key) ?? String(fares.prices[key]) });
+  input.dataset.fareKey = key; input.setAttribute('aria-label', fareNames.get(key) ?? label);
+  field.append(text('span', label, 'fare-cell-label'), text('span', '₱', 'peso'), input);
+  box.append(field, text('span', '', 'fare-was'));
+  return box;
+}
+
+// A group's rows in the table: the place, then each trip's day and night fares.
+function groupBody(group, toda) {
+  const body = document.createElement('tbody'); body.className = 'fare-group';
+  group.special.forEach((row, index) => {
+    const line = document.createElement('tr');
+    if (index === 0) {
+      const place = document.createElement('th'); place.scope = 'rowgroup'; place.rowSpan = group.special.length; place.className = 'cell-area';
+      // Where it is, unless its name already says so ("Bancod · Purok I").
+      const named = group.barangays.every(name => group.label.toLocaleLowerCase().includes(name.toLocaleLowerCase()));
+      const where = group.note || (named ? '' : `In ${group.barangays.join(' and ')}`);
+      place.append(text('span', group.label, 'cell-main'));
+      if (where) place.append(text('span', where, 'cell-note'));
+      const others = sharedWith(fares, group.id, toda.id);
+      if (others.length) place.append(text('span', `Also listed under ${others.length > 4 ? `${others.slice(0, 4).join(', ')} and ${others.length - 4} more` : others.join(', ')}`, 'cell-shared'));
+      line.append(place);
+    }
+    const trip = document.createElement('td'); trip.className = 'cell-trip'; trip.append(text('span', row.from, 'trip-from'));
+    line.append(trip, ...SPECIAL_CELLS.map(({ part, label }) => fareBox('td', `${row.key}/${part}`, label)));
+    body.append(line);
+  });
+  return body;
+}
+
+function renderFareTables() {
+  const toda = shownToda(), groups = toda ? todaGroups(fares, toda.id, $('fare-search').value) : [];
+  const table = $('special-table'), shown = groups.filter(group => group.special.length);
+  table.querySelectorAll('tbody').forEach(body => body.remove());
+  table.append(...shown.map(group => groupBody(group, toda)));
+  table.hidden = !shown.length;
+  const empty = $('fares-empty'), failed = !fares && !$('fares-error').hidden;
+  empty.hidden = groups.length > 0;
+  empty.querySelector('h3').textContent = failed ? 'Fares unavailable' : !fares ? 'Loading fares' : toda?.groups.length ? 'No matching areas' : 'No fares listed';
+  empty.querySelector('p').textContent = failed ? 'Use Refresh now to try again.' : !fares ? "Getting each TODA's fares." : toda?.groups.length ? 'Try another area or barangay.' : 'This TODA serves no barangay the taripa lists.';
+  paintFares();
+}
+
+function renderFares() {
+  const toda = shownToda();
+  $('fares-updated').textContent = faresUpdated ? `Updated ${new Date(faresUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Loading fares…';
+  const differ = fares ? Object.keys(fares.prices).filter(key => fares.prices[key] !== fares.taripa[key]).length : 0;
+  $('fares-status').textContent = !fares ? '' : [fares.updatedAt ? `Last changed ${dateTime(new Date(fares.updatedAt))} by ${fares.updatedBy || 'an admin'}` : '',
+    differ ? `${plural(differ, 'fare')} differ${differ === 1 ? 's' : ''} from the municipal taripa` : 'Every fare matches the municipal taripa'].filter(Boolean).join(' · ');
+  $('town-fares').replaceChildren(...(fares?.town || []).map(({ key, label, note }) => {
+    const card = fareBox('div', key, label); card.classList.add('town-fare');
+    card.prepend(text('span', note, 'town-note')); card.prepend(text('strong', label, 'town-label'));
+    return card;
+  }));
+  const list = fares ? sortTodas(fares.todas) : [];
+  $('toda-count').textContent = list.length;
+  $('toda-list').replaceChildren(...list.map(item => {
+    const button = text('button', '', 'toda-row'); button.type = 'button'; button.dataset.toda = item.id;
+    if (item.id === toda?.id) button.setAttribute('aria-current', 'true');
+    const copy = document.createElement('span'); copy.className = 'user-copy';
+    copy.append(text('strong', item.name), text('span', item.wholeTown ? 'Every barangay' : item.barangays.join(', '), 'user-subtitle'));
+    const badge = text('span', '', 'toda-changes'); badge.dataset.todaChanges = item.id; badge.hidden = true;
+    button.append(copy, badge);
+    button.addEventListener('click', () => { location.hash = `fares/${item.id}`; });
+    return button;
+  }));
+  $('toda-title').textContent = toda ? toda.name : fares ? 'No TODAs' : !$('fares-error').hidden ? 'Fares unavailable' : 'Loading fares…';
+  $('toda-serves').textContent = !toda ? '' : toda.wholeTown ? 'Serves every barangay in Indang' : `Serves ${toda.barangays.join(', ')}`;
+  const stops = toda?.stops || [];
+  $('toda-stops').hidden = !stops.length;
+  $('toda-stops').textContent = stops.length ? `Also picks up at ${stops.map(stop => `${stop.name} (${stop.barangay})`).join(', ')}. A trip's fare depends on where it goes, not on the TODA, so trips from there use the fares listed for those barangays.` : '';
+  $('fare-search').disabled = !fares;
+  renderFareTables();
+}
+
+// Marks each fare typed but not saved, and any that cannot be saved, without
+// touching what is being typed; then the save bar and the unsaved counts.
+function paintFares() {
+  const check = fares ? fareChanges(fares, fareDrafts) : { changes: [], invalid: [] };
+  const invalid = new Set(check.invalid);
+  for (const input of document.querySelectorAll('#fares-view [data-fare-key]')) {
+    const key = input.dataset.fareKey, box = input.closest('.fare-cell'), drafted = fareDrafts.has(key), wrong = invalid.has(key);
+    box.classList.toggle('is-changed', drafted && !wrong); box.classList.toggle('is-invalid', wrong);
+    input.setAttribute('aria-invalid', String(wrong)); input.disabled = faresSaving;
+    const note = box.querySelector('.fare-was');
+    note.textContent = invalid.has(key) ? `${pesos(fares.limits.min)}–${pesos(fares.limits.max)}`
+      : drafted ? `Was ${pesos(fares.prices[key])}` : fares.prices[key] !== fares.taripa[key] ? `Taripa ${pesos(fares.taripa[key])}` : '';
+    note.classList.toggle('is-taripa', !drafted && fares.prices[key] !== fares.taripa[key]);
+  }
+  const unsaved = fareDrafts.size;
+  $('fares-badge').textContent = unsaved || ''; $('fares-badge').hidden = !unsaved;
+  for (const badge of document.querySelectorAll('[data-toda-changes]')) {
+    const toda = fares?.todas.find(item => item.id === badge.dataset.todaChanges);
+    const keys = new Set(toda ? fares.groups.filter(group => toda.groups.includes(group.id)).flatMap(groupKeys) : []);
+    const count = [...fareDrafts.keys()].filter(key => keys.has(key)).length;
+    badge.textContent = count ? `${count} unsaved` : ''; badge.hidden = !count;
+  }
+  $('fare-savebar').hidden = !unsaved;
+  $('fare-change-count').textContent = faresSaving ? 'Saving…' : `${plural(unsaved, 'unsaved fare change')}`;
+  $('fare-problem').textContent = check.invalid.length ? `Fares are whole pesos from ${pesos(fares.limits.min)} to ${pesos(fares.limits.max)}.` : '';
+  $('fare-save').disabled = faresSaving || !check.changes.length || Boolean(check.invalid.length);
+  $('fare-discard').disabled = faresSaving;
+  $('fare-save').textContent = faresSaving ? 'Saving…' : 'Save changes';
+}
+
+function editFare(input) {
+  if (!fares || faresSaving) return;
+  const key = input.dataset.fareKey;
+  if (parseFare(input.value, fares.limits) === fares.prices[key]) fareDrafts.delete(key); else fareDrafts.set(key, input.value);
+  // The same fare shown twice on the page shows what was typed in both.
+  for (const other of document.querySelectorAll(`#fares-view [data-fare-key="${CSS.escape(key)}"]`)) if (other !== input) other.value = input.value;
+  showError('fares-note', '');
+  paintFares();
+}
+
+async function saveFares() {
+  if (!fares || faresSaving) return;
+  const { changes, invalid } = fareChanges(fares, fareDrafts);
+  if (!changes.length || invalid.length) return;
+  const lines = changes.slice(0, 8).map(({ key, from, to }) => `• ${fareNames.get(key) ?? key}: ${pesos(from)} → ${pesos(to)}`);
+  if (changes.length > 8) lines.push(`• and ${plural(changes.length - 8, 'more fare')}`);
+  if (!confirm(`Save ${plural(changes.length, 'fare change')}?\n\n${lines.join('\n')}\n\nNew bookings are charged the new fares at once. Trips already booked keep their fare.`)) return;
+  faresSaving = true; showError('fares-note', ''); paintFares();
+  const run = generation;
+  let reload = false;
+  try {
+    const data = await request('/admin/fares', { body: { changes } });
+    if (run !== generation) return;
+    showError('fares-error', applyFares(data));
+    showError('fares-note', `Saved ${plural(changes.length, 'fare change')}. New bookings are charged the new fares.`);
+  } catch (error) {
+    if (run !== generation) return;
+    if (error.status === 401 || error.status === 403) { endSession(error.message); return; }
+    showError('fares-error', error.missingRoute ? 'This server cannot change fares yet. Deploy the latest API, then refresh.' : error.message);
+    // Someone else saved fares: show the ones in force now.
+    reload = error.status === 409;
+  } finally {
+    if (run === generation) { faresSaving = false; renderFares(); if (reload) loadFares({ keepError: true }); }
+  }
+}
+
+function discardFares() {
+  if (!fareDrafts.size || faresSaving) return;
+  if (!confirm(`Discard ${plural(fareDrafts.size, 'unsaved fare change')}?`)) return;
+  fareDrafts = new Map(); showError('fares-error', ''); renderFares();
+}
+
 $('login-form').addEventListener('submit', async event => {
   event.preventDefault(); const run = ++generation;
   $('sign-in').disabled = true; $('login-progress').hidden = false; showError('login-error', '');
@@ -646,7 +989,7 @@ $('login-form').addEventListener('submit', async event => {
     const data = await request('/admin/overview', { auth: candidate.token });
     if (run !== generation) return;
     storeToken(candidate.token); $('password').value = '';
-    $('admin-name').textContent = candidate.user.firstName || 'Pilot admin';
+    showAdminName(candidate.user);
     $('login').hidden = true; $('dashboard').hidden = false;
     applySnapshot(data, requestStarted); timer = setTimeout(refresh, 3000); showView(); loadReports();
   } catch (error) {
@@ -656,6 +999,7 @@ $('login-form').addEventListener('submit', async event => {
 });
 
 $('sign-out').addEventListener('click', async () => {
+  if (fareDrafts.size && !confirm(`Sign out and discard ${plural(fareDrafts.size, 'unsaved fare change')}?`)) return;
   const previous = token; endSession();
   try { await request('/logout', { auth: previous, body: {} }); }
   catch { showError('login-error', 'Signed out of this browser. The server could not confirm session revocation.'); }
@@ -672,6 +1016,7 @@ $('fit-area').addEventListener('click', () => fleetMap?.fitArea());
 $('fit-users').addEventListener('click', () => fleetMap?.fitUsers(visibleUsers()));
 window.addEventListener('hashchange', showView);
 $('account-search').addEventListener('input', renderAccounts);
+$('hide-admins').addEventListener('change', renderAccounts);
 for (const [group, key] of [['account-types', 'type'], ['account-statuses', 'status']]) $(group).addEventListener('click', event => {
   const button = event.target.closest(`button[data-${key}]`); if (!button) return;
   accountFilters[key] = button.dataset[key];
@@ -699,9 +1044,19 @@ $('report-statuses').addEventListener('click', event => {
   for (const item of $('report-statuses').querySelectorAll('button')) item.setAttribute('aria-pressed', String(item === button));
   renderReports();
 });
+$('fares-view').addEventListener('input', event => { if (event.target.matches('[data-fare-key]')) editFare(event.target); });
+$('fare-search').addEventListener('input', renderFareTables);
+$('fares-refresh').addEventListener('click', () => loadFares());
+$('todas-refresh').addEventListener('click', loadTodas);
+$('driver-search').addEventListener('input', renderTodas);
+$('driver-sort').addEventListener('change', renderTodas);
+$('fare-save').addEventListener('click', saveFares);
+$('fare-discard').addEventListener('click', discardFares);
+// Leaving or reloading the page would lose fares typed but not saved.
+window.addEventListener('beforeunload', event => { if (token && fareDrafts.size) { event.preventDefault(); event.returnValue = ''; } });
 document.addEventListener('visibilitychange', () => {
-  clearTimeout(timer); clearTimeout(accountsTimer); clearTimeout(historyTimer); clearTimeout(reportsTimer);
-  if (!document.hidden) { refresh(); loadAccounts(); loadHistory(); loadReports(); }
+  clearTimeout(timer); clearTimeout(accountsTimer); clearTimeout(historyTimer); clearTimeout(reportsTimer); clearTimeout(todaTimer);
+  if (!document.hidden) { refresh(); loadAccounts(); loadHistory(); loadReports(); loadTodas(); }
 });
 // Age GPS on screen even if the next network request is slow.
 setInterval(() => { if (snapshot && !document.hidden) {
@@ -709,5 +1064,10 @@ setInterval(() => { if (snapshot && !document.hidden) {
   render();
 } }, 1000);
 try { token = sessionStorage.getItem(tokenKey) || ''; } catch {}
-if (token) { $('login').hidden = true; $('dashboard').hidden = false; refresh(); loadReports(); }
+if (token) {
+  $('login').hidden = true; $('dashboard').hidden = false; refresh(); loadReports();
+  // A reload keeps the session but not the name: ask the API whose it is.
+  const run = generation;
+  request('/me').then(({ user }) => { if (run === generation) showAdminName(user); }).catch(() => {});
+}
 showView();

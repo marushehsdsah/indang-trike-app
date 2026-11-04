@@ -9,9 +9,9 @@ const { createDispatch } = require('./dispatch');
 const { createAdmin } = require('./admin');
 const { createChat } = require('./chat');
 const { createBrevoMailer } = require('./mailer');
+const { createFares } = require('./fares');
 const { requireValue, profileFields, publicUser, photoBytes } = require('./policy');
 const { SERVICE_AREA_NAME, INDANG_BOUNDARY_SHAPE } = require('../data/indangMap');
-const { FLAT_FARE } = require('../data/fares');
 const SERVICE_AREA_PLACES = require('../assets/places/service-area-places.json');
 
 async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://127.0.0.1:27017/indang_trike_db', clock = Date.now, dispatchOptions, adminPhones = process.env.GOD_VIEW_ADMIN_PHONES || '', sendEmail = createBrevoMailer() } = {}) {
@@ -26,7 +26,10 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   const app = express(), server = createServer(app);
   const io = new Server(server, { cors: { origin: process.env.CORS_ORIGIN || '*' }, maxHttpBufferSize: 20000 });
   const presence = new Map(), auth = createAuth(models, clock, { sendEmail });
-  const dispatch = createDispatch({ models, io, clock, presence, options: dispatchOptions });
+  // The fares in force: the taripa with the amounts changed in God view.
+  const fares = createFares({ models });
+  await fares.load();
+  const dispatch = createDispatch({ models, io, clock, presence, fares, options: dispatchOptions });
   const admin = createAdmin({ models, presence, clock, adminPhones, sendEmail,
     onSuspended: (id, reason) => dispatch.run(() => dispatch.suspended(id, reason)), onApproved: (id) => dispatch.notify(id),
     onCancelTrip: (id, reason) => dispatch.run(() => dispatch.adminCancel(id, reason)) });
@@ -73,6 +76,8 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   // and God view's Accounts view.
   app.get('/api/admin/dashboard', async (req, res) => res.json(await admin.dashboard()));
   app.get('/api/admin/accounts', async (req, res) => res.json(await admin.accounts()));
+  // God view's TODAs tab: each TODA's drivers, with their ratings.
+  app.get('/api/admin/todas', async (req, res) => res.json(await admin.todas()));
   // One account's trip history (God view).
   app.get('/api/admin/accounts/:id', async (req, res) => res.json(await admin.history(req.params.id, req.query.days)));
   app.get('/api/admin/trips', async (req, res) => res.json({ trips: await admin.trips() }));
@@ -92,12 +97,22 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   app.post('/api/admin/drivers/:id/terminate', async (req, res) => res.json(await admin.terminate(req.params.id, req.body)));
   app.post('/api/admin/drivers/:id/delete', async (req, res) => res.json(await admin.remove(req.params.id, req.body)));
   app.post('/api/admin/drivers/:id/unblock', async (req, res) => res.json(await admin.unblock(req.params.id)));
+  // God view's Fares tab: each TODA's fares, which an admin changes when the
+  // fares change. New bookings are charged the saved fares at once.
+  app.get('/api/admin/fares', async (req, res) => res.json(await fares.sheet()));
+  app.post('/api/admin/fares', async (req, res) => res.json(await fares.update(req.body, req.user)));
   // Admin accounts oversee the service; they do not book, drive or chat on trips.
   app.use(['/api/rides', '/api/driver', '/api/passenger'], (req, res, next) => {
     requireValue(req.user.role !== 'admin', 403, 'Admin accounts cannot book or drive.');
     next();
   });
-  app.get('/api/config', (req, res) => res.json({ fare: FLAT_FARE, currency: 'PHP', maxPassengers: 4, gpsMaxAgeMs: 30000 }));
+  // fares: what the app quotes with (data/fares.js quoteTrip's prices), and
+  // their revision, which /api/state also names so the app knows when to
+  // fetch them again.
+  app.get('/api/config', (req, res) => {
+    const { prices, revision } = fares.current();
+    res.json({ fare: prices.flat, currency: 'PHP', maxPassengers: 4, gpsMaxAgeMs: 30000, fares: { revision, prices } });
+  });
   app.get('/api/me', (req, res) => res.json({ user: publicUser(req.user) }));
   app.patch('/api/me', async (req, res) => {
     const user = await dispatch.run(async () => {
@@ -129,7 +144,11 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
     requireValue(user?.photo?.length, 404, 'No photo.');
     res.set({ 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400' }).send(user.photo);
   });
-  app.get('/api/state', async (req, res) => { await dispatch.tick(); res.json(await chat.addUnread(await dispatch.snapshot(req.user._id), req.user._id)); });
+  app.get('/api/state', async (req, res) => {
+    await dispatch.tick();
+    const state = await chat.addUnread(await dispatch.snapshot(req.user._id), req.user._id);
+    res.json({ ...state, fareRevision: fares.current().revision });
+  });
   app.post('/api/logout', async (req, res) => {
     await models.Session.deleteOne({ _id: req.session._id });
     io.in(`session:${req.session._id}`).disconnectSockets(true);

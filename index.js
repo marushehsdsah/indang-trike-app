@@ -4,7 +4,7 @@ import { handleMapLog } from './utils/mapLogs';
 
 import App from './App';
 
-// Base-map tile download failures are retried by the map; see utils/mapLogs.js.
+// Base-map tile and font download failures are retried by the map; see utils/mapLogs.js.
 LogManager.onLog(handleMapLog);
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

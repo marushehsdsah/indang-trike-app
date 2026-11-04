@@ -3,7 +3,7 @@ const { ACTIVE_STATUSES, ASSIGNED_STATUSES, isFreshFix } = require('../utils/rid
 const { calculateRoute } = require('../utils/roadGraph');
 const { SERVICE_AREA_NAME, INDANG_BOUNDS, isInIndangServiceArea } = require('../data/indangMap');
 const { getRoadGraph } = require('../data/roadNetwork');
-const { todaName } = require('../data/todaZones');
+const { TODA_NAMES, findToda, todaName } = require('../data/todaZones');
 const { HttpError, requireValue, cleanText } = require('./policy');
 const { ratingSummary } = require('../utils/rating');
 const { REPORT_REASON_LABELS, penaltyFor, suspensionOf } = require('../utils/reports');
@@ -116,13 +116,16 @@ function driverApproval(user) {
 }
 
 // connectedIds: the ids of users with the app open. key is unique for lists.
-function buildAccounts(users, connectedIds) {
+// adminPhones: GOD_VIEW_ADMIN_PHONES (normalized); those accounts are marked
+// admin: true, so God view's Accounts tab can tell them apart or hide them.
+function buildAccounts(users, connectedIds, adminPhones = new Set()) {
   return users.map((user) => {
     const id = String(user._id), driver = user.role === 'driver';
     return {
       key: id, id: localPhone(user.phone), name: fullName(user, driver ? 'Driver' : 'Passenger'), email: user.email || '',
       role: driver ? 'RIDER' : 'PASSENGER', status: accountStatus(user, connectedIds.has(id)), languageWarnings: user.languageWarnings || 0,
       ...(driver ? { toda: todaName(user.toda) || '', plate: user.plate || '', approval: driverApproval(user) } : {}),
+      ...(adminPhones.has(normalizePhilippinePhone(user.phone)) ? { admin: true } : {}),
     };
   });
 }
@@ -133,6 +136,35 @@ function buildDriver(user, connectedIds) {
   return {
     ...buildAccounts([user], connectedIds)[0], capacity: user.capacity ?? null, joined: user.createdAt,
     approvedAt: user.approvedAt || null, terminatedAt: user.terminatedAt || null, terminationReason: user.terminationReason || '',
+  };
+}
+
+// God view's TODAs tab: every Indang TODA, with the barangays and stops it
+// serves and its drivers by name; then, under `other`, the drivers whose TODA
+// is none of them, with the TODA name they gave. A driver's rating is their
+// average from passengers' ratings and how many ratings it is from
+// (utils/rating.js); a TODA's is the same over all its drivers' ratings.
+function buildTodas(drivers, connectedIds) {
+  const group = () => ({ drivers: [], ratingSum: 0, ratingCount: 0 });
+  const listed = new Map(TODA_NAMES.map((name) => [name, group()])), other = group();
+  for (const user of drivers) {
+    const id = String(user._id), toda = findToda(user.toda), into = toda ? listed.get(toda.name) : other;
+    into.drivers.push({
+      key: id, id: localPhone(user.phone), name: fullName(user, 'Driver'), plate: user.plate || '',
+      toda: toda ? toda.name : String(user.toda ?? '').trim(), status: accountStatus(user, connectedIds.has(id)),
+      approval: driverApproval(user), rating: ratingSummary(user),
+    });
+    into.ratingSum += Number(user.ratingSum) || 0; into.ratingCount += Number(user.ratingCount) || 0;
+  }
+  const byName = (a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key);
+  const finish = ({ drivers: list, ...ratings }) => ({ drivers: list.sort(byName), rating: ratingSummary(ratings) });
+  return {
+    todas: TODA_NAMES.map((name) => {
+      const toda = findToda(name);
+      return { id: toda.id, name, barangays: toda.barangays, wholeTown: toda.wholeTown,
+        stops: toda.stops.map((stop) => ({ name: stop.name, barangay: stop.barangay })), ...finish(listed.get(name)) };
+    }),
+    other: finish(other),
   };
 }
 
@@ -295,7 +327,13 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
         .select('phone firstName lastName email role available toda plate approval terminatedAt languageWarnings').lean(),
       models.User.countDocuments({ role: { $ne: 'admin' } }),
     ]);
-    return { accounts: buildAccounts(users, connectedIds()), total };
+    return { accounts: buildAccounts(users, connectedIds(), allowed), total };
+  }
+  // Every driver, approved or not, by TODA (God view's TODAs tab).
+  async function todas() {
+    const drivers = await models.User.find({ role: 'driver' })
+      .select('phone firstName lastName plate toda available approval terminatedAt ratingSum ratingCount').lean();
+    return buildTodas(drivers, connectedIds());
   }
   // One passenger's or driver's account and every trip they booked or
   // accepted (or only those booked in the last days), newest first; summary
@@ -471,7 +509,7 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
     requireValue(updated, 409, 'This report was already reviewed.');
     return { report: (await reports()).reports.find((item) => item.key === id) };
   }
-  return { middleware, overview, accounts, history, trips, cancelTrip, dashboard, reports, uphold, dismiss, approvals, driver, approve, decline, terminate, remove, unblock };
+  return { middleware, overview, accounts, todas, history, trips, cancelTrip, dashboard, reports, uphold, dismiss, approvals, driver, approve, decline, terminate, remove, unblock };
 }
 
-module.exports = { ADMIN_CANCELLATION, createAdmin, parseAdminPhones, buildOverview, buildReports, buildRideRoutes, buildAccounts, buildDriver, driverApproval, buildTrips, buildHistory, historySummary, historyPeriod, tripStatus };
+module.exports = { ADMIN_CANCELLATION, createAdmin, parseAdminPhones, buildOverview, buildReports, buildRideRoutes, buildAccounts, buildDriver, buildTodas, driverApproval, buildTrips, buildHistory, historySummary, historyPeriod, tripStatus };

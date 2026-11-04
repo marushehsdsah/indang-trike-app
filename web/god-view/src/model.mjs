@@ -112,9 +112,11 @@ export function formatPhone(phone) {
 
 // role: all, driver, passenger or pending (drivers waiting for approval);
 // status: all, online or offline. A number matches with or without its spaces.
-export function filterAccounts(accounts, role, status, query) {
+// hideAdmins leaves out the God view admins' own accounts (admin: true).
+export function filterAccounts(accounts, role, status, query, hideAdmins = false) {
   const needle = query.trim().toLocaleLowerCase(), digits = needle.replace(/[\s-]/g, '');
-  return accounts.filter(account => (role === 'all' || (role === 'pending' ? account.approval === 'Pending' : accountRole(account) === role)) &&
+  return accounts.filter(account => (!hideAdmins || !account.admin) &&
+    (role === 'all' || (role === 'pending' ? account.approval === 'Pending' : accountRole(account) === role)) &&
     (status === 'all' || (status === 'online') === isOnline(account)) &&
     ([account.name, account.email, account.plate, account.toda].filter(Boolean).join(' ').toLocaleLowerCase().includes(needle) || account.id.includes(digits)));
 }
@@ -189,4 +191,113 @@ export function mapPeople(users, routes) {
     merged.add(driver.id).add(passenger.id);
   }
   return [...users.filter((user) => !merged.has(user.id)), ...trips];
+}
+
+// The Fares tab (/api/admin/fares): each TODA's fares, which an admin changes
+// when the fares change. A sheet has `prices` (the amounts in force, by key),
+// `taripa` (the ordinance's), `limits` ({ min, max } whole pesos), `town` (the
+// amounts every TODA shares), `groups` (places, each with special-trip rows
+// whose key ends /day or /night; every booking is a special trip) and `todas`
+// (each with the groups it lists).
+export const SPECIAL_CELLS = [{ part: 'day', label: 'Day' }, { part: 'night', label: 'Night' }];
+
+// What the admin typed, as whole pesos within the limits, or null.
+export function parseFare(text, { min, max }) {
+  const value = String(text ?? '').trim();
+  if (!/^\d{1,4}$/.test(value)) return null;
+  const amount = Number(value);
+  return amount >= min && amount <= max ? amount : null;
+}
+
+// Every fare's name: "Alulod · Bukana, from the Poblacion, by day".
+export function fareLabels(sheet) {
+  const labels = new Map(sheet.town.map(({ key, label }) => [key, label]));
+  const when = (period) => (period === 'day' ? 'by day' : 'at night');
+  for (const group of sheet.groups) {
+    for (const row of group.special) for (const { part } of SPECIAL_CELLS) labels.set(`${row.key}/${part}`, `${group.label}, ${row.from.toLowerCase()}, ${when(part)}`);
+  }
+  return labels;
+}
+
+// The TODAs by name.
+export function sortTodas(todas) {
+  return [...todas].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// The groups a TODA lists, matching a search of their names and barangays.
+export function todaGroups(sheet, todaId, query = '') {
+  const toda = sheet.todas.find((item) => item.id === todaId);
+  if (!toda) return [];
+  const listed = new Set(toda.groups), needle = query.trim().toLocaleLowerCase();
+  return sheet.groups.filter((group) => listed.has(group.id) && [group.label, group.note, ...group.barangays].join(' ').toLocaleLowerCase().includes(needle));
+}
+
+// The other TODAs that list a group: changing its fares changes theirs too.
+export function sharedWith(sheet, groupId, todaId) {
+  return sortTodas(sheet.todas.filter((toda) => toda.id !== todaId && toda.groups.includes(groupId))).map((toda) => toda.name);
+}
+
+// Every fare key a group shows.
+export function groupKeys(group) {
+  return group.special.flatMap((row) => SPECIAL_CELLS.map(({ part }) => `${row.key}/${part}`));
+}
+
+// drafts: fare key → what the admin typed. changes: the fares to save
+// ({ key, from, to }, `from` being the amount on screen); invalid: keys typed
+// as something other than whole pesos within the limits.
+export function fareChanges(sheet, drafts) {
+  const changes = [], invalid = [];
+  for (const [key, text] of drafts) {
+    const to = parseFare(text, sheet.limits);
+    if (to === null) invalid.push(key);
+    else if (to !== sheet.prices[key]) changes.push({ key, from: sheet.prices[key], to });
+  }
+  return { changes, invalid };
+}
+
+// The drafts still worth keeping once fresh fares arrive: those that differ
+// from the amount now in force, or are not yet valid.
+export function keepDrafts(sheet, drafts) {
+  return new Map([...drafts].filter(([key, text]) => Object.hasOwn(sheet.prices, key) && parseFare(text, sheet.limits) !== sheet.prices[key]));
+}
+
+// The TODAs tab (GET /api/admin/todas, indang-trike-backend/admin.js buildTodas).
+
+// A rating as the TODAs tab shows it, "4.8 ★ (12)": the average to one
+// decimal and how many ratings it is from; null before the first rating.
+export function starRating(rating) {
+  const count = Number(rating?.count) || 0;
+  if (count < 1 || !Number.isFinite(rating.average)) return null;
+  const average = rating.average.toFixed(1);
+  return { average, count, label: `Rated ${average} out of 5 from ${count} rating${count === 1 ? '' : 's'}` };
+}
+
+// The list's TODAs: the Indang TODAs by name, then "Other TODAs" for the
+// drivers whose TODA is none of them, when there are any.
+export const OTHER_TODAS = 'other';
+export function driverTodas(sheet) {
+  if (!sheet) return [];
+  const listed = sortTodas(sheet.todas);
+  return sheet.other?.drivers.length
+    ? [...listed, { id: OTHER_TODAS, name: 'Other TODAs', barangays: [], wholeTown: false, stops: [], ...sheet.other }] : listed;
+}
+
+// How many of a TODA's drivers are online, and how many wait for approval
+// or are suspended.
+export function driverCounts(drivers) {
+  return { total: drivers.length, online: drivers.filter(isOnline).length,
+    pending: drivers.filter((driver) => driver.approval === 'Pending').length,
+    suspended: drivers.filter((driver) => driver.approval === 'Suspended').length };
+}
+
+// A TODA's drivers that match a search of their name, plate, the TODA they
+// gave or mobile number (with or without its spaces), by name or by rating:
+// the highest average first, more ratings breaking a tie, unrated drivers last.
+export function todaDrivers(toda, query = '', order = 'name') {
+  const needle = query.trim().toLocaleLowerCase(), digits = needle.replace(/[\s-]/g, '');
+  const shown = (toda?.drivers || []).filter((driver) => [driver.name, driver.plate, driver.toda].filter(Boolean).join(' ').toLocaleLowerCase().includes(needle)
+    || driver.id.includes(digits));
+  if (order !== 'rating') return shown;
+  const average = (driver) => (driver.rating?.count > 0 ? driver.rating.average : -1);
+  return [...shown].sort((a, b) => average(b) - average(a) || (b.rating?.count || 0) - (a.rating?.count || 0) || a.name.localeCompare(b.name) || a.key.localeCompare(b.key));
 }

@@ -1,9 +1,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseAdminPhones, buildOverview, buildAccounts, buildDriver, driverApproval, buildTrips, buildHistory, historySummary, historyPeriod, tripStatus } = require('../indang-trike-backend/admin');
+const { parseAdminPhones, buildOverview, buildAccounts, buildDriver, buildTodas, driverApproval, buildTrips, buildHistory, historySummary, historyPeriod, tripStatus } = require('../indang-trike-backend/admin');
 const { profileFields, publicUser } = require('../indang-trike-backend/policy');
 const { suspensionMessage, suspensionOf } = require('../utils/reports');
 const { DEFAULT_TRIP } = require('../data/indangMap');
+const { TODA_NAMES } = require('../data/todaZones');
 
 const now = 1800000000000;
 const fix = { ...DEFAULT_TRIP.pickup.coordinate, timestamp: now, accuracy: 8, receivedAt: now, privateValue: 'hidden' };
@@ -137,6 +138,43 @@ test('the admin screens list accounts by mobile number and whether the app is op
     { key: 'd2', id: '09191234567', name: 'Driver', email: '', role: 'RIDER', status: 'Online', languageWarnings: 0, toda: '', plate: '', approval: 'Pending' },
     { key: 'd3', id: '09201234567', name: 'Driver', email: '', role: 'RIDER', status: 'Offline', languageWarnings: 0, toda: '', plate: '', approval: 'Suspended' },
   ]);
+});
+
+test('the God view admins\' own accounts are marked admin, whatever way their number was written', () => {
+  const accounts = buildAccounts([
+    { _id: 'a1', phone: '+639171234567', firstName: 'Ana', lastName: 'Cruz', role: 'passenger' },
+    { _id: 'a2', phone: '09181234567', firstName: 'Ben', lastName: 'Reyes', role: 'driver', toda: 'ITODA' },
+    { _id: 'p1', phone: '+639191234567', firstName: 'Cy', lastName: 'Lim', role: 'passenger' },
+  ], new Set(), parseAdminPhones('0917 123 4567, +639181234567'));
+  assert.deepEqual(accounts.map((account) => [account.key, account.admin]), [['a1', true], ['a2', true], ['p1', undefined]]);
+  assert.equal('admin' in buildAccounts([{ _id: 'a1', phone: '+639171234567', role: 'passenger' }], new Set())[0], false, 'no admin list, no admins');
+});
+
+test('God view lists every TODA with its drivers and their ratings, then the drivers of other TODAs', () => {
+  const { todas, other } = buildTodas([
+    { _id: 'd1', phone: '+639181234567', firstName: 'Ben', lastName: 'Reyes', email: 'ben@example.com', password: 'hash', role: 'driver', available: true,
+      toda: 'bitoda', plate: 'ABC 123', ratingSum: 9, ratingCount: 2 },
+    { _id: 'd2', phone: '09191234567', firstName: 'Ana', lastName: 'Cruz', role: 'driver', toda: 'BITODA', plate: 'XYZ 9', approval: 'pending' },
+    { _id: 'd3', phone: '+639201234567', firstName: 'Cy', lastName: 'Lim', role: 'driver', toda: 'ITODA PITODA', ratingSum: 14, ratingCount: 3 },
+    { _id: 'd4', phone: '+639211234567', firstName: 'Di', lastName: 'Go', role: 'driver', toda: ' Somewhere TODA ', terminatedAt: new Date(now), ratingSum: 4, ratingCount: 1 },
+    { _id: 'd5', phone: '+639221234567', role: 'driver' },
+  ], new Set(['d1', 'd4']));
+  assert.deepEqual(todas.map((toda) => toda.name), TODA_NAMES, 'every Indang TODA, even one without drivers');
+  const bitoda = todas.find((toda) => toda.name === 'BITODA');
+  assert.deepEqual({ ...bitoda, drivers: undefined }, { id: 'bitoda', name: 'BITODA', barangays: ['Bancod'], wholeTown: false,
+    stops: [{ name: 'CvSU', barangay: 'Kaytapos' }], drivers: undefined, rating: { average: 4.5, count: 2 } });
+  assert.deepEqual(bitoda.drivers, [
+    { key: 'd2', id: '09191234567', name: 'Ana Cruz', plate: 'XYZ 9', toda: 'BITODA', status: 'Offline', approval: 'Pending', rating: { average: null, count: 0 } },
+    { key: 'd1', id: '09181234567', name: 'Ben Reyes', plate: 'ABC 123', toda: 'BITODA', status: 'Available', approval: 'Approved', rating: { average: 4.5, count: 2 } },
+  ], 'by name, without email or password');
+  const itoda = todas.find((toda) => toda.name === 'ITODA');
+  assert.deepEqual([itoda.wholeTown, itoda.drivers.map((driver) => driver.name), itoda.rating], [true, ['Cy Lim'], { average: 4.7, count: 3 }], 'a former TODA name counts as its TODA');
+  assert.deepEqual(todas.find((toda) => toda.name === 'ALITODA').rating, { average: null, count: 0 });
+  assert.deepEqual(other.drivers.map(({ name, toda, status, approval }) => ({ name, toda, status, approval })), [
+    { name: 'Di Go', toda: 'Somewhere TODA', status: 'Online', approval: 'Suspended' },
+    { name: 'Driver', toda: '', status: 'Offline', approval: 'Approved' },
+  ]);
+  assert.deepEqual(other.rating, { average: 4, count: 1 });
 });
 
 test('a driver who signs up waits for approval, and the approval screens show what they signed up with', () => {

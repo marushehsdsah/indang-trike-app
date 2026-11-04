@@ -8,7 +8,8 @@ const { censorText } = require('../utils/profanity');
 const { REPORTABLE_STATUSES, validateReport } = require('../utils/reports');
 const { haversineDistance } = require('../utils/pathfinding');
 
-function createDispatch({ models, io, clock, presence, options = {} }) {
+// fares: the fares in force (indang-trike-backend/fares.js), which price each booking.
+function createDispatch({ models, io, clock, presence, fares = null, options = {} }) {
   const { User, Ride, Rating, Report } = models;
   const offerMs = options.offerMs ?? 20000, searchMs = options.searchMs ?? 120000;
   let tail = Promise.resolve();
@@ -174,7 +175,7 @@ function createDispatch({ models, io, clock, presence, options = {} }) {
     requireValue(!await Ride.exists({ passengerId: String(user._id), active: true }), 409, 'You already have an active booking.');
     let ride;
     // Offensive words in the pickup note are hidden before the driver sees it.
-    const fields = bookingFields(body, clock()), note = censorText(fields.note);
+    const fields = bookingFields(body, clock(), fares?.current()), note = censorText(fields.note);
     try { ride = await Ride.create({ ...fields, note: note.text, passengerId: String(user._id), searchExpiresAt: new Date(clock() + searchMs) }); }
     catch (error) { if (error.code === 11000) throw new HttpError(409, 'You already have an active booking.'); throw error; }
     await tickUnsafe(); notify(user._id); bookingsChanged();

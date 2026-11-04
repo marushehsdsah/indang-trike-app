@@ -92,7 +92,12 @@ export function AppProvider({ children }) {
     const requestToken = tokenRef.current, sequence = ++refreshSequence.current, requestedAt = Date.now();
     setSyncing(true);
     try {
-      const [state, settings] = await Promise.all([request('/state'), configRef.current || request('/config')]);
+      let [state, settings] = await Promise.all([request('/state'), configRef.current || request('/config')]);
+      // An admin changed the fares (God view): fetch the ones now in force, so
+      // the fare shown before booking is the one charged. If that fails, the
+      // next refresh tries again; the server refuses a booking quoted with the
+      // old fares meanwhile.
+      if (state.fareRevision && settings?.fares?.revision !== state.fareRevision) settings = await request('/config').catch(() => settings);
       if (requestToken === tokenRef.current && sequence === refreshSequence.current) {
         configRef.current = settings; setConfig(settings); applyState(state, requestedAt); setError(null); persistSession(state.user, settings);
       }
@@ -288,8 +293,10 @@ export function AppProvider({ children }) {
   const bookRide = useCallback(async (payload) => {
     const generation = sessionGeneration.current;
     try {
-      const { trip, passengers, note, idempotencyKey } = payload;
-      const result = noteCensored(await request('/rides', { trip, passengers, note, idempotencyKey, fareType: 'special' }));
+      // fareRevision names the fares the quote used; the server refuses the
+      // booking if an admin changed them since.
+      const { trip, passengers, note, idempotencyKey, fareRevision } = payload;
+      const result = noteCensored(await request('/rides', { trip, passengers, note, idempotencyKey, fareType: 'special', fareRevision }));
       if (generation !== sessionGeneration.current) return;
       refreshSequence.current += 1;
       setRide((previous) => mergeRide(previous, result.ride)); await refresh(); return result.ride;

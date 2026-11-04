@@ -1,3 +1,12 @@
+/* Fredoka Bold, the app's title face (theme.js FONTS.bold), for the IndangGO
+   wordmark. SIL Open Font License: fonts/OFL.txt. */
+@font-face{
+  font-family:"Fredoka";
+  src:url("./fonts/Fredoka-Bold.ttf") format("truetype");
+  font-weight:700;
+  font-style:normal;
+  font-display:swap
+}
 :root{
   font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   color:#20352f;
@@ -79,22 +88,35 @@ input::placeholder{
   font-weight:750;
   letter-spacing:-.8px
 }
+/* The app's title: its rickshaw in a white tile, then "Indang" in white and
+   "GO" in the for-hire yellow, set in Fredoka (screens/SplashScreen.js and
+   LoginScreen.js; colours from theme.js). */
 .brand-mark{
   display:grid;
   place-items:center;
   width:35px;
   height:35px;
-  background:#c4ed83;
-  color:#183d2e;
-  border-radius:10px;
-  font-size:18px;
-  letter-spacing:-1.5px
+  background:#fff;
+  color:#095c37;
+  border-radius:9px;
+  flex-shrink:0
 }
-.brand-tag{
-  font-size:9px;
-  letter-spacing:1.5px;
-  margin-left:14px;
-  color:#abc4b5
+.brand-mark svg{
+  display:block;
+  width:21px;
+  height:21px;
+  fill:currentColor
+}
+.brand-name{
+  font-family:"Fredoka",ui-rounded,"Arial Rounded MT Bold",system-ui,sans-serif;
+  font-weight:700;
+  letter-spacing:0;
+  line-height:1;
+  color:#fff;
+  white-space:nowrap
+}
+.brand-go{
+  color:#ffd700
 }
 .pulse-dot{
   display:inline-block;
@@ -243,25 +265,44 @@ input::placeholder{
   width:1px;
   background:#ffffff24
 }
-.workspace-name{
-  font-size:13px;
-  font-weight:500;
-  color:#dce6da
+/* "Administrator · <the signed-in account's name>" */
+.topbar-account{
+  display:flex;
+  align-items:baseline;
+  gap:8px;
+  min-width:0;
+  font-size:13px
 }
-.pilot-tag{
-  font-size:9px;
-  letter-spacing:1.3px;
-  border:1px solid #afcb9340;
-  color:#c6ddad;
-  border-radius:4px;
-  padding:4px 7px
+.topbar-role{
+  font-weight:500;
+  color:#dce6da;
+  flex-shrink:0
+}
+.admin-name{
+  font-weight:600;
+  color:#fff;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  min-width:0
+}
+.admin-name:not(:empty):before{
+  content:"\00b7";
+  margin-right:8px;
+  color:#9fb8ab;
+  font-weight:500
+}
+.admin-name:empty{
+  display:none
 }
 .topbar-right{
   margin-left:auto;
   display:flex;
   align-items:center;
   gap:22px;
-  font-size:12px
+  font-size:12px;
+  flex-shrink:0;
+  white-space:nowrap
 }
 .quiet{
   border:0;
@@ -1148,9 +1189,6 @@ input::placeholder{
   .login-story{
     padding:30px
   }
-  .brand-tag{
-    display:none
-  }
   .story-copy h1{
     font-size:46px
   }
@@ -1286,13 +1324,28 @@ input::placeholder{
   .brand-mark{
     width:30px;
     height:30px;
-    font-size:16px
+    border-radius:8px
   }
-  .topbar-divider,.pilot-tag,#admin-name{
+  .brand-mark svg{
+    width:18px;
+    height:18px
+  }
+  .topbar-divider{
     display:none
   }
-  .workspace-name{
-    font-size:11px
+  /* Administrator over the name, which is cut short with … when long. */
+  .topbar-account{
+    flex-direction:column;
+    align-items:flex-start;
+    gap:1px;
+    font-size:11px;
+    line-height:1.3
+  }
+  .admin-name:not(:empty):before{
+    content:none
+  }
+  .admin-name{
+    max-width:100%
   }
   .page-heading{
     padding:21px 16px;
@@ -1730,4 +1783,575 @@ input::placeholder{
     grid-area:decision;
     min-width:0
   }
+}
+/* Fares: each TODA's fares, which an admin changes when the fares change. */
+.fares-status{
+  margin-top:6px
+}
+.town-fares{
+  margin:0 34px 18px;
+  padding:16px 17px;
+  border:1px solid #dce5de;
+  border-radius:13px;
+  background:#fff
+}
+.town-fare-list{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  margin-top:12px
+}
+.town-fare{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  grid-template-areas:"label field" "note field" "note was";
+  align-items:center;
+  gap:2px 14px;
+  padding:12px 14px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:#f9faf9
+}
+.town-label{
+  grid-area:label;
+  font-size:12px;
+  font-weight:650
+}
+.town-note{
+  grid-area:note;
+  font-size:10px;
+  color:#8d9891;
+  line-height:1.5
+}
+.town-fare .fare-field{
+  grid-area:field
+}
+.town-fare .fare-was{
+  grid-area:was;
+  margin:3px 0 0;
+  text-align:right
+}
+.fares-layout{
+  display:grid;
+  grid-template-columns:260px minmax(0,1fr);
+  align-items:start;
+  gap:16px;
+  margin:0 34px
+}
+.toda-panel{
+  position:sticky;
+  top:12px;
+  max-height:calc(100dvh - 24px);
+  display:flex;
+  flex-direction:column;
+  border:1px solid #dce5de;
+  border-radius:13px;
+  background:#fff;
+  overflow:hidden
+}
+.toda-panel .people-heading{
+  padding:17px 17px 12px
+}
+.toda-list{
+  overflow:auto;
+  min-height:0
+}
+.toda-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  width:100%;
+  padding:12px 16px;
+  border:0;
+  border-left:3px solid transparent;
+  border-top:1px solid #f0f3f0;
+  background:#fff;
+  color:var(--ink);
+  text-align:left
+}
+.toda-row:hover{
+  background:#f7faf7
+}
+.toda-row[aria-current=true]{
+  background:#eff6f0;
+  border-left-color:var(--green)
+}
+.toda-row .user-subtitle{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap
+}
+.toda-changes{
+  margin-left:auto;
+  flex-shrink:0;
+  padding:2px 7px;
+  border-radius:999px;
+  background:#fbf3e2;
+  color:#9a6a1d;
+  font-size:10px;
+  font-weight:650
+}
+.fares-panel{
+  min-width:0;
+  border:1px solid #dce5de;
+  border-radius:13px;
+  background:#fff;
+  scroll-margin-top:12px
+}
+.fares-toolbar{
+  align-items:flex-start;
+  justify-content:space-between
+}
+.toda-heading{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  min-width:0;
+  flex:1 1 300px
+}
+.toda-heading .panel-title{
+  font-size:20px
+}
+.toda-heading .small{
+  max-width:620px
+}
+#fare-search{
+  flex:0 1 300px;
+  font-size:11px;
+  padding:11px 12px;
+  background:#f9faf9;
+  border-color:#e6ebe7
+}
+.fare-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:12px
+}
+.fare-table+.fare-table{
+  margin-top:8px
+}
+.fare-table caption{
+  padding:10px 17px 8px;
+  text-align:left;
+  font-size:11px;
+  color:#6b7d71
+}
+.fare-table caption strong{
+  color:var(--ink);
+  font-size:12px
+}
+.fare-table thead th{
+  background:#f9faf9;
+  text-align:left;
+  font-size:10px;
+  font-weight:650;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  color:#7b9287;
+  padding:10px 16px;
+  border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+  white-space:nowrap
+}
+.fare-table td,.fare-table tbody th{
+  padding:7px 16px;
+  vertical-align:middle;
+  text-align:left;
+  font-weight:400
+}
+.fare-group{
+  border-top:1px solid #edf1ee
+}
+.fare-group:first-of-type{
+  border-top:0
+}
+.fare-table .cell-area{
+  vertical-align:top;
+  width:34%;
+  padding-top:12px
+}
+.cell-shared{
+  display:block;
+  margin-top:5px;
+  font-size:10px;
+  color:#5e7f6d
+}
+.trip-from{
+  color:#4d6157;
+  font-size:11px
+}
+.fare-cell{
+  min-width:92px
+}
+.fare-field{
+  display:inline-flex;
+  align-items:center;
+  border:1px solid #dce4df;
+  border-radius:8px;
+  background:#fff;
+  transition:border-color .15s,box-shadow .15s
+}
+.fare-field:focus-within{
+  border-color:var(--green);
+  box-shadow:0 0 0 3px #69b89933
+}
+.fare-field .peso{
+  padding-left:10px;
+  color:#7b9287;
+  font-weight:600
+}
+.fare-field input{
+  width:58px;
+  padding:8px 10px 8px 3px;
+  border:0;
+  border-radius:8px;
+  background:transparent;
+  font-weight:650;
+  font-variant-numeric:tabular-nums
+}
+.fare-field input:focus-visible{
+  outline:none
+}
+.fare-field input:disabled{
+  color:#8d9891
+}
+.fare-cell-label{
+  display:none
+}
+/* What a fare was, or the taripa's amount: beside the box, taking no room when empty. */
+.fare-was{
+  display:inline-block;
+  margin-left:8px;
+  vertical-align:middle;
+  font-size:10px;
+  color:#a17836
+}
+.fare-was:empty{
+  display:none
+}
+.fare-was.is-taripa{
+  color:#8d9891
+}
+.fare-cell.is-changed .fare-field{
+  border-color:#d9a441;
+  background:#fffaea
+}
+.fare-cell.is-invalid .fare-field{
+  border-color:#d26a5f;
+  background:#fdf1ef
+}
+.fare-cell.is-invalid .fare-was{
+  color:#b4443a;
+  font-weight:600
+}
+.fare-savebar{
+  position:sticky;
+  bottom:16px;
+  z-index:5;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  margin:16px 34px 0;
+  padding:13px 16px;
+  border:1px solid #d9c38f;
+  border-radius:12px;
+  background:#fffaea;
+  box-shadow:0 12px 30px #1030261f
+}
+.savebar-copy{
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  min-width:0;
+  font-size:12px;
+  color:#6d5424
+}
+.savebar-problem{
+  color:#b4443a;
+  font-size:11px
+}
+.savebar-problem:empty{
+  display:none
+}
+.savebar-actions{
+  display:flex;
+  gap:8px;
+  flex-shrink:0
+}
+#fares-view{
+  padding-bottom:24px
+}
+@media(max-width:850px){
+  .town-fares,.fares-layout{
+    margin-left:20px;
+    margin-right:20px
+  }
+  .fare-savebar{
+    margin:16px 20px 0
+  }
+  .fares-layout{
+    grid-template-columns:minmax(0,1fr)
+  }
+  .toda-panel{
+    position:static;
+    max-height:none
+  }
+  .toda-list{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+    padding:0 12px 12px
+  }
+  .toda-row{
+    width:auto;
+    padding:7px 11px;
+    border:1px solid #dce4df;
+    border-radius:8px
+  }
+  .toda-row[aria-current=true]{
+    border-color:var(--green);
+    box-shadow:inset 0 0 0 1px var(--green)
+  }
+  .toda-row .user-subtitle{
+    display:none
+  }
+  .fare-table thead{
+    position:absolute;
+    width:1px;
+    height:1px;
+    overflow:hidden;
+    clip-path:inset(50%)
+  }
+  .fare-table,.fare-table tbody{
+    display:block
+  }
+  .fare-table caption{
+    display:block
+  }
+  .fare-table tr{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:flex-start;
+    gap:8px 12px;
+    padding:10px 16px
+  }
+  .fare-table td,.fare-table tbody th{
+    display:block;
+    padding:0
+  }
+  .fare-table .cell-area{
+    flex:1 1 100%;
+    width:auto;
+    padding:4px 0 0
+  }
+  .fare-table .cell-trip{
+    flex:1 1 100%
+  }
+  .fare-table .fare-cell-label{
+    display:block;
+    position:absolute;
+    top:0;
+    left:0;
+    font-size:9px;
+    font-weight:650;
+    letter-spacing:.6px;
+    text-transform:uppercase;
+    color:#7b9287;
+    white-space:nowrap
+  }
+  .fare-table .fare-cell{
+    position:relative;
+    padding-top:15px;
+    min-width:0
+  }
+  .fare-table .fare-was{
+    display:block;
+    margin:3px 0 0
+  }
+  .fare-table .fare-was:empty{
+    display:none
+  }
+  .fare-savebar{
+    padding:10px 12px
+  }
+}
+@media(max-width:620px){
+  .town-fares,.fares-layout{
+    margin-left:16px;
+    margin-right:16px
+  }
+  .fare-savebar{
+    margin:16px 16px 0;
+    flex-direction:column;
+    align-items:stretch
+  }
+  .savebar-actions .report-button{
+    flex:1
+  }
+  .town-fare-list{
+    grid-template-columns:minmax(0,1fr)
+  }
+  #fare-search{
+    flex-basis:100%
+  }
+}
+
+/* TODAs view: each TODA's drivers and their ratings, laid out as Fares. */
+#todas-view{
+  padding-bottom:24px
+}
+.toda-driver-count{
+  margin-left:auto;
+  flex-shrink:0;
+  min-width:24px;
+  padding:2px 7px;
+  border-radius:999px;
+  background:#eef2ef;
+  color:#5e7163;
+  font-size:10px;
+  font-weight:650;
+  text-align:center;
+  font-variant-numeric:tabular-nums
+}
+.toda-row[aria-current=true] .toda-driver-count{
+  background:#d9ede1;
+  color:#1c6e52
+}
+.toda-summary{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-top:6px
+}
+.toda-summary:empty{
+  display:none
+}
+.summary-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:4px 9px;
+  border-radius:999px;
+  background:#f1f5f2;
+  color:#4e6157;
+  font-size:11px;
+  font-weight:600
+}
+.summary-chip.pending{
+  background:#fbf3e2;
+  color:#9a6a1d
+}
+.summary-chip.suspended{
+  background:#fbeceb;
+  color:#a8443b
+}
+.summary-chip .chip-label{
+  font-weight:500
+}
+.summary-chip .cell-note{
+  display:inline;
+  margin:0;
+  font-size:11px
+}
+.driver-tools{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  gap:8px;
+  flex:0 1 400px
+}
+#driver-search{
+  flex:1 1 220px;
+  font-size:11px;
+  padding:11px 12px;
+  background:#f9faf9;
+  border-color:#e6ebe7
+}
+#driver-sort{
+  flex:0 0 auto;
+  font-size:11px;
+  padding:10px 12px;
+  border:1px solid #e6ebe7;
+  border-radius:9px;
+  background:#f9faf9;
+  color:var(--ink)
+}
+/* "4.8 ★ (12)" */
+.driver-rating{
+  display:inline-flex;
+  align-items:baseline;
+  gap:4px;
+  white-space:nowrap;
+  font-variant-numeric:tabular-nums
+}
+.driver-rating strong{
+  font-size:13px;
+  font-weight:700;
+  color:var(--ink)
+}
+.driver-rating .rating-star{
+  color:#e2a50b;
+  font-size:13px;
+  line-height:1
+}
+.driver-rating .rating-count{
+  color:#7d8a82;
+  font-size:11px
+}
+.drivers-table .cell-rating{
+  white-space:nowrap
+}
+.drivers-table .status-pill+.status-pill{
+  margin-left:6px
+}
+@media(max-width:850px){
+  .drivers-table tr{
+    grid-template-areas:"who status" "rating phone"
+  }
+  .drivers-table .cell-rating{
+    grid-area:rating;
+    padding-left:48px
+  }
+  .driver-tools{
+    flex-basis:100%;
+    justify-content:flex-start
+  }
+}
+@media(max-width:620px){
+  #driver-search{
+    flex-basis:100%
+  }
+}
+
+/* Accounts: the God view admins' own accounts, marked and, if asked, hidden. */
+.hide-admins{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  font-size:11px;
+  font-weight:600;
+  color:#5e7163;
+  white-space:nowrap;
+  cursor:pointer
+}
+.hide-admins input{
+  width:15px;
+  height:15px;
+  margin:0;
+  padding:0;
+  accent-color:var(--green);
+  cursor:pointer
+}
+.admin-tag{
+  display:inline-block;
+  margin-left:8px;
+  padding:2px 7px;
+  border-radius:5px;
+  background:#153e32;
+  color:#fff;
+  font-size:10px;
+  font-weight:650;
+  letter-spacing:.3px;
+  vertical-align:middle
 }

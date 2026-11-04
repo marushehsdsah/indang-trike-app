@@ -10,6 +10,11 @@ const barangayBoundaries = require('../assets/geo/indang-barangays.json');
 // trike, priced per trip (the taripa's per-passenger regular fares are not
 // offered in the app). Every fare is [day, night].
 // The app shows the quote; the server recomputes it with its own clock.
+//
+// Admins can change the amounts in God view when the fares change
+// (indang-trike-backend/fares.js); the server sends them to the app as
+// `prices`. Only amounts change: the areas, their barangays and the rules
+// stay as the taripa lists them.
 
 // A stop the taripa does not list, or a pickup outside Indang: a flat fare
 // per trip.
@@ -18,6 +23,42 @@ const MANILA_OFFSET_MINUTES = 8 * 60;
 const { night: NIGHT, special: SPECIAL, poblacion: POBLACION, terminals: TERMINALS, cvsuOrigin: CVSU } = fareData;
 const AREAS = fareData.areas;
 const AREA_BY_ID = new Map(AREAS.map((area) => [area.id, area]));
+const PERIODS = ['day', 'night'];
+
+// Every amount an admin may change, by key, at its taripa amount (pesos):
+//   flat                                          the flat fare (FLAT_FARE)
+//   extraPassenger                                each passenger past two on a special trip
+//   poblacion/<period>                            a special trip within the Poblacion
+//   bunaCerca/<to>/<period>                       from the Buna Cerca junction
+//   area/<id>/special/<origin>/<period>           a special trip, per trip
+// where <period> is day or night. (The taripa's regular per-passenger fares
+// are not offered, so they have no key.)
+const TARIPA_PRICES = (() => {
+  const prices = { flat: FLAT_FARE, extraPassenger: SPECIAL.extraPassenger };
+  const pair = (key, fare) => PERIODS.forEach((period, index) => { prices[`${key}/${period}`] = fare[index]; });
+  pair('poblacion', POBLACION.special);
+  for (const [to, fare] of Object.entries(TERMINALS.bunaCerca.special)) pair(`bunaCerca/${to}`, fare);
+  for (const area of AREAS) {
+    for (const [origin, fare] of Object.entries(area.special)) pair(`area/${area.id}/special/${origin}`, fare);
+  }
+  return Object.freeze(prices);
+})();
+
+// The amount for a key: the one in `prices` (the fares set in God view) when
+// it is a positive number, otherwise the taripa's.
+function priceLookup(prices) {
+  return (key) => {
+    const value = prices && Object.hasOwn(prices, key) ? prices[key] : undefined;
+    return Number.isFinite(value) && value > 0 ? value : TARIPA_PRICES[key];
+  };
+}
+const taripaPrice = priceLookup(null);
+
+// Every key with the amount in force.
+function farePrices(prices) {
+  const price = priceLookup(prices);
+  return Object.fromEntries(Object.keys(TARIPA_PRICES).map((key) => [key, price(key)]));
+}
 
 // Night is 9:00 PM to 4:00 AM, Philippine time, whatever the phone or server
 // clock's own time zone.
@@ -43,9 +84,12 @@ function zoneOf(coordinate) {
   };
 }
 
-// An area's special-trip fare from an origin, falling back to the Poblacion
-// table, which every area has.
-const specialFare = (area, origin) => area.special[origin] ?? area.special.poblacion;
+// An area's special-trip fare [day, night] from an origin, falling back to
+// the Poblacion table, which every area has.
+function specialFare(price, area, origin) {
+  const key = `area/${area.id}/special/${area.special[origin] ? origin : 'poblacion'}`;
+  return PERIODS.map((period) => price(`${key}/${period}`));
+}
 
 const BARANGAY_SHAPES = new Map(barangayBoundaries.features.map((feature) => [
   feature.properties.name, createMapPolygons({ type: 'FeatureCollection', features: [feature] }),
@@ -75,15 +119,18 @@ function plazaRange(areas) {
 // trip's origin (day and night), need no band. Prices are compared from the
 // origin itself: Kaytapos's areas cost the same from the Poblacion but not
 // from the Palengke.
-function resolveArea(zone, origin) {
+// The bands follow the taripa's own amounts, so a fare changed in God view
+// changes what an area costs, never where it is.
+function resolveArea(zone, origin, price = taripaPrice) {
   const { areas } = zone;
   if (areas.length <= 1) return areas[0] ?? null;
-  const fareKey = (area) => specialFare(area, origin).join('/');
-  const byFare = [...areas].sort((a, b) => specialFare(a, origin)[0] - specialFare(b, origin)[0] || specialFare(a, origin)[1] - specialFare(b, origin)[1]);
-  if (new Set(byFare.map(fareKey)).size === 1) return byFare[0];
+  const listed = (area) => specialFare(taripaPrice, area, origin);
+  const outward = [...areas].sort((a, b) => listed(a)[0] - listed(b)[0] || listed(a)[1] - listed(b)[1]);
+  const fareKey = (area) => specialFare(price, area, origin).join('/');
+  if (new Set(areas.map(fareKey)).size === 1) return outward[0];
   const { min, max } = plazaRange(areas);
   const share = max > min ? Math.min(Math.max((plazaDistance(zone.coordinate) - min) / (max - min), 0), 1) : 0;
-  return byFare[Math.min(byFare.length - 1, Math.floor(share * byFare.length))];
+  return outward[Math.min(outward.length - 1, Math.floor(share * outward.length))];
 }
 
 // Where a trip comes nearest the town plaza: on its road route when given
@@ -96,10 +143,11 @@ function junctionOf(pickup, dropoff, route) {
   return points.reduce((best, point) => (plazaDistance(point) < plazaDistance(best) ? point : best));
 }
 
-// A stop's fare from an origin: its area (resolveArea) and that area's listed fare.
-function legFare(zone, origin, period) {
-  const area = resolveArea(zone, origin);
-  return { fare: specialFare(area, origin)[period], area: { id: area.id, label: area.label } };
+// A stop's fare from an origin in a period (day or night): its area
+// (resolveArea) and that area's fare in force.
+function legFare(zone, origin, period, price) {
+  const area = resolveArea(zone, origin, price);
+  return { fare: specialFare(price, area, origin)[PERIODS.indexOf(period)], area: { id: area.id, label: area.label } };
 }
 
 // What a trip between two coordinates costs at `at` (ms). `route` is the
@@ -111,22 +159,27 @@ function legFare(zone, origin, period) {
 // one barangay into another) pays both, added together. A barangay with
 // several areas is priced by the stop's distance from the town plaza
 // (resolveArea), never by asking the rider.
-function quoteTrip({ pickup, dropoff, route = null, at = Date.now() }) {
+// `prices` holds the fares set in God view, by key (TARIPA_PRICES); any it
+// lacks are the taripa's. extraPassenger is what each passenger past two adds
+// to a special trip.
+function quoteTrip({ pickup, dropoff, route = null, at = Date.now(), prices = null }) {
+  const price = priceLookup(prices);
   const town = getMunicipalityAt(pickup)?.name ?? null;
   const night = isNightAt(at);
-  if (town !== 'Indang') return { town, night, flat: FLAT_FARE, special: null };
-  const period = night ? 1 : 0;
+  const extraPassenger = price('extraPassenger');
+  if (town !== 'Indang') return { town, night, flat: price('flat'), special: null, extraPassenger };
+  const period = night ? 'night' : 'day';
   const stops = { pickup: zoneOf(pickup), dropoff: zoneOf(dropoff) };
-  const base = { town, night, flat: null, special: null };
+  const base = { town, night, flat: null, special: null, extraPassenger };
 
   if (stops.pickup.poblacion && stops.dropoff.poblacion) {
-    return { ...base, special: { fare: POBLACION.special[period], origin: 'poblacion', area: null, legs: [] } };
+    return { ...base, special: { fare: price(`poblacion/${period}`), origin: 'poblacion', area: null, legs: [] } };
   }
 
   // From the Buna Cerca junction (pilahan) the taripa lists its own fares.
   const fromBunaCerca = near(pickup, TERMINALS.bunaCerca, TERMINALS.bunaCerca.radiusMeters);
   if (fromBunaCerca && stops.dropoff.poblacion) {
-    return { ...base, special: { fare: TERMINALS.bunaCerca.special.poblacion[period], origin: 'bunaCerca', area: null, legs: [] } };
+    return { ...base, special: { fare: price(`bunaCerca/poblacion/${period}`), origin: 'bunaCerca', area: null, legs: [] } };
   }
 
   // Which stops' listed fares apply, and from where.
@@ -150,23 +203,27 @@ function quoteTrip({ pickup, dropoff, route = null, at = Date.now() }) {
     if (!priced.length) priced = [plazaDistance(pickup) >= plazaDistance(dropoff) ? 'pickup' : 'dropoff'];
   }
 
-  if (priced.some((endpoint) => !stops[endpoint].areas.length)) return { ...base, flat: FLAT_FARE };
+  if (priced.some((endpoint) => !stops[endpoint].areas.length)) return { ...base, flat: price('flat') };
   const legs = priced.map((endpoint) => {
-    const leg = legFare(stops[endpoint], origin, period);
-    const bunaCercaFare = fromBunaCerca && endpoint === 'dropoff' && priced.length === 1 ? TERMINALS.bunaCerca.special[leg.area.id] : null;
-    return bunaCercaFare ? { ...leg, fare: bunaCercaFare[period], origin: 'bunaCerca' } : { ...leg, origin };
+    const leg = legFare(stops[endpoint], origin, period, price);
+    const fromJunction = fromBunaCerca && endpoint === 'dropoff' && priced.length === 1 && Object.hasOwn(TERMINALS.bunaCerca.special, leg.area.id);
+    return fromJunction ? { ...leg, fare: price(`bunaCerca/${leg.area.id}/${period}`), origin: 'bunaCerca' } : { ...leg, origin };
   });
   const fare = legs.reduce((sum, leg) => sum + leg.fare, 0);
   const area = legs.length === 1 ? legs[0].area : { id: legs.map((leg) => leg.area.id).join('+'), label: legs.map((leg) => leg.area.label).join(' + ') };
   return { ...base, special: { fare, origin: legs[0].origin, area, legs } };
 }
 
+// What each passenger past two adds to a special trip: the quote's, or the
+// taripa's for a quote saved without it.
+const extraPassengerFare = (quote) => (Number.isFinite(quote.extraPassenger) ? quote.extraPassenger : SPECIAL.extraPassenger);
+
 // The total for a quote: a flat fare, or a special trip's fare covering two
 // passengers, plus the per-passenger charge for each one after that.
 function fareTotal(quote, { passengers = 1 } = {}) {
   if (quote.flat !== null && quote.flat !== undefined) return quote.flat;
   if (!quote.special) return null;
-  return quote.special.fare + Math.max(0, passengers - SPECIAL.basePassengers) * SPECIAL.extraPassenger;
+  return quote.special.fare + Math.max(0, passengers - SPECIAL.basePassengers) * extraPassengerFare(quote);
 }
 
 // What the ride stores and both apps show beside the fare.
@@ -174,7 +231,7 @@ function fareDetails(quote, { passengers = 1 } = {}) {
   const total = fareTotal(quote, { passengers });
   if (quote.flat !== null && quote.flat !== undefined) return { type: 'flat', night: quote.night, total };
   return { type: 'special', night: quote.night, total, area: quote.special?.area?.label ?? null, origin: quote.special?.origin ?? null,
-    base: quote.special?.fare ?? null, extraPassengers: Math.max(0, passengers - SPECIAL.basePassengers), extraFare: SPECIAL.extraPassenger };
+    base: quote.special?.fare ?? null, extraPassengers: Math.max(0, passengers - SPECIAL.basePassengers), extraFare: extraPassengerFare(quote) };
 }
 
 module.exports = {
@@ -182,7 +239,9 @@ module.exports = {
   FARE_AREAS: AREAS,
   FLAT_FARE,
   SPECIAL_RULES: SPECIAL,
+  TARIPA_PRICES,
   fareDetails,
+  farePrices,
   fareTotal,
   getFareArea: (id) => AREA_BY_ID.get(id) ?? null,
   isNightAt,

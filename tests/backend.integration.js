@@ -6,7 +6,7 @@ const { io } = require('socket.io-client');
 const { createBackend } = require('../indang-trike-backend/app');
 const { ADMIN_CANCELLATION } = require('../indang-trike-backend/admin');
 const { DEFAULT_TRIP } = require('../data/indangMap');
-const { quoteTrip } = require('../data/fares');
+const { fareTotal, quoteTrip } = require('../data/fares');
 const { getRoadGraph } = require('../data/roadNetwork');
 const { calculateRoute } = require('../utils/roadGraph');
 const { SEND_LIMIT, SEND_WINDOW_MS } = require('../indang-trike-backend/chat');
@@ -169,7 +169,7 @@ test('the admin interface lists the accounts and trips in the database, for admi
   assert.equal((await action(passenger, cancelled.id, 'cancel')).status, 200);
   const searching = (await book(passenger)).body.ride;
 
-  for (const path of ['/admin/dashboard', '/admin/accounts', '/admin/trips']) assert.equal((await request(path, passenger.token)).status, 403, path);
+  for (const path of ['/admin/dashboard', '/admin/accounts', '/admin/todas', '/admin/trips']) assert.equal((await request(path, passenger.token)).status, 403, path);
   // The God view test registered the admin earlier in this run.
   const admin = (await request('/login', null, { phone: adminPhone, password: 'strong-password' })).body;
   const route = `${DEFAULT_TRIP.pickup.name} → ${DEFAULT_TRIP.dropoff.name}`;
@@ -188,6 +188,7 @@ test('the admin interface lists the accounts and trips in the database, for admi
   assert.deepEqual(accounts.find((item) => item.key === driver.user.id),
     { key: driver.user.id, id: driver.user.phone.replace('+63', '0'), name: 'Test driver', email: driver.user.email, role: 'RIDER', status: 'Online', languageWarnings: 0, toda: 'Test TODA', plate: driver.user.plate, approval: 'Approved' });
   assert.equal(accounts.some((item) => item.name === 'Pilot Admin'), false, 'admin accounts are not listed');
+  assert.equal(accounts.find((item) => item.key === admin.user.id).admin, true, 'a God view admin\'s own account is marked, so God view can hide it');
   assert.equal(accounts.length, await backend.models.User.countDocuments({ role: { $ne: 'admin' } }));
 
   // One account's whole trip history, as passenger or as driver.
@@ -895,6 +896,109 @@ test('an Indang booking is charged from the taripa by the server, not the app', 
   now = Date.now();
 });
 
+test('fares changed in God view are charged on new bookings, sent to the app, and survive a restart; only admins change them', async () => {
+  const admin = (await request('/login', null, { phone: adminPhone, password: 'strong-password' })).body;
+  const ordinary = await account(), passenger = await account();
+  const purok3Night = 'area/bancod-purok-3/special/poblacion/night', purok3Day = 'area/bancod-purok-3/special/poblacion/day';
+  const save = (changes, token = admin.token) => request('/admin/fares', token, { changes });
+  try {
+    // Only God view admins see or change fares.
+    assert.equal((await request('/admin/fares', ordinary.token)).status, 403);
+    assert.equal((await save([{ key: purok3Night, from: 39, to: 45 }], ordinary.token)).status, 403);
+    const sheet = (await request('/admin/fares', admin.token)).body;
+    assert.equal(sheet.prices[purok3Night], 39);
+    assert.deepEqual(sheet.prices, sheet.taripa);
+    assert.deepEqual(sheet.limits, { min: 1, max: 1000 });
+    assert.deepEqual(sheet.todas.find((toda) => toda.name === 'BITODA').groups, ['bancod-purok-1', 'bancod-purok-2', 'bancod-purok-3', 'bancod-purok-4', 'bancod-purok-5']);
+    assert.equal(sheet.todas.find((toda) => toda.name === 'ITODA').wholeTown, true);
+    assert.equal(sheet.updatedAt, null);
+    const config = (await request('/config', passenger.token)).body;
+    assert.equal(config.fare, 45);
+    assert.equal(config.fares.revision, sheet.revision);
+    assert.deepEqual(config.fares.prices, sheet.prices);
+    assert.equal((await state(passenger)).fareRevision, sheet.revision);
+
+    // What cannot be saved.
+    for (const [changes, why] of [
+      [[], 'nothing changed'], [[{ key: 'area/nowhere/special/poblacion/day', from: 1, to: 2 }], 'not on the taripa'],
+      [[{ key: '__proto__', from: 1, to: 2 }], 'not a fare'], [[{ key: purok3Night, from: 39, to: 0 }], 'free'],
+      [[{ key: purok3Night, from: 39, to: 40.5 }], 'centavos'], [[{ key: purok3Night, from: 39, to: '40' }], 'text'],
+      [[{ key: purok3Night, from: 39, to: 1001 }], 'over the limit'], [[{ key: purok3Night, to: 40 }], 'no amount on screen'],
+      [[{ key: purok3Night, from: 39, to: 40 }, { key: purok3Night, from: 39, to: 41 }], 'listed twice'],
+      [[{ key: 'area/bancod-purok-3/regular/poblacion/day/price', from: 17, to: 18 }], 'regular trips are not offered'],
+    ]) assert.equal((await save(changes)).status, 400, why);
+    assert.equal((await request('/admin/fares', admin.token, { changes: 'all' })).status, 400);
+    assert.equal(await backend.models.FareSheet.countDocuments(), 0, 'nothing was saved');
+
+    const saved = await save([{ key: purok3Night, from: 39, to: 45 }, { key: 'extraPassenger', from: 15, to: 20 }, { key: 'flat', from: 45, to: 50 },
+      { key: purok3Day, from: 34, to: 36 }]);
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.prices[purok3Night], 45);
+    assert.equal(saved.body.taripa[purok3Night], 39, 'the taripa stays for comparison');
+    assert.equal(saved.body.updatedBy, 'Test passenger');
+    assert.ok(saved.body.updatedAt);
+    assert.notEqual(saved.body.revision, sheet.revision);
+    // A fare someone else changed since the admin's page loaded is not overwritten.
+    const stale = await save([{ key: purok3Night, from: 39, to: 50 }]);
+    assert.equal(stale.status, 409);
+    assert.match(stale.body.error, /Bancod · Purok III, from the poblacion, at night changed since you opened the fares/);
+    assert.equal((await request('/admin/fares', admin.token)).body.prices[purok3Night], 45);
+
+    // The app is told, and sent the new fares.
+    assert.equal((await state(passenger)).fareRevision, saved.body.revision);
+    const updated = (await request('/config', passenger.token)).body;
+    assert.equal(updated.fare, 50);
+    assert.equal(updated.fares.revision, saved.body.revision);
+    assert.equal(updated.fares.prices[purok3Night], 45);
+
+    // A booking is charged the new fares; one the app quoted with the old ones
+    // is refused, and an older app that names none is charged the new ones.
+    const plaza = { name: 'Indang Town Plaza', coordinate: { latitude: 14.19576, longitude: 120.87849 } };
+    const bancod = { name: 'Bancod Purok III', coordinate: { latitude: 14.2186, longitude: 120.87265 } };
+    const book = (extra) => request('/rides', passenger.token, { trip: { pickup: plaza, dropoff: bancod }, passengers: 3, note: '', idempotencyKey: randomUUID(), ...extra });
+    now = Date.UTC(2026, 9, 2, 14, 0); // 10:00 PM in the Philippines
+    const quotedBefore = await book({ fareRevision: sheet.revision });
+    assert.equal(quotedBefore.status, 409);
+    assert.match(quotedBefore.body.error, /Fares were just updated/);
+    assert.equal(await backend.models.Ride.countDocuments({ passengerId: passenger.user.id }), 0);
+    const current = await book({ fareRevision: saved.body.revision });
+    assert.equal(current.status, 201, JSON.stringify(current.body));
+    assert.equal(current.body.ride.fare, 45 + 20, 'the night fare and the extra passenger, as changed');
+    assert.equal(current.body.ride.fareDetails.extraFare, 20);
+    // The app's own quote, with the prices it was sent, is the fare charged.
+    const preview = quoteTrip({ pickup: plaza.coordinate, dropoff: bancod.coordinate, at: now, prices: updated.fares.prices });
+    assert.equal(fareTotal(preview, { passengers: 3 }), current.body.ride.fare);
+    assert.equal((await action(passenger, current.body.ride.id, 'cancel')).status, 200);
+    now = Date.UTC(2026, 9, 2, 2, 0); // 10:00 AM
+    // Regular trips stay refused, whatever the fares.
+    assert.equal((await book({ fareType: 'regular', discounted: 1 })).status, 400);
+    const unnamed = await book({ fareRevision: null });
+    assert.equal(unnamed.status, 201, 'no revision named');
+    assert.equal(unnamed.body.ride.fare, 36 + 20, 'the day fare and the extra passenger, as changed');
+    assert.equal((await action(passenger, unnamed.body.ride.id, 'cancel')).status, 200);
+
+    // The saved fares are in force after a restart.
+    await backend.close();
+    backend = await createBackend({ mongoUri: `${process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017'}/${dbName}`, clock: () => now, adminPhones: adminPhone, sendEmail });
+    await new Promise((resolve) => backend.server.listen(0, '127.0.0.1', resolve));
+    base = `http://127.0.0.1:${backend.server.address().port}`;
+    assert.equal((await request('/config', passenger.token)).body.fares.prices[purok3Night], 45);
+    assert.equal((await state(passenger)).fareRevision, saved.body.revision);
+
+    // A fare set back to the taripa's amount follows the taripa again.
+    const reset = await save([{ key: purok3Night, from: 45, to: 39 }, { key: 'extraPassenger', from: 20, to: 15 }, { key: 'flat', from: 50, to: 45 },
+      { key: purok3Day, from: 36, to: 34 }]);
+    assert.equal(reset.status, 200, JSON.stringify(reset.body));
+    assert.deepEqual((await backend.models.FareSheet.findById('current').lean()).prices, {});
+    assert.equal(reset.body.revision, sheet.revision, 'the taripa again');
+  } finally {
+    // The other tests are priced from the taripa.
+    await backend.models.FareSheet.deleteMany({});
+    await request('/admin/fares', admin.token);
+    now = Date.now();
+  }
+});
+
 test('names with symbols are rejected before a sign-up code is sent, and on profile update', async () => {
   const email = `symbols-${sequence}@example.com`;
   const bad = await request('/register/code', null, { phone: `0917${sequence++}`, password: 'strong-password', firstName: 'Juan1', lastName: 'Cruz', email, role: 'passenger' });
@@ -962,6 +1066,11 @@ test('after a completed ride each side rates the other once, and the next trip s
   const reported = people.find((person) => person.id === passenger.user.id);
   assert.deepEqual([reported.rating, reported.safetyReports], [{ average: null, count: 0 }, 1]);
   assert.equal(people.find((person) => person.id === driver.user.id).safetyReports, 0);
+  // God view's TODAs tab lists the driver under the TODA they gave, with their rating.
+  const { todas, other } = (await request('/admin/todas', admin.token)).body;
+  assert.equal(todas.length, 16);
+  const listed = other.drivers.find((item) => item.key === driver.user.id);
+  assert.deepEqual([listed.toda, listed.approval, listed.rating], ['Test TODA', 'Approved', { average: 5, count: 1 }]);
   await action(passenger, next.id, 'cancel');
   await request('/driver/availability', driver.token, { available: false });
 });

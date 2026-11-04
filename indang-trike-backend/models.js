@@ -109,7 +109,15 @@ function createModels(connection) {
     phone: { type: String, required: true, unique: true }, email: { type: String, index: true },
     userId: { type: String, required: true }, reason: String,
   }, { timestamps: true, bufferCommands: false });
+  // The fares an admin changed in God view (indang-trike-backend/fares.js):
+  // one document, "current", with each changed amount by key (data/fares.js
+  // TARIPA_PRICES); every other fare is the taripa's. version counts saves.
+  const fareSheetSchema = new Schema({
+    _id: { type: String, required: true }, prices: { type: Schema.Types.Mixed, default: {} },
+    version: { type: Number, default: 0 }, updatedBy: String, updatedByName: String,
+  }, { timestamps: true, bufferCommands: false, minimize: false });
   const User = connection.model('User', userSchema);
+  const FareSheet = connection.model('FareSheet', fareSheetSchema);
   const Report = connection.model('Report', reportSchema);
   const Blocked = connection.model('Blocked', blockedSchema);
   const Session = connection.model('Session', sessionSchema);
@@ -118,7 +126,7 @@ function createModels(connection) {
   const ResetCode = connection.model('ResetCode', resetCodeSchema);
   const Rating = connection.model('Rating', ratingSchema);
   const Message = connection.model('Message', messageSchema);
-  return { User, Session, Ride, Rating, Message, EmailCode, ResetCode, Report, Blocked };
+  return { User, Session, Ride, Rating, Message, EmailCode, ResetCode, Report, Blocked, FareSheet };
 }
 
 module.exports = { createModels };

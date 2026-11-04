@@ -11,6 +11,12 @@
 `data/fares.js` turns it into a quote. The server (`indang-trike-backend/policy.js`)
 recomputes every booking's fare with its own clock; the app's quote is a preview.
 
+When the fares change, an admin changes the amounts in God view's **Fares**
+tab (`docs/god-view.md`). Those amounts are saved in the database and take the
+place of this file's for every new booking; this file stays as the taripa
+they are compared with. Only amounts change there: to add or move an area,
+edit this file.
+
 How a trip is priced:
 
 - **Special** (the whole trike) is the only trip the app books: the listed
