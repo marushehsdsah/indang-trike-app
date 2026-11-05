@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { CACHED_HISTORY_LIMIT, SESSION_LIFETIME_MS, canOpenOffline, getSessionExpiry, trimHistory } = require('../utils/offlineSession');
+const { CACHED_HISTORY_LIMIT, SAVED_RIDE_MAX_AGE_MS, SESSION_LIFETIME_MS, canOpenOffline, getSessionExpiry, rideToSave, savedRide, trimHistory } = require('../utils/offlineSession');
 
 test('a session expires when the server said it would, or 7 days after it was last verified', () => {
   const verifiedAt = Date.parse('2026-10-01T00:00:00Z');
@@ -34,4 +34,24 @@ test('saved history keeps what the history screen shows, newest first', () => {
     route: { distanceLabel: '2.4 km' },
   }, 'the home screen lists recent rides with their distance');
   assert.ok(JSON.stringify(trimmed).length < 15000, 'the saved copy stays small');
+});
+
+test('an ongoing trip with a driver is saved without the live positions', () => {
+  const location = { latitude: 14.2, longitude: 120.88, accuracy: 8, timestamp: 1 };
+  const ride = { id: 'ride-one', status: 'in_progress', version: 4, createdAt: '2026-11-05T01:00:00Z', route: { coordinates: [location, location] },
+    driverLocation: location, passengerLocation: location, driverConnected: true, driverLocationAvailable: true };
+  assert.deepEqual(rideToSave(ride), { ...ride, driverLocation: null, passengerLocation: null, driverConnected: false, driverLocationAvailable: false });
+  for (const status of ['searching', 'completed', 'cancelled', 'no_driver']) assert.equal(rideToSave({ ...ride, status }), null, status);
+  assert.equal(rideToSave(null), null);
+});
+
+test('a saved trip reopens only while it can still be ongoing', () => {
+  const createdAt = '2026-11-05T01:00:00Z', bookedAt = Date.parse(createdAt);
+  const cache = { ride: { id: 'ride-one', status: 'accepted', createdAt } };
+  assert.equal(savedRide(cache, bookedAt + 60000), cache.ride);
+  assert.equal(savedRide(cache, bookedAt + SAVED_RIDE_MAX_AGE_MS + 1), null, 'one that most likely ended while the app was closed');
+  assert.equal(savedRide({ ride: { ...cache.ride, status: 'completed' } }, bookedAt), null);
+  assert.equal(savedRide({ ride: { ...cache.ride, createdAt: undefined } }, bookedAt), null);
+  assert.equal(savedRide({ ride: null }, bookedAt), null);
+  assert.equal(savedRide(null, bookedAt), null);
 });

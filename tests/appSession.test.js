@@ -175,3 +175,54 @@ test('online follows the phone\'s internet connection', async () => {
     assert.equal(app.value.online, false);
   } finally { await app.close(); }
 });
+
+const ongoing = (overrides = {}) => ({ id: 'ride-one', version: 3, status: 'in_progress', createdAt: new Date(Date.now() - 600000).toISOString(),
+  trip: { pickup: { name: 'Pickup' }, dropoff: { name: 'Drop-off' } }, route: { coordinates: [] }, ...overrides });
+
+test('an ongoing trip is saved on the phone and cleared once it ends', async () => {
+  const app = await mountApp(undefined, 'driver');
+  try {
+    app.snapshot.ride = { ...ongoing(), driverLocation: { latitude: 14.2, longitude: 120.88, accuracy: 8, timestamp: Date.now() } };
+    await renderer.act(async () => { await app.value.signIn('09170000000', 'password'); });
+    await flush();
+    assert.equal(app.stored.cache.ride.id, 'ride-one');
+    assert.equal(app.stored.cache.ride.driverLocation, null, 'live positions are not saved');
+    app.snapshot.ride = null; app.snapshot.lastRide = ongoing({ version: 4, status: 'completed' });
+    await renderer.act(async () => { await app.value.refresh(); });
+    await flush();
+    assert.equal(app.value.ride.status, 'completed');
+    assert.equal(app.stored.cache.ride, null);
+  } finally { await app.close(); }
+});
+
+test('a driver whose app restarts without internet reopens on the ongoing trip', async () => {
+  const cache = savedCopy({ user: { ...savedCopy().user, role: 'driver' }, ride: ongoing() });
+  const app = await mountApp(offline, 'driver', undefined, { savedToken: 'session-one', cache, online: false });
+  try {
+    assert.equal(app.value.ride?.id, 'ride-one');
+    assert.equal(app.value.ride.status, 'in_progress');
+  } finally { await app.close(); }
+});
+
+test('a saved trip from hours ago is not reopened as ongoing', async () => {
+  const cache = savedCopy({ ride: ongoing({ createdAt: new Date(Date.now() - 86400000).toISOString() }) });
+  const app = await mountApp(offline, 'passenger', undefined, { savedToken: 'session-one', cache, online: false });
+  try {
+    assert.equal(app.value.user.firstName, 'Saved');
+    assert.equal(app.value.ride, null);
+  } finally { await app.close(); }
+});
+
+test('once the server answers, it replaces the saved trip', async () => {
+  const cache = savedCopy({ user: { ...savedCopy().user, role: 'driver' }, ride: ongoing() });
+  let reachable = false;
+  const app = await mountApp((path) => (reachable ? undefined : offline()), 'driver', undefined, { savedToken: 'session-one', cache, online: false });
+  try {
+    assert.equal(app.value.ride?.id, 'ride-one');
+    reachable = true; app.snapshot.lastRide = ongoing({ version: 5, status: 'cancelled' });
+    await renderer.act(async () => { await app.value.refresh(); });
+    await flush();
+    assert.equal(app.value.ride.status, 'cancelled');
+    assert.equal(app.stored.cache.ride, null);
+  } finally { await app.close(); }
+});

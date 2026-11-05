@@ -85,7 +85,10 @@ export default function ActiveRideScreen({ navigation, route }) {
   // server stamped on the server's clock.
   const serverNow = now + serverOffset;
   const position = driver ? gps.fix : ride?.driverLocation, positionNow = driver ? now : serverNow;
-  const fresh = isFreshFix(position, positionNow) && (driver ? connected && gps.status === 'ready' : connected && ride?.driverConnected && ride?.driverLocationAvailable !== false);
+  // The driver's own GPS needs no internet, so their live line, route and
+  // Navigate button keep working offline (the road graph and map are on the
+  // phone). A passenger sees the driver only through the server.
+  const fresh = isFreshFix(position, positionNow) && (driver ? gps.status === 'ready' : connected && ride?.driverConnected && ride?.driverLocationAvailable !== false);
   const toPickup = ride && ['accepted', 'arrived'].includes(ride.status);
   // Each side also sees the passenger: the driver on the way to pickup (from the
   // passenger's shared GPS), the passenger themselves from their own device.

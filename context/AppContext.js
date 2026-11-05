@@ -4,9 +4,9 @@ import * as SecureStore from 'expo-secure-store';
 import NetInfo from '@react-native-community/netinfo';
 import { io } from 'socket.io-client';
 import { API_BASE_URL, requestApi } from '../services/api';
-import { clearSessionCache, readSessionCache, writeSessionCache } from '../services/sessionCache';
+import { clearSessionCache, readSessionCache, updateSessionCache, writeSessionCache } from '../services/sessionCache';
 import useLiveLocation from '../hooks/useLiveLocation';
-import { canOpenOffline, getSessionExpiry } from '../utils/offlineSession';
+import { canOpenOffline, getSessionExpiry, rideToSave, savedRide } from '../utils/offlineSession';
 import { ACTIVE_STATUSES, ASSIGNED_STATUSES, isFreshFix, mergeRide, toServerClock } from '../utils/rideState';
 import { markRead, mergeMessages, newClientId, pendingMessage } from '../utils/chatThread';
 
@@ -129,7 +129,8 @@ export function AppProvider({ children }) {
         return;
       }
       // configRef stays empty, so the first refresh online fetches current fares.
-      setUser(offlineCopy.user); setConfig(offlineCopy.config); setToken(saved);
+      // An ongoing trip reopens too, so a driver can keep navigating it.
+      setUser(offlineCopy.user); setConfig(offlineCopy.config); setRide(savedRide(offlineCopy)); setToken(saved);
     } catch (failure) { setError(failure.message); }
     finally { setLoading(false); }
   }, [request, applyState, persistSession]);
@@ -247,6 +248,12 @@ export function AppProvider({ children }) {
     const timer = setInterval(refresh, 15000);
     return () => { clearInterval(timer); socket.removeAllListeners(); socket.disconnect(); if (socketRef.current === socket) socketRef.current = null; };
   }, [token, foreground, refresh, loadChat, markChatRead, updateChat]);
+  // The ongoing trip is saved with the offline copy (utils/offlineSession.js)
+  // when it changes stage, not on every location update, and cleared once it ends.
+  const userId = user?.id;
+  useEffect(() => {
+    if (userId) updateSessionCache(userId, { ride: rideToSave(ride) });
+  }, [userId, ride?.id, ride?.status, ride?.version]);
   // Messages that failed for want of internet go out again once the link is back.
   useEffect(() => {
     if (!connected) return;
