@@ -99,10 +99,15 @@ export function routeFeatures(routes, selectedRideId) {
   return { type: 'FeatureCollection', features };
 }
 
-// The Accounts view lists every passenger and driver from /api/admin/accounts,
-// which names drivers RIDER (as the admin app does) and gives each a status:
-// Offline, Online (the app is open) or Available (a driver taking requests).
-export const accountRole = (account) => account.role === 'RIDER' ? 'driver' : 'passenger';
+// The Accounts view lists every account from /api/admin/accounts, which names
+// drivers RIDER (as the admin app does), staff ADMIN (an admin of one TODA,
+// its toda) or SUPERADMIN, and gives each a status: Offline, Online (the app
+// is open) or Available (a driver taking requests).
+export const accountRole = (account) => account.role === 'RIDER' ? 'driver'
+  : account.role === 'ADMIN' || account.role === 'SUPERADMIN' ? 'admin' : 'passenger';
+// A staff account's tag: Superadmin, or Admin with the TODA it manages.
+export const staffLabel = (account) => account.role === 'SUPERADMIN' ? 'Superadmin' : 'Admin';
+export const staffNote = (account) => account.role === 'SUPERADMIN' ? 'Every TODA' : account.toda || 'No TODA yet';
 export const isOnline = (account) => account.status !== 'Offline';
 
 // 09171234567 → 0917 123 4567, as the sign-in form writes mobile numbers.
@@ -110,12 +115,12 @@ export function formatPhone(phone) {
   return /^09\d{9}$/.test(phone) ? `${phone.slice(0, 4)} ${phone.slice(4, 7)} ${phone.slice(7)}` : phone;
 }
 
-// role: all, driver, passenger or pending (drivers waiting for approval);
-// status: all, online or offline. A number matches with or without its spaces.
-// hideAdmins leaves out the God view admins' own accounts (admin: true).
-export function filterAccounts(accounts, role, status, query, hideAdmins = false) {
+// role: all, driver, passenger, admin (superadmins and admins) or pending
+// (drivers waiting for approval); status: all, online or offline. A number
+// matches with or without its spaces.
+export function filterAccounts(accounts, role, status, query) {
   const needle = query.trim().toLocaleLowerCase(), digits = needle.replace(/[\s-]/g, '');
-  return accounts.filter(account => (!hideAdmins || !account.admin) &&
+  return accounts.filter(account =>
     (role === 'all' || (role === 'pending' ? account.approval === 'Pending' : accountRole(account) === role)) &&
     (status === 'all' || (status === 'online') === isOnline(account)) &&
     ([account.name, account.email, account.plate, account.toda].filter(Boolean).join(' ').toLocaleLowerCase().includes(needle) || account.id.includes(digits)));
@@ -135,17 +140,18 @@ export function sortAccounts(accounts) {
   return [...accounts].sort((a, b) => Number(isOnline(b)) - Number(isOnline(a)) || a.name.localeCompare(b.name) || a.key.localeCompare(b.key));
 }
 
-// { all, online, offline }, each { total, driver, passenger }.
+// { all, online, offline }, each { total, driver, passenger, admin }.
 export function accountCounts(accounts) {
-  const counts = Object.fromEntries(['all', 'online', 'offline'].map(group => [group, { total: 0, driver: 0, passenger: 0 }]));
+  const counts = Object.fromEntries(['all', 'online', 'offline'].map(group => [group, { total: 0, driver: 0, passenger: 0, admin: 0 }]));
   for (const account of accounts) {
     for (const group of ['all', isOnline(account) ? 'online' : 'offline']) { counts[group].total += 1; counts[group][accountRole(account)] += 1; }
   }
   return counts;
 }
 
-export function roleCountLabel({ driver, passenger }) {
-  return `${driver} driver${driver === 1 ? '' : 's'} · ${passenger} passenger${passenger === 1 ? '' : 's'}`;
+// Admins are named only when there are some.
+export function roleCountLabel({ driver, passenger, admin = 0 }) {
+  return `${driver} driver${driver === 1 ? '' : 's'} · ${passenger} passenger${passenger === 1 ? '' : 's'}${admin ? ` · ${admin} admin${admin === 1 ? '' : 's'}` : ''}`;
 }
 
 // An account's trip history (/api/admin/accounts/:id). A trip's status is
@@ -156,8 +162,13 @@ export function filterTrips(trips, status) {
   return trips.filter(trip => status === 'cancelled' ? ['Cancelled', 'No driver'].includes(trip.status) : trip.status.toLowerCase() === status);
 }
 
+// ₱45, or ₱12.50 with centavos (never ₱12.5).
 export function formatFare(fare) {
-  return Number.isFinite(fare) ? `₱${fare.toLocaleString('en-PH', { maximumFractionDigits: 2 })}` : '—';
+  return Number.isFinite(fare) ? `₱${pesoDigits(fare)}` : '—';
+}
+export function pesoDigits(amount) {
+  const centavos = !Number.isInteger(Math.round(amount * 100) / 100);
+  return amount.toLocaleString('en-PH', { minimumFractionDigits: centavos ? 2 : 0, maximumFractionDigits: 2 });
 }
 
 // "By the driver: Flat tyre". The server saves "Cancelled by participant", or
@@ -195,17 +206,21 @@ export function mapPeople(users, routes) {
 
 // The Fares tab (/api/admin/fares): each TODA's fares, which an admin changes
 // when the fares change. A sheet has `prices` (the amounts in force, by key),
-// `taripa` (the ordinance's), `limits` ({ min, max } whole pesos), `town` (the
+// `taripa` (the ordinance's), `limits` ({ min, max } in pesos), `town` (the
 // amounts every TODA shares), `groups` (places, each with special-trip rows
 // whose key ends /day or /night; every booking is a special trip) and `todas`
 // (each with the groups it lists).
 export const SPECIAL_CELLS = [{ part: 'day', label: 'Day' }, { part: 'night', label: 'Night' }];
 
-// What the admin typed, as whole pesos within the limits, or null.
+// A saved fare as its box shows it, for parseFare to read back: "45", "12.50".
+export const fareText = (amount) => (Number.isInteger(amount) ? String(amount) : amount.toFixed(2));
+
+// What the admin typed, as pesos and centavos within the limits ("12.50" is
+// 12.5; at most two decimal places), or null.
 export function parseFare(text, { min, max }) {
   const value = String(text ?? '').trim();
-  if (!/^\d{1,4}$/.test(value)) return null;
-  const amount = Number(value);
+  if (!/^\d{1,4}(?:\.\d{1,2})?$/.test(value)) return null;
+  const amount = Math.round(Number(value) * 100) / 100;
   return amount >= min && amount <= max ? amount : null;
 }
 
@@ -244,7 +259,7 @@ export function groupKeys(group) {
 
 // drafts: fare key → what the admin typed. changes: the fares to save
 // ({ key, from, to }, `from` being the amount on screen); invalid: keys typed
-// as something other than whole pesos within the limits.
+// as something other than an amount within the limits (parseFare).
 export function fareChanges(sheet, drafts) {
   const changes = [], invalid = [];
   for (const [key, text] of drafts) {

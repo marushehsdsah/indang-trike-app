@@ -1,6 +1,6 @@
 import { API_BASE_URL } from './config.mjs';
-import { DRIVER_ACTIONS, REPORT_PERIODS, accountCounts, accountRole, cancellationLabel, filterAccounts, filterTrips, filterUsers, formatDistance, formatFare, formatPhone, isLive, isOnline, locationLabel, mapPeople, ratingLabel, roleCountLabel, routeSummary, languageWarningLabel, safetyReportLabel, sortAccounts, statusLabel, snapshotTiming, tripOf,
-  SPECIAL_CELLS, fareChanges, fareLabels, groupKeys, keepDrafts, parseFare, sharedWith, sortTodas, todaGroups,
+import { DRIVER_ACTIONS, REPORT_PERIODS, accountCounts, accountRole, cancellationLabel, filterAccounts, filterTrips, filterUsers, formatDistance, formatFare, formatPhone, isLive, isOnline, locationLabel, mapPeople, ratingLabel, roleCountLabel, routeSummary, languageWarningLabel, safetyReportLabel, sortAccounts, staffLabel, staffNote, statusLabel, snapshotTiming, tripOf,
+  SPECIAL_CELLS, fareChanges, fareLabels, fareText, groupKeys, keepDrafts, parseFare, pesoDigits, sharedWith, sortTodas, todaGroups,
   OTHER_TODAS, driverCounts, driverTodas, starRating, todaDrivers } from './model.mjs';
 
 const $ = id => document.getElementById(id);
@@ -68,6 +68,7 @@ function endSession(message = '') {
   showError('fares-error', ''); showError('fares-note', ''); $('fare-search').value = ''; renderFares();
   clearTimeout(todaTimer); todaPending = false; todaSheet = null; todaUpdated = 0; $('driver-search').value = ''; showError('todas-error', ''); renderTodas();
   deciding = null; cancelling = null; closeReport(); showError('accounts-note', ''); showError('history-note', ''); $('accounts-badge').hidden = true;
+  showError('history-action-error', ''); showError('reports-action-error', '');
   $('user-list').replaceChildren(); $('person-details').replaceChildren(); $('person-details').hidden = true;
   $('dashboard').hidden = true; $('login').hidden = false;
   $('password').value = ''; showError('login-error', message);
@@ -216,9 +217,9 @@ function showView() {
   }
   const changed = account !== historyId;
   if (changed) { historyId = account; history = null; historyUpdated = 0; showError('history-error', ''); }
-  // A decision's note, and the PDF dialog, stay only while their page does.
-  if (previous !== view || changed) { showError('history-note', ''); closeReport(); if (view !== 'accounts') showError('accounts-note', ''); }
-  if (previous !== view) showError('fares-note', '');
+  // A decision's note or refusal, and the PDF dialog, stay only while their page does.
+  if (previous !== view || changed) { showError('history-note', ''); showError('history-action-error', ''); closeReport(); if (view !== 'accounts') showError('accounts-note', ''); }
+  if (previous !== view) { showError('fares-note', ''); showError('reports-action-error', ''); }
   $('live-view').hidden = view !== 'live'; $('accounts-view').hidden = view !== 'accounts'; $('history-view').hidden = view !== 'history'; $('reports-view').hidden = view !== 'reports';
   $('fares-view').hidden = view !== 'fares'; $('todas-view').hidden = view !== 'todas';
   for (const tab of document.querySelectorAll('.view-tab')) {
@@ -390,29 +391,34 @@ async function loadAccounts() {
 }
 
 function accountRow(account) {
-  const row = document.createElement('tr'), kind = accountRole(account), online = isOnline(account);
+  const row = document.createElement('tr'), kind = accountRole(account), online = isOnline(account), staff = kind === 'admin';
   const cell = (className, ...children) => { const node = document.createElement('td'); node.className = className; node.append(...children); return node; };
-  // The name opens the account's trip history, as does a click anywhere else on the row.
-  const link = text('a', account.name, 'account-link'); link.href = `#accounts/${account.key}`;
-  const name = document.createElement('strong'); name.append(link);
+  // The name opens the account's trip history, as does a click anywhere else
+  // on the row. Staff accounts never book or drive, so theirs has none.
+  const name = document.createElement('strong');
+  if (staff) name.textContent = account.name;
+  else {
+    const link = text('a', account.name, 'account-link'); link.href = `#accounts/${account.key}`;
+    name.append(link);
+    row.className = 'account-row';
+    row.addEventListener('click', event => { if (!event.target.closest('a, button')) link.click(); });
+  }
   const who = document.createElement('div'); who.className = 'account-who';
   const copy = document.createElement('span'); copy.className = 'user-copy';
   copy.append(name, text('span', account.email || 'No email', 'user-subtitle'));
   who.append(text('span', initials(account.name), `avatar ${kind}`), copy);
-  row.className = 'account-row';
-  row.addEventListener('click', event => { if (!event.target.closest('a, button')) link.click(); });
   const vehicle = kind === 'driver' ? [text('span', account.plate || 'No plate', 'cell-main'), text('span', account.toda || 'No TODA', 'cell-note')] : [text('span', '—', 'cell-note')];
   const status = [text('span', online ? 'Online' : 'Offline', `status-pill ${online ? 'online' : 'offline'}`)];
   if (account.status === 'Available') status.push(text('span', 'Ready for requests', 'cell-note'));
   const action = [];
-  if (online) {
+  // Staff are never on the map: their phone's GPS stays off.
+  if (online && !staff) {
     const button = text('button', 'Show on map', 'quiet'); button.type = 'button'; button.dataset.accountKey = account.key;
     button.addEventListener('click', () => showOnMap(account.key)); action.push(button);
   }
-  const type = [text('span', kind === 'driver' ? 'Driver' : 'Passenger', `role-tag ${kind}`)];
+  const type = staff ? [text('span', staffLabel(account), 'role-tag admin'), text('span', staffNote(account), 'cell-note')]
+    : [text('span', kind === 'driver' ? 'Driver' : 'Passenger', `role-tag ${kind}`)];
   if (account.approval && account.approval !== 'Approved') type.push(text('span', account.approval, `status-pill ${account.approval.toLowerCase()}`));
-  // A God view admin's own account (GOD_VIEW_ADMIN_PHONES).
-  if (account.admin) type.push(text('span', 'Admin', 'admin-tag'));
   row.append(cell('cell-who', who), cell('cell-type', ...type),
     cell('cell-phone', formatPhone(account.id)), cell(`cell-vehicle${kind === 'driver' ? '' : ' is-empty'}`, ...vehicle), cell('cell-status', ...status), cell('cell-action', ...action));
   return row;
@@ -420,7 +426,7 @@ function accountRow(account) {
 
 function renderAccounts() {
   const list = accounts || [], counts = accountCounts(list);
-  const shown = filterAccounts(list, accountFilters.type, accountFilters.status, $('account-search').value, $('hide-admins').checked);
+  const shown = filterAccounts(list, accountFilters.type, accountFilters.status, $('account-search').value);
   for (const group of ['all', 'online', 'offline']) {
     $(`account-count-${group}`).textContent = accounts ? (group === 'all' ? accountsTotal : counts[group].total) : '—';
     $(`account-note-${group}`).textContent = accounts ? roleCountLabel(counts[group]) : 'Loading…';
@@ -521,7 +527,7 @@ async function decideDriver(account, decision) {
     if (reason === null) return;
     body = { reason };
   } else if (!confirm(choice.ask(account.name))) return;
-  deciding = decision; showError('history-note', ''); renderHistory();
+  deciding = decision; showError('history-note', ''); showError('history-action-error', ''); renderHistory();
   const run = generation;
   try {
     const { driver, emailed } = await request(`/admin/drivers/${account.key}/${decision}`, { body });
@@ -530,7 +536,6 @@ async function decideDriver(account, decision) {
     decisions += 1;
     const told = decision === 'unblock' ? `${account.name} waits for approval again.`
       : emailed ? `${account.name} was emailed.` : `The email to ${account.name} could not be sent; let them know yourself.`;
-    showError('history-error', '');
     if (decision === 'delete') {
       // The account is gone: back to the list, with the note there.
       location.hash = 'accounts'; showView(); showError('accounts-note', `${account.name}'s account was deleted. ${told}`);
@@ -541,7 +546,8 @@ async function decideDriver(account, decision) {
   } catch (error) {
     if (run !== generation) return;
     if (error.status === 401 || error.status === 403) { endSession(error.message); return; }
-    showError('history-error', error.missingRoute ? 'This server cannot approve drivers yet. Deploy the latest API, then refresh.' : error.message);
+    // Its own line: the trip history reloading next clears only its own errors.
+    showError('history-action-error', error.missingRoute ? 'This server cannot approve drivers yet. Deploy the latest API, then refresh.' : error.message);
   } finally {
     if (run === generation) { deciding = null; renderHistory(); if (view === 'history') loadHistory(); }
   }
@@ -553,7 +559,7 @@ async function cancelTrip(trip) {
   if (cancelling || deciding) return;
   const reason = prompt(`Cancel trip ${trip.id}, ${trip.pickup} → ${trip.destination}?\n\nIt ends at once: the passenger, and the driver if one accepted, see it cancelled in the app, and the driver is free for the next booking.\n\nReason shown to them (optional):`, '');
   if (reason === null) return;
-  cancelling = trip.key; showError('history-note', ''); renderHistory();
+  cancelling = trip.key; showError('history-note', ''); showError('history-action-error', ''); renderHistory();
   const run = generation;
   try {
     const { trip: cancelled } = await request(`/admin/rides/${trip.key}/cancel`, { body: { reason } });
@@ -561,11 +567,11 @@ async function cancelTrip(trip) {
     // A trip history loading now was asked for before the cancellation.
     decisions += 1;
     if (history?.trips) history = { ...history, trips: history.trips.map(item => item.key === trip.key ? { ...item, status: cancelled.status, cancelledBy: cancelled.cancelledBy, cancellationReason: cancelled.cancellationReason } : item) };
-    showError('history-error', ''); showError('history-note', `Trip ${trip.id} was cancelled.`);
+    showError('history-note', `Trip ${trip.id} was cancelled.`);
   } catch (error) {
     if (run !== generation) return;
     if (error.status === 401 || error.status === 403) { endSession(error.message); return; }
-    showError('history-error', error.missingRoute ? 'This server cannot cancel trips yet. Deploy the latest API, then refresh.' : error.message);
+    showError('history-action-error', error.missingRoute ? 'This server cannot cancel trips yet. Deploy the latest API, then refresh.' : error.message);
   } finally {
     if (run === generation) { cancelling = null; renderHistory(); if (view === 'history') loadHistory(); }
   }
@@ -720,15 +726,15 @@ async function review(report, decision) {
       : `Uphold this report and give ${passenger.name} a ${passenger.nextPenalty.toLowerCase()}?\n\nThey are signed out at once and any booking they have is cancelled.`
     : `Dismiss this report? ${passenger.name} gets no penalty for it.`;
   if (!confirm(question)) return;
-  reviewing = report.key; renderReports();
+  reviewing = report.key; showError('reports-action-error', ''); renderReports();
   try {
     const { report: updated } = await request(`/admin/reports/${report.key}/${decision}`, { body: {} });
     // The passenger's standing changed on their other reports too.
     reports = reports.map(item => item.key === updated.key ? updated : item.passenger?.key === updated.passenger?.key ? { ...item, passenger: updated.passenger } : item);
-    showError('reports-error', '');
   } catch (error) {
     if (error.status === 401 || error.status === 403) { endSession(error.message); return; }
-    showError('reports-error', error.message);
+    // Its own line: the reports reloading next clear only their own errors.
+    showError('reports-action-error', error.message);
   } finally { reviewing = null; renderReports(); loadReports(); }
 }
 
@@ -823,7 +829,8 @@ function applyFares(data) {
   return `Another admin changed fares you are editing: ${list}${kept.length > 3 ? `, and ${plural(kept.length - 3, 'more')}` : ''}. Check your changes, then save again.`;
 }
 
-const pesos = amount => `₱${Number(amount).toLocaleString('en-PH')}`;
+// ₱1,000, or ₱12.50 with centavos.
+const pesos = amount => `₱${pesoDigits(Number(amount))}`;
 const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
 const shownToda = () => fares && (fares.todas.find(toda => toda.id === fareToda) ?? sortTodas(fares.todas)[0]);
 
@@ -832,7 +839,8 @@ function fareBox(tag, key, label) {
   const box = document.createElement(tag); box.className = 'fare-cell';
   const field = document.createElement('label'); field.className = 'fare-field';
   const input = document.createElement('input');
-  Object.assign(input, { type: 'text', inputMode: 'numeric', autocomplete: 'off', maxLength: 4, spellcheck: false, value: fareDrafts.get(key) ?? String(fares.prices[key]) });
+  // Pesos and centavos: up to "1000.00".
+  Object.assign(input, { type: 'text', inputMode: 'decimal', autocomplete: 'off', maxLength: 7, spellcheck: false, value: fareDrafts.get(key) ?? fareText(fares.prices[key]) });
   input.dataset.fareKey = key; input.setAttribute('aria-label', fareNames.get(key) ?? label);
   field.append(text('span', label, 'fare-cell-label'), text('span', '₱', 'peso'), input);
   box.append(field, text('span', '', 'fare-was'));
@@ -931,7 +939,7 @@ function paintFares() {
   }
   $('fare-savebar').hidden = !unsaved;
   $('fare-change-count').textContent = faresSaving ? 'Saving…' : `${plural(unsaved, 'unsaved fare change')}`;
-  $('fare-problem').textContent = check.invalid.length ? `Fares are whole pesos from ${pesos(fares.limits.min)} to ${pesos(fares.limits.max)}.` : '';
+  $('fare-problem').textContent = check.invalid.length ? `Fares are ${pesos(fares.limits.min)} to ${pesos(fares.limits.max)}, with at most 2 decimal places, like ₱12.50.` : '';
   $('fare-save').disabled = faresSaving || !check.changes.length || Boolean(check.invalid.length);
   $('fare-discard').disabled = faresSaving;
   $('fare-save').textContent = faresSaving ? 'Saving…' : 'Save changes';
@@ -1016,7 +1024,6 @@ $('fit-area').addEventListener('click', () => fleetMap?.fitArea());
 $('fit-users').addEventListener('click', () => fleetMap?.fitUsers(visibleUsers()));
 window.addEventListener('hashchange', showView);
 $('account-search').addEventListener('input', renderAccounts);
-$('hide-admins').addEventListener('change', renderAccounts);
 for (const [group, key] of [['account-types', 'type'], ['account-statuses', 'status']]) $(group).addEventListener('click', event => {
   const button = event.target.closest(`button[data-${key}]`); if (!button) return;
   accountFilters[key] = button.dataset[key];

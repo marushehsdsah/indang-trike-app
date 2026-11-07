@@ -83,14 +83,17 @@ const travel = (to) => { offset = to; };
 const stamp = () => new Date(clock()).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
 
 async function main() {
-  const backend = await createBackend({ mongoUri: MONGO, clock, adminPhones: ADMIN_PHONE, sendEmail: async ({ to, code }) => { codes.set(to, code); } });
+  const backend = await createBackend({ mongoUri: MONGO, clock, sendEmail: async ({ to, code }) => { codes.set(to, code); } });
   await backend.models.User.db.dropDatabase();
   await Promise.all(Object.values(backend.models).map((model) => model.init()));
   await new Promise((resolve) => backend.server.listen(PORT, '127.0.0.1', resolve));
   base = `http://localhost:${PORT}`;
 
   travel(-7 * DAY);
+  // Signed up like anyone, then made a superadmin with no email, as only the
+  // database can.
   const admin = await account(ADMIN_PHONE, 'Pilot', 'Admin');
+  await backend.models.User.updateOne({ _id: admin.user.id }, { $set: { role: 'superadmin', email: '' } });
   const [dante, rosa] = [await account('09170000011', 'Dante', 'Reyes', 'driver'), await account('09170000012', 'Rosa', 'Mendoza', 'driver')];
   // Drivers who sign up wait for an admin's approval before taking bookings.
   for (const driver of [dante, rosa]) await call(`/admin/drivers/${driver.user.id}/approve`, admin.token, {});
@@ -143,7 +146,7 @@ async function main() {
   for (const driver of [dante, rosa]) { driver.socket?.disconnect(); }
 
   console.log(`\nSimulation API: ${base}  (database: ${backend.models.User.db.name})`);
-  console.log(`God view admin: ${ADMIN_PHONE} / ${PASSWORD}`);
+  console.log(`God view superadmin: ${ADMIN_PHONE} / ${PASSWORD}`);
   console.log(`Passengers: Pedro ${pedro.phone}, Maria ${maria.phone}, Juan ${juan.phone}, Ana ${ana.phone} (same password)`);
   console.log('Build God view against it:  cd web/god-view && GOD_VIEW_API_URL=http://localhost:4100 npm start');
   console.log('Ctrl+C stops the simulation.\n');

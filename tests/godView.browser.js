@@ -15,7 +15,7 @@ const SERVICE_AREA_PLACES = require('../assets/places/service-area-places.json')
 async function main() {
   const dbName = `indang_test_browser_${randomUUID().replaceAll('-', '').slice(0, 16)}`; // Atlas: at most 38 bytes
   const emailedCodes = new Map(); // stands in for Brevo
-  const backend = await createBackend({ mongoUri: `${process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017'}/${dbName}`, adminPhones: '09179999991', sendEmail: async ({ to, code }) => { emailedCodes.set(to, code); } });
+  const backend = await createBackend({ mongoUri: `${process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017'}/${dbName}`, sendEmail: async ({ to, code }) => { emailedCodes.set(to, code); } });
   const sockets = []; let browser, site, siteDir;
   try {
     await new Promise(resolve => backend.server.listen(0, '127.0.0.1', resolve));
@@ -43,7 +43,12 @@ async function main() {
       await new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('connect_error', reject); });
       return socket;
     }
-    await account('09179999991', 'passenger', 'Admin');
+    // A superadmin and an admin of one TODA, as only the database makes them;
+    // a superadmin has no email.
+    const superadmin = await account('09179999991', 'passenger', 'Admin');
+    await backend.models.User.updateOne({ _id: superadmin.user.id }, { $set: { role: 'superadmin', email: '' } });
+    const todaAdmin = await account('09179999997', 'passenger', 'Toda');
+    await backend.models.User.updateOne({ _id: todaAdmin.user.id }, { $set: { role: 'admin', toda: 'BCITODA' } });
     const driver = await account('09179999992', 'driver', 'Alex');
     const passenger = await account('09179999993', 'passenger', 'Bea');
     const missing = await account('09179999994', 'passenger', 'Missing');
@@ -65,14 +70,20 @@ async function main() {
     await page.locator('#phone').fill('09179999992');
     await page.locator('#password').fill('pilot-test-password');
     await page.locator('#sign-in').click();
-    await page.locator('#login-error').filter({ hasText: 'does not have God view access' }).waitFor();
+    await page.locator('#login-error').filter({ hasText: 'does not have admin access' }).waitFor();
+    // Nor can a TODA's admin, who works in the app instead.
+    await page.locator('#phone').fill('09179999997');
+    await page.locator('#password').fill('pilot-test-password');
+    await page.locator('#sign-in').click();
+    await page.locator('#login-error').filter({ hasText: 'God view is for superadmins' }).waitFor();
+    assert.equal(await page.locator('#dashboard').isVisible(), false);
     await page.locator('#phone').fill('09179999991');
     await page.locator('#password').fill('pilot-test-password');
     const mapData = page.waitForResponse((response) => response.url().endsWith('/api/admin/map'));
     await page.locator('#sign-in').click();
     await page.locator('#dashboard').waitFor({ state: 'visible' });
     // The top bar names the role and the signed-in account.
-    assert.equal(await page.locator('.topbar-role').textContent(), 'Administrator');
+    assert.equal(await page.locator('.topbar-role').textContent(), 'Superadmin');
     assert.equal(await page.locator('#admin-name').textContent(), 'Admin Pilot');
     assert.equal(await page.locator('.topbar').getByText('PILOT', { exact: true }).count(), 0, 'no pilot tag in the top bar');
     assert.equal(await page.locator('#live-view').getByText('PILOT OPERATIONS').count(), 0, 'no pilot label on the live map');
@@ -95,27 +106,35 @@ async function main() {
     assert.equal(await page.locator('.user-row').count(), 1);
     assert.equal(await page.locator('.person-marker').count(), 1);
     await page.locator('#search').fill('');
-    // Accounts: every passenger and driver, the admin's own included, online or not.
+    // Accounts: every account, online or not, the staff included (the
+    // superadmin and the TODA's admin, neither with the app open).
     await page.locator('#person-details [aria-label="Close user details"]').click();
     await page.locator('.view-tab[data-view=accounts]').click();
-    await page.waitForFunction(() => document.querySelector('#account-count-all').textContent === '4');
+    await page.waitForFunction(() => document.querySelector('#account-count-all').textContent === '5');
     assert.equal(await page.locator('#map').isVisible(), false);
     assert.equal(await page.locator('#account-count-online').textContent(), '3');
-    assert.equal(await page.locator('#account-count-offline').textContent(), '1');
-    assert.equal(await page.locator('#account-rows tr').count(), 4);
+    assert.equal(await page.locator('#account-count-offline').textContent(), '2');
+    assert.equal(await page.locator('#account-note-all').textContent(), '1 driver · 2 passengers · 2 admins');
+    assert.equal(await page.locator('#account-rows tr').count(), 5);
     assert.equal(await page.locator('#account-rows img').count(), 0, 'account markup stays text');
-    // The admin's own account is marked Admin, and can be hidden.
-    await page.locator('#account-rows tr', { hasText: 'Admin Pilot' }).locator('.admin-tag').filter({ hasText: 'Admin' }).waitFor();
-    assert.equal(await page.locator('#account-rows .admin-tag').count(), 1);
-    await page.locator('#hide-admins').check();
-    assert.equal(await page.locator('#account-rows tr').count(), 3);
-    assert.equal(await page.locator('#account-rows').getByText('Admin Pilot').count(), 0);
-    assert.equal(await page.locator('#account-result-count').textContent(), '3 shown');
-    await page.locator('#hide-admins').uncheck();
-    assert.equal(await page.locator('#account-rows tr').count(), 4);
+    assert.equal(await page.locator('#hide-admins').count(), 0, 'no checkbox: the Admins filter instead');
+    assert.equal(await page.locator('#account-result-count').textContent(), '5 shown');
+    // Admins: the superadmin and the TODA's admin, tagged with their role and
+    // TODA. Staff never ride, so neither opens a trip history or shows on the map.
+    assert.deepEqual(await page.locator('#account-types button').allTextContents(), ['Everyone', 'Drivers', 'Passengers', 'Admins', 'Pending approval']);
+    await page.locator('#account-types [data-type=admin]').click();
+    assert.equal(await page.locator('#account-rows tr').count(), 2);
+    const superadminRow = page.locator('#account-rows tr', { hasText: 'Admin Pilot' }), todaAdminRow = page.locator('#account-rows tr', { hasText: 'Toda Pilot' });
+    for (const label of ['Superadmin', 'Every TODA', 'No email']) await superadminRow.getByText(label, { exact: true }).waitFor();
+    for (const label of ['Admin', 'BCITODA', '09179999997@example.com']) await todaAdminRow.getByText(label, { exact: true }).waitFor();
+    assert.equal(await page.locator('#account-rows a, #account-rows button').count(), 0, 'no trip history link or map button');
+    await todaAdminRow.click();
+    assert.equal(await page.evaluate(() => location.hash), '#accounts', 'a staff row opens nothing');
+    await page.locator('#account-types [data-type=passenger]').click();
+    assert.equal(await page.locator('#account-rows tr').count(), 2, 'staff are not passengers');
+    await page.locator('#account-types [data-type=all]').click();
     await page.locator('#account-statuses [data-status=offline]').click();
-    assert.equal(await page.locator('#account-rows tr').count(), 1);
-    await page.locator('#account-rows').getByText('Admin Pilot', { exact: true }).waitFor();
+    assert.equal(await page.locator('#account-rows tr').count(), 2);
     await page.locator('#account-statuses [data-status=all]').click();
     await page.locator('#account-search').fill('0917 999 9992');
     assert.equal(await page.locator('#account-rows tr').count(), 1);
@@ -280,6 +299,49 @@ async function main() {
     await page.locator('#history-rows').getByText('By the admin: Passenger called the hotline', { exact: true }).waitFor();
     await page.screenshot({ path: '/tmp/indang-god-view-cancelled.png', fullPage: true });
     assert.deepEqual([(await request('/state', null, driver.token)).ride, (await request('/state', null, passenger.token)).lastRide.status], [null, 'cancelled']);
+    // A trip that ends while the page still shows it as ongoing: the server
+    // refuses to cancel it, and the page keeps saying why after the history
+    // reloads and shows it completed.
+    await request('/driver/location', { ...fix, timestamp: Date.now() }, driver.token);
+    const { ride: ending } = await request('/rides', { trip: DEFAULT_TRIP, passengers: 1, note: '', idempotencyKey: `god-view-${randomUUID()}` }, passenger.token);
+    const { offer: endingOffer } = await request('/state', null, driver.token);
+    await request(`/rides/${ending.id}/accept`, { offerId: endingOffer.offerId }, driver.token);
+    await page.locator('#history-refresh').click();
+    await page.locator('#history-statuses [data-trip=ongoing]').click();
+    await page.locator('#history-rows').getByText('Heading to pickup', { exact: true }).waitFor();
+    for (const step of ['arrive', 'start', 'complete']) await request(`/rides/${ending.id}/${step}`, {}, driver.token);
+    page.once('dialog', (dialog) => dialog.accept(''));
+    await page.locator('#history-rows').getByRole('button', { name: 'Cancel booking' }).click();
+    const tripRefusal = page.locator('#history-action-error').filter({ hasText: 'This trip has already ended.' });
+    await tripRefusal.waitFor();
+    await page.locator('#history-empty').getByText('No ongoing trips', { exact: true }).waitFor();
+    await page.waitForTimeout(500);
+    assert.equal(await tripRefusal.isVisible(), true, 'the refusal stays after the history reloads');
+    assert.equal((await backend.models.Ride.findById(ending.id).lean()).status, 'completed', 'the trip stays completed');
+    // A report another admin (here, another session) already reviewed: the
+    // uphold is refused and the page keeps saying why after the reports reload.
+    const historyPage = await page.evaluate(() => location.hash);
+    const pendingReport = await backend.models.Report.findOne({ status: 'pending', reason: 'did_not_pay' }).lean();
+    await page.locator('.view-tab[data-view=reports]').click();
+    const reportRow = page.locator('#report-rows tr', { hasText: 'Left without paying' });
+    await reportRow.getByRole('button', { name: /^Uphold/ }).waitFor();
+    const otherTab = await request('/login', { phone: '09179999991', password: 'pilot-test-password' });
+    await request(`/admin/reports/${pendingReport._id}/dismiss`, {}, otherTab.token);
+    page.once('dialog', (dialog) => dialog.accept());
+    await reportRow.getByRole('button', { name: /^Uphold/ }).click();
+    const reportRefusal = page.locator('#reports-action-error').filter({ hasText: 'This report was already reviewed.' });
+    await reportRefusal.waitFor();
+    await page.locator('#report-statuses [data-report=all]').click();
+    await reportRow.getByText('Dismissed', { exact: true }).waitFor();
+    await page.waitForTimeout(500);
+    assert.equal(await reportRefusal.isVisible(), true, 'the refusal stays after the reports reload');
+    assert.equal((await backend.models.Report.findById(pendingReport._id).lean()).status, 'dismissed', 'not upheld after all');
+    await request('/logout', {}, otherTab.token);
+    // Leaving the page clears its refusal; coming back shows none.
+    await page.evaluate((hash) => { location.hash = hash; }, historyPage);
+    await page.locator('#history-profile .profile-name', { hasText: 'Alex Pilot' }).waitFor();
+    assert.equal(await page.locator('#history-action-error').isVisible(), false, 'a new visit starts without the old refusal');
+    assert.equal(await page.locator('#reports-action-error').isVisible(), false);
     await page.locator('#history-statuses [data-trip=all]').click();
     // A driver who signs up waits for approval: the Accounts tab counts them,
     // Pending approval lists them, and their page approves, suspends,
@@ -403,12 +465,14 @@ async function main() {
     assert.equal(await page.locator('#fares-badge').textContent(), '1');
     assert.equal(await page.locator('[data-toda-changes=bitoda]').textContent(), '1 unsaved');
     await page.locator(`#special-table [data-fare-key="${purok3Key}"]`).locator('xpath=ancestor::*[contains(@class,"fare-cell")]').filter({ hasText: 'Was ₱39' }).waitFor();
-    // A fare that is not whole pesos cannot be saved.
+    // A fare may have centavos, at most two decimal places; anything else cannot be saved.
     const extra = page.locator('#town-fares [data-fare-key=extraPassenger]');
-    await extra.fill('2O');
-    await page.locator('#fare-problem').filter({ hasText: 'whole pesos from ₱1 to ₱1,000' }).waitFor();
-    assert.equal(await page.locator('#fare-save').isDisabled(), true);
-    await extra.fill('20');
+    for (const typed of ['2O', '20.505']) {
+      await extra.fill(typed);
+      await page.locator('#fare-problem').filter({ hasText: 'Fares are ₱1 to ₱1,000, with at most 2 decimal places, like ₱12.50.' }).waitFor();
+      assert.equal(await page.locator('#fare-save').isDisabled(), true, typed);
+    }
+    await extra.fill('20.50');
     await page.locator('#fare-change-count').filter({ hasText: '2 unsaved fare changes' }).waitFor();
     assert.equal(await page.locator('#fare-save').isDisabled(), false);
     // Typed fares stay while another TODA is shown; ITODA lists the same Bancod fares.
@@ -426,7 +490,7 @@ async function main() {
     page.once('dialog', (dialog) => {
       assert.match(dialog.message(), /^Save 2 fare changes\?/);
       assert.match(dialog.message(), /Bancod · Purok III, from the poblacion, at night: ₱39 → ₱45/);
-      assert.match(dialog.message(), /Each passenger past two: ₱15 → ₱20/);
+      assert.match(dialog.message(), /Each passenger past two: ₱15 → ₱20\.50/);
       dialog.accept();
     });
     await page.locator('#fare-save').click();
@@ -437,7 +501,9 @@ async function main() {
     await page.locator('#fares-status').filter({ hasText: 'by Admin Pilot' }).waitFor();
     const charged = await request('/config', null, passenger.token);
     assert.equal(charged.fares.prices[purok3Key], 45);
-    assert.equal(charged.fares.prices.extraPassenger, 20);
+    assert.equal(charged.fares.prices.extraPassenger, 20.5);
+    // The saved fare's box shows its centavos.
+    assert.equal(await extra.inputValue(), '20.50');
     // Another admin saves the same fare meanwhile: the page says so, keeps what
     // was typed, and saves it only when asked again.
     await purok3Night.fill('50');
@@ -452,7 +518,7 @@ async function main() {
     await page.locator('#fares-note').filter({ hasText: 'Saved 1 fare change.' }).waitFor();
     assert.equal((await request('/admin/fares', null, adminSession.token)).prices[purok3Key], 50);
     // Back to the taripa, for what follows.
-    await request('/admin/fares', { changes: [{ key: purok3Key, from: 50, to: 39 }, { key: 'extraPassenger', from: 20, to: 15 }] }, adminSession.token);
+    await request('/admin/fares', { changes: [{ key: purok3Key, from: 50, to: 39 }, { key: 'extraPassenger', from: 20.5, to: 15 }] }, adminSession.token);
     await page.locator('#fares-refresh').click();
     await page.locator('#fares-status').filter({ hasText: 'Every fare matches the municipal taripa' }).waitFor();
 

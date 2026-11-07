@@ -1,8 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseAdminPhones, buildOverview, buildAccounts, buildDriver, buildTodas, driverApproval, buildTrips, buildHistory, historySummary, historyPeriod, tripStatus } = require('../indang-trike-backend/admin');
+const { adminAccess, managesDriver, buildOverview, buildAccounts, buildDriver, buildTodas, driverApproval, buildTrips, buildHistory, historySummary, historyPeriod, tripStatus } = require('../indang-trike-backend/admin');
 const { profileFields, publicUser } = require('../indang-trike-backend/policy');
 const { suspensionMessage, suspensionOf } = require('../utils/reports');
+const { STAFF_ROLES, isStaff, NO_EMAIL_ROLES, usesEmail } = require('../utils/roles');
 const { DEFAULT_TRIP } = require('../data/indangMap');
 const { TODA_NAMES } = require('../data/todaZones');
 
@@ -10,9 +11,64 @@ const now = 1800000000000;
 const fix = { ...DEFAULT_TRIP.pickup.coordinate, timestamp: now, accuracy: 8, receivedAt: now, privateValue: 'hidden' };
 const user = (id, fields = {}) => ({ _id: id, firstName: 'Pilot', lastName: id, role: 'passenger', locationAvailable: true, ...fields });
 
-test('admin access is opt-in and phone formats are normalized without accepting invalid entries', () => {
-  assert.deepEqual([...parseAdminPhones('')], []);
-  assert.deepEqual([...parseAdminPhones('09171234567, +639171234567, invalid, 09177654321')], ['+639171234567', '+639177654321']);
+test('a superadmin reaches everything, an admin only their TODA, and no one else anything', () => {
+  assert.deepEqual(adminAccess({ role: 'superadmin' }), { superadmin: true, toda: null });
+  assert.deepEqual(adminAccess({ role: 'superadmin', toda: 'BCITODA' }), { superadmin: true, toda: null }, 'a TODA left on a superadmin limits nothing');
+  assert.deepEqual(adminAccess({ role: 'admin', toda: 'BCITODA' }), { superadmin: false, toda: 'BCITODA' });
+  // A TODA typed in Atlas by hand is matched by any of its names and spellings.
+  assert.deepEqual(adminAccess({ role: 'admin', toda: 'bci toda' }), { superadmin: false, toda: 'BCITODA' });
+  assert.deepEqual(adminAccess({ role: 'admin', toda: 'ITODA PITODA' }), { superadmin: false, toda: 'ITODA' });
+  // An admin without one of Indang's TODAs reaches nothing until one is assigned.
+  for (const toda of [undefined, '', 'Pilot TODA']) assert.equal(adminAccess({ role: 'admin', toda }), null, String(toda));
+  // Roles decide, and no number or spelling of one grants access.
+  for (const role of ['passenger', 'driver', undefined, 'Admin', 'SuperAdmin', 'super admin']) assert.equal(adminAccess({ role, toda: 'BCITODA' }), null, String(role));
+  assert.equal(adminAccess(null), null);
+});
+
+test('an admin manages the drivers of their TODA, saved under any of its names; a superadmin every driver', () => {
+  const bci = adminAccess({ role: 'admin', toda: 'BCITODA' }), itoda = adminAccess({ role: 'admin', toda: 'ITODA' });
+  assert.equal(managesDriver(bci, { toda: 'BCITODA' }), true);
+  assert.equal(managesDriver(bci, { toda: 'bcitoda' }), true);
+  assert.equal(managesDriver(itoda, { toda: 'ITODA PITODA' }), true, 'a driver saved under the former name');
+  assert.equal(managesDriver(itoda, { toda: 'PITODA' }), false, 'PITODA is its own TODA');
+  for (const toda of ['ITODA', 'Pilot TODA', '', undefined]) assert.equal(managesDriver(bci, { toda }), false, String(toda));
+  assert.equal(managesDriver(bci, null), false, 'no driver');
+  const superadmin = adminAccess({ role: 'superadmin' });
+  for (const toda of ['BCITODA', 'Pilot TODA', undefined]) assert.equal(managesDriver(superadmin, { toda }), true, String(toda));
+  assert.equal(managesDriver(null, { toda: 'BCITODA' }), false, 'no access');
+});
+
+test('staff accounts are the admins and superadmins', () => {
+  assert.deepEqual(STAFF_ROLES, ['admin', 'superadmin']);
+  assert.deepEqual(['admin', 'superadmin', 'passenger', 'driver', undefined].map(isStaff), [true, true, false, false, false]);
+});
+
+test('for now neither staff role has an email; passengers and drivers do', () => {
+  assert.deepEqual(NO_EMAIL_ROLES, ['admin', 'superadmin']);
+  assert.deepEqual(['admin', 'superadmin', 'passenger', 'driver', undefined].map(usesEmail), [false, false, true, true, true]);
+});
+
+test('a profile edit never changes a staff account\'s role or TODA', () => {
+  const profile = { firstName: 'Pilot', lastName: 'Admin', email: 'pilot@example.com', role: 'passenger', toda: 'ITODA', plate: 'X 1', capacity: 4 };
+  // Staff have no email: one sent is never saved, and any left from before is cleared.
+  for (const role of ['admin', 'superadmin']) {
+    assert.deepEqual(profileFields(profile, role, { role, toda: 'BCITODA' }), { firstName: 'Pilot', lastName: 'Admin', email: '' }, role);
+  }
+});
+
+test('staff (a superadmin, and for now an admin) need no email, but a passenger or driver does', () => {
+  const names = { firstName: 'Pilot', lastName: 'Staff' };
+  for (const role of ['superadmin', 'admin']) {
+    assert.deepEqual(profileFields(names, role), { ...names, email: '' }, role);
+    assert.deepEqual(profileFields({ ...names, email: 'not-an-email' }, role), { ...names, email: '' }, `${role}: an email is not even checked`);
+    // Their names are checked as anyone's.
+    assert.throws(() => profileFields({ firstName: 'Pilot' }, role), { status: 400, message: 'First and last names are required.' }, role);
+    assert.throws(() => profileFields({ firstName: 'Pilot', lastName: 'Staff1' }, role), { status: 400, message: 'Names can only contain letters and spaces.' }, role);
+  }
+  for (const role of ['passenger', 'driver']) assert.throws(() => profileFields(names, role), { status: 400, message: 'Enter a valid email address.' }, role);
+  // Staff are complete without an email; anyone else is not.
+  for (const role of ['superadmin', 'admin']) assert.equal(publicUser({ _id: role, ...names, email: '', role }).profileComplete, true, role);
+  for (const role of ['passenger', 'driver']) assert.equal(publicUser({ _id: role, ...names, email: '', role, plate: 'ABC 123', toda: 'BITODA', capacity: 4 }).profileComplete, false, role);
 });
 
 test('overview includes connected users only, retaining people with no GPS', () => {
@@ -140,14 +196,22 @@ test('the admin screens list accounts by mobile number and whether the app is op
   ]);
 });
 
-test('the God view admins\' own accounts are marked admin, whatever way their number was written', () => {
+test('staff accounts are listed as ADMIN, with the Indang TODA they manage, or SUPERADMIN', () => {
   const accounts = buildAccounts([
-    { _id: 'a1', phone: '+639171234567', firstName: 'Ana', lastName: 'Cruz', role: 'passenger' },
-    { _id: 'a2', phone: '09181234567', firstName: 'Ben', lastName: 'Reyes', role: 'driver', toda: 'ITODA' },
-    { _id: 'p1', phone: '+639191234567', firstName: 'Cy', lastName: 'Lim', role: 'passenger' },
-  ], new Set(), parseAdminPhones('0917 123 4567, +639181234567'));
-  assert.deepEqual(accounts.map((account) => [account.key, account.admin]), [['a1', true], ['a2', true], ['p1', undefined]]);
-  assert.equal('admin' in buildAccounts([{ _id: 'a1', phone: '+639171234567', role: 'passenger' }], new Set())[0], false, 'no admin list, no admins');
+    { _id: 's1', phone: '+639171111111', firstName: 'Pilot', lastName: 'Super', email: '', role: 'superadmin', toda: 'BCITODA', password: 'hash' },
+    { _id: 'a1', phone: '+639172222222', firstName: 'Toda', lastName: 'Officer', email: 'officer@example.com', role: 'admin', toda: 'bci toda', available: true },
+    { _id: 'a2', phone: '+639173333333', role: 'admin', toda: 'ITODA PITODA' },
+    // A TODA that is not Indang's counts as none, as for their access.
+    { _id: 'a3', phone: '+639174444444', role: 'admin', toda: 'Pilot TODA' },
+    { _id: 'a4', phone: '+639175555555', role: 'admin' },
+  ], new Set(['s1', 'a1']));
+  assert.deepEqual(accounts, [
+    { key: 's1', id: '09171111111', name: 'Pilot Super', email: '', role: 'SUPERADMIN', status: 'Online', languageWarnings: 0 },
+    { key: 'a1', id: '09172222222', name: 'Toda Officer', email: 'officer@example.com', role: 'ADMIN', status: 'Online', languageWarnings: 0, toda: 'BCITODA' },
+    { key: 'a2', id: '09173333333', name: 'Admin', email: '', role: 'ADMIN', status: 'Offline', languageWarnings: 0, toda: 'ITODA' },
+    { key: 'a3', id: '09174444444', name: 'Admin', email: '', role: 'ADMIN', status: 'Offline', languageWarnings: 0, toda: '' },
+    { key: 'a4', id: '09175555555', name: 'Admin', email: '', role: 'ADMIN', status: 'Offline', languageWarnings: 0, toda: '' },
+  ]);
 });
 
 test('God view lists every TODA with its drivers and their ratings, then the drivers of other TODAs', () => {

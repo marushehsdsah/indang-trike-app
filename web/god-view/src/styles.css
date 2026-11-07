@@ -580,6 +580,10 @@ input::placeholder{
   color:#8968b5;
   background:#f0ebf8
 }
+.avatar.admin{
+  color:#fff;
+  background:#153e32
+}
 .user-copy{
   display:flex;
   flex-direction:column;
@@ -899,7 +903,7 @@ input::placeholder{
   flex:0 1 250px
 }
 .accounts-toolbar #account-types{
-  flex-basis:380px
+  flex-basis:470px
 }
 .accounts-toolbar .count-pill{
   margin-left:auto
@@ -978,6 +982,13 @@ input::placeholder{
 }
 .role-tag.passenger:before{
   background:#8461d4
+}
+/* Staff accounts: a superadmin, or an admin of one TODA. */
+.role-tag.admin{
+  color:#153e32
+}
+.role-tag.admin:before{
+  background:#153e32
 }
 .cell-phone{
   font-variant-numeric:tabular-nums;
@@ -2322,36 +2333,4 @@ input::placeholder{
   #driver-search{
     flex-basis:100%
   }
-}
-
-/* Accounts: the God view admins' own accounts, marked and, if asked, hidden. */
-.hide-admins{
-  display:inline-flex;
-  align-items:center;
-  gap:7px;
-  font-size:11px;
-  font-weight:600;
-  color:#5e7163;
-  white-space:nowrap;
-  cursor:pointer
-}
-.hide-admins input{
-  width:15px;
-  height:15px;
-  margin:0;
-  padding:0;
-  accent-color:var(--green);
-  cursor:pointer
-}
-.admin-tag{
-  display:inline-block;
-  margin-left:8px;
-  padding:2px 7px;
-  border-radius:5px;
-  background:#153e32;
-  color:#fff;
-  font-size:10px;
-  font-weight:650;
-  letter-spacing:.3px;
-  vertical-align:middle
 }

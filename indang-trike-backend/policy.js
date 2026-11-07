@@ -6,6 +6,7 @@ const { fareDetails, quoteTrip } = require('../data/fares');
 const { resolveBookingRoute, createBookingPayload } = require('../utils/bookingRoute');
 const { ratingSummary } = require('../utils/rating');
 const { containsProfanity } = require('../utils/profanity');
+const { usesEmail } = require('../utils/roles');
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -19,6 +20,10 @@ function profileFields(body, role, current) {
   requireValue(sanitizeName(firstName) === firstName && sanitizeName(lastName) === lastName, 400, 'Names can only contain letters and spaces.');
   // A name cannot be partly hidden, so one with offensive words is refused.
   requireValue(!containsProfanity(`${firstName} ${lastName}`), 400, 'Please use a respectful name.');
+  // Staff have no email (utils/roles.js usesEmail): they are seeded in the
+  // database and have no Forgot password (auth.js), so one sent here is never
+  // saved, and one left from before is cleared.
+  if (!usesEmail(role)) return { firstName, lastName, email: '' };
   requireValue(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 400, 'Enter a valid email address.');
   const fields = { firstName, lastName, email };
   if (role === 'driver') {
@@ -56,7 +61,8 @@ function publicUser(user) {
     id: String(user._id), phone: user.phone, firstName: user.firstName || '', lastName: user.lastName || '',
     email: user.email || '', role: user.role || 'passenger', plate: user.plate, toda: todaName(user.toda), capacity: user.capacity,
     available: Boolean(user.available), createdAt: user.createdAt, rating: ratingSummary(user), photoAt: photoVersion(user),
-    profileComplete: Boolean(user.firstName && user.lastName && user.email && (user.role !== 'driver' || (user.plate && user.toda && user.capacity))),
+    // Staff are complete without an email, as they never have one.
+    profileComplete: Boolean(user.firstName && user.lastName && (user.email || !usesEmail(user.role)) && (user.role !== 'driver' || (user.plate && user.toda && user.capacity))),
     ...(awaitingApproval(user) ? { pendingApproval: true } : {}),
     // Only the TODA tester may pick another TODA in the profile, and cancel a
     // trip at any stage.

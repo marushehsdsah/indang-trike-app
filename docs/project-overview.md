@@ -119,7 +119,7 @@ delivered over Socket.IO as `chat:message` and `chat:read` to the two
 participants only; `/api/state` adds each ride's `unreadMessages`. A retried
 send with the same `clientId` is saved once, each person may send 10 messages
 per 30 s, and a chat holds at most 200. After the trip the chat is read-only;
-messages are deleted 30 days after sending. Pilot admins can read a trip's chat
+messages are deleted 30 days after sending. Superadmins can read a trip's chat
 (`GET /api/admin/rides/:id/messages`) only after a safety report on that trip.
 In the app (`components/ChatSheet.js`, state in `context/AppContext.js` and
 `utils/chatThread.js`) the chat opens over the trip screen from the person row's

@@ -2,7 +2,8 @@
 // components/StatusBadge.js
 // -------------------------------------------------------------
 // A small colored pill used for statuses ("Ongoing", "Blocked",
-// "Verified"...) and role tags ("RIDER", "PASSENGER").
+// "Verified"...) and role tags ("RIDER", "PASSENGER", "ADMIN",
+// "SUPERADMIN").
 //
 // HOW TO EDIT:
 // - To add a new status/role, add one line to STATUS_COLORS
@@ -34,6 +35,9 @@ const STATUS_COLORS = {
   approved: colors.statusVerified,
   rider: colors.roleRider,
   passenger: colors.rolePassenger,
+  // Staff accounts (screens/AccountsScreen.js).
+  admin: colors.roleAdmin,
+  superadmin: colors.roleAdmin,
 };
 
 export default function StatusBadge({ label }) {

@@ -164,6 +164,23 @@ test('a trip through the town pays both barangays\' fares as changed in God view
   assert.deepEqual(changed.special.legs.map((leg) => leg.area.id), taripa.special.legs.map((leg) => leg.area.id), 'a changed fare never moves a stop to another area');
 });
 
+test('fares with centavos add up to the centavo, with no floating-point trace', () => {
+  // Two legs whose sum in plain floating point is 24.299999999999997.
+  const taripa = quoteTrip({ pickup: ALULOD_SCHOOL, dropoff: PULO, at: DAY });
+  const [first, second] = taripa.special.legs.map((leg) => `area/${leg.area.id}/special/${leg.origin}/day`);
+  assert.equal(12.1 + 12.2, 24.299999999999997, 'what the rounding is for');
+  const quote = quoteTrip({ pickup: ALULOD_SCHOOL, dropoff: PULO, at: DAY, prices: { [first]: 12.1, [second]: 12.2, extraPassenger: 15.3 } });
+  assert.equal(quote.special.fare, 24.3);
+  // 24.30 + 2 × 15.30 is 54.900000000000006 in plain floating point.
+  assert.equal(24.3 + 2 * 15.3, 54.900000000000006);
+  assert.equal(fareTotal(quote, { passengers: 4 }), 54.9);
+  assert.equal(fareDetails(quote, { passengers: 4 }).total, 54.9);
+  // A changed single fare is charged as it is.
+  const poblacion = quoteTrip({ pickup: PLAZA, dropoff: MARKET, at: DAY, prices: { 'poblacion/day': 32.5, extraPassenger: 12.25 } });
+  assert.equal(fareTotal(poblacion, { passengers: 1 }), 32.5);
+  assert.equal(fareTotal(poblacion, { passengers: 3 }), 44.75);
+});
+
 test('changing a fare never moves a stop into another area of its barangay', () => {
   // Alulod's bands follow the taripa (Bukana nearest the town): making
   // Bukana the dearest does not price the far end as Bukana.

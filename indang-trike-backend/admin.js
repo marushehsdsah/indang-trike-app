@@ -6,11 +6,27 @@ const { getRoadGraph } = require('../data/roadNetwork');
 const { TODA_NAMES, findToda, todaName } = require('../data/todaZones');
 const { HttpError, requireValue, cleanText } = require('./policy');
 const { ratingSummary } = require('../utils/rating');
+const { roundToCentavos } = require('../data/fares');
 const { REPORT_REASON_LABELS, penaltyFor, suspensionOf } = require('../utils/reports');
+const { STAFF_ROLES, isStaff } = require('../utils/roles');
 
-function parseAdminPhones(value = '') {
-  return new Set(String(value).split(',').map(phone => normalizePhilippinePhone(phone.trim())).filter(Boolean));
+// What an account may reach in the admin API (utils/roles.js): everything for
+// a superadmin; for an admin, the drivers of their TODA, which must be one of
+// Indang's (saved under any of its names); otherwise nothing.
+function adminAccess(user) {
+  if (user?.role === 'superadmin') return { superadmin: true, toda: null };
+  if (user?.role !== 'admin') return null;
+  const toda = findToda(user.toda);
+  return toda ? { superadmin: false, toda: toda.name } : null;
 }
+
+// Whether a driver is one this access manages: a driver's TODA is matched by
+// any of its names, so one saved as "ITODA PITODA" counts as ITODA's.
+const managesDriver = (access, driver) => Boolean(access) && (access.superadmin || findToda(driver?.toda)?.name === access.toda);
+
+const NO_ACCESS = 'This account does not have admin access.';
+const NO_TODA = 'This admin account is not assigned to a TODA yet. Ask a superadmin to assign one.';
+const SUPERADMINS_ONLY = "God view is for superadmins. Manage your TODA's drivers in the IndangGO app.";
 
 function measuredLocation(fix) {
   if (!fix || !Number.isFinite(fix.latitude) || Math.abs(fix.latitude) > 90 ||
@@ -115,17 +131,23 @@ function driverApproval(user) {
   return user.approval === 'pending' ? 'Pending' : 'Approved';
 }
 
+// How each role is listed (utils/roles.js for the staff ones).
+const ACCOUNT_ROLES = {
+  driver: { role: 'RIDER', name: 'Driver' }, passenger: { role: 'PASSENGER', name: 'Passenger' },
+  admin: { role: 'ADMIN', name: 'Admin' }, superadmin: { role: 'SUPERADMIN', name: 'Superadmin' },
+};
+
 // connectedIds: the ids of users with the app open. key is unique for lists.
-// adminPhones: GOD_VIEW_ADMIN_PHONES (normalized); those accounts are marked
-// admin: true, so God view's Accounts tab can tell them apart or hide them.
-function buildAccounts(users, connectedIds, adminPhones = new Set()) {
+// An admin's toda is the Indang TODA they manage, or '' while they have none
+// (one saved that is not Indang's counts as none, as in adminAccess).
+function buildAccounts(users, connectedIds) {
   return users.map((user) => {
-    const id = String(user._id), driver = user.role === 'driver';
+    const id = String(user._id), { role, name } = ACCOUNT_ROLES[user.role] || ACCOUNT_ROLES.passenger;
     return {
-      key: id, id: localPhone(user.phone), name: fullName(user, driver ? 'Driver' : 'Passenger'), email: user.email || '',
-      role: driver ? 'RIDER' : 'PASSENGER', status: accountStatus(user, connectedIds.has(id)), languageWarnings: user.languageWarnings || 0,
-      ...(driver ? { toda: todaName(user.toda) || '', plate: user.plate || '', approval: driverApproval(user) } : {}),
-      ...(adminPhones.has(normalizePhilippinePhone(user.phone)) ? { admin: true } : {}),
+      key: id, id: localPhone(user.phone), name: fullName(user, name), email: user.email || '',
+      role, status: accountStatus(user, connectedIds.has(id)), languageWarnings: user.languageWarnings || 0,
+      ...(role === 'RIDER' ? { toda: todaName(user.toda) || '', plate: user.plate || '', approval: driverApproval(user) } : {}),
+      ...(role === 'ADMIN' ? { toda: findToda(user.toda)?.name || '' } : {}),
     };
   });
 }
@@ -256,7 +278,8 @@ function historySummary(groups) {
     else if (label === 'No driver') summary.noDriver += count;
     else summary.cancelled += count;
   }
-  return summary;
+  // Fares may have centavos: the sum is to the centavo.
+  return { ...summary, fares: roundToCentavos(summary.fares) };
 }
 
 // days (from the address): absent for every trip, or 1 to 30 for the trips
@@ -279,8 +302,7 @@ const ADMIN_CANCELLATION = 'Cancelled by an IndangGO admin';
 // app disconnects; onApproved(id): a driver was approved, so their app updates;
 // onCancelTrip(id, reason): an admin cancelled a ride, which ends it at once
 // and gives it back.
-function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, onSuspended = async () => {}, onApproved = async () => {}, onCancelTrip = async () => null }) {
-  const allowed = parseAdminPhones(adminPhones);
+function createAdmin({ models, presence, clock, sendEmail = null, onSuspended = async () => {}, onApproved = async () => {}, onCancelTrip = async () => null }) {
   // The ids of users with the app open.
   const connectedIds = () => new Set([...presence].filter(([, sockets]) => sockets.size).map(([id]) => id));
   // A driver's route to the pickup changes only when they move; every admin
@@ -294,18 +316,44 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
     }
     return approachCache.get(key);
   }
-  // An admin account, or an account whose phone is on GOD_VIEW_ADMIN_PHONES.
+  // Every admin request: a superadmin, or an admin with a TODA (req.adminAccess).
   function middleware(req, res, next) {
     res.set('Cache-Control', 'no-store');
-    requireValue(req.user.role === 'admin' || allowed.has(normalizePhilippinePhone(req.user.phone)), 403, 'This account does not have God view access. Ask the pilot administrator to enable it.');
+    const access = adminAccess(req.user);
+    requireValue(access, 403, req.user.role === 'admin' ? NO_TODA : NO_ACCESS);
+    req.adminAccess = access;
     next();
+  }
+  // In front of every admin route but the app's admin screens' (app.js), so
+  // whatever is added there later is for superadmins too, unless placed before it.
+  function superadminsOnly(req, res, next) {
+    requireValue(req.adminAccess?.superadmin, 403, SUPERADMINS_ONLY);
+    next();
+  }
+  // The ids (as text, as rides store them) of the drivers an admin manages,
+  // or null for a superadmin, who is not limited.
+  async function managedDriverIds(access) {
+    if (access.superadmin) return null;
+    const drivers = await models.User.find({ role: 'driver' }).select('toda').lean();
+    return drivers.filter((driver) => managesDriver(access, driver)).map((driver) => String(driver._id));
+  }
+  // For a decision on a driver: a driver this access does not manage is not
+  // found. An admin's decision then applies only while the driver's TODA is
+  // still the one checked here, so a driver who switches TODA meanwhile (the
+  // TODA tester) is left alone.
+  async function managedDriver(id, access) {
+    checkDriverId(id);
+    if (access.superadmin) return {};
+    const driver = await models.User.findOne({ _id: id, role: 'driver' }).select('toda').lean();
+    requireValue(driver && managesDriver(access, driver), 404, 'No driver has this ID.');
+    return { toda: driver.toda };
   }
   async function overview() {
     const ids = [...presence.keys()];
-    // Admins signed in on the app are watching, not riding, so they are not shown.
+    // Staff signed in on the app are watching, not riding, so they are not shown.
     // Safety reports: flagged ratings, and drivers' reports that were not dismissed.
     const [users, rides, reports, pendingDrivers] = await Promise.all([
-      models.User.find({ _id: { $in: ids }, role: { $ne: 'admin' } }).select('firstName lastName role plate toda available location locationAvailable ratingSum ratingCount languageWarnings').lean(),
+      models.User.find({ _id: { $in: ids }, role: { $nin: STAFF_ROLES } }).select('firstName lastName role plate toda available location locationAvailable ratingSum ratingCount languageWarnings').lean(),
       models.Ride.find({ active: true, $or: [{ passengerId: { $in: ids } }, { driverSlot: { $in: ids } }] }).select('passengerId driverId driverSlot status trip route').lean(),
       models.Rating.aggregate([{ $match: { flagged: true, rateeId: { $in: ids } } }, { $group: { _id: '$rateeId', count: { $sum: 1 } } }]),
       models.Report.aggregate([{ $match: { passengerId: { $in: ids }, status: { $ne: 'dismissed' } } }, { $group: { _id: '$passengerId', count: { $sum: 1 } } }]),
@@ -319,15 +367,23 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
     // pendingDrivers: God view's Accounts tab shows how many wait for approval.
     return { ...buildOverview(users, rides, connectedIds(), clock(), cachedRoute, reports), pendingDrivers };
   }
-  // Passengers and drivers, newest first; admin accounts are not listed. total
-  // counts them all, in case there are more than the list holds.
-  async function accounts() {
-    const [users, total] = await Promise.all([
-      models.User.find({ role: { $ne: 'admin' } }).sort({ createdAt: -1, _id: -1 }).limit(ACCOUNT_LIMIT)
-        .select('phone firstName lastName email role available toda plate approval terminatedAt languageWarnings').lean(),
-      models.User.countDocuments({ role: { $ne: 'admin' } }),
+  // A superadmin gets every account: passengers and drivers, newest first,
+  // then the staff accounts (admins and superadmins, for the Admins filter),
+  // newest first. Staff are few, so every one is listed even when there are
+  // more passengers and drivers than the list holds. An admin gets only their
+  // TODA's drivers. total counts them all, in case there are more than the
+  // list holds.
+  async function accounts(access) {
+    const ids = await managedDriverIds(access);
+    const find = (filter, limit) => models.User.find(filter).sort({ createdAt: -1, _id: -1 }).limit(limit)
+      .select('phone firstName lastName email role available toda plate approval terminatedAt languageWarnings').lean();
+    const listed = ids ? { _id: { $in: ids } } : { role: { $nin: STAFF_ROLES } };
+    const [users, staff, total] = await Promise.all([
+      find(listed, ACCOUNT_LIMIT),
+      ids ? [] : find({ role: { $in: STAFF_ROLES } }, 0),
+      models.User.countDocuments(ids ? listed : {}),
     ]);
-    return { accounts: buildAccounts(users, connectedIds(), allowed), total };
+    return { accounts: buildAccounts([...users, ...staff], connectedIds()), total };
   }
   // Every driver, approved or not, by TODA (God view's TODAs tab).
   async function todas() {
@@ -341,7 +397,7 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
   async function history(id, days) {
     requireValue(/^[a-f\d]{24}$/i.test(id), 404, 'No account has this ID.');
     const period = historyPeriod(days, clock());
-    const user = await models.User.findOne({ _id: id, role: { $ne: 'admin' } })
+    const user = await models.User.findOne({ _id: id, role: { $nin: STAFF_ROLES } })
       .select('phone firstName lastName email role available toda plate ratingSum ratingCount createdAt approval terminatedAt terminationReason languageWarnings').lean();
     requireValue(user, 404, 'No account has this ID.');
     const mine = { $or: [{ passengerId: id }, { driverId: id }], ...(period ? { createdAt: { $gte: period.since } } : {}) };
@@ -362,40 +418,50 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
       trips: buildHistory(id, rides, new Map(people.map((person) => [String(person._id), person])), new Map(ratings.map((rating) => [rating.rideId, rating]))),
     };
   }
-  async function trips(limit = TRIP_LIMIT) {
-    const rides = await models.Ride.find().sort({ createdAt: -1, _id: -1 }).limit(limit).select('passengerId driverId status trip createdAt').lean();
+  // The newest trips; for an admin (driverIds), only those their TODA's
+  // drivers took.
+  async function listTrips(driverIds, limit) {
+    const rides = await models.Ride.find(driverIds ? { driverId: { $in: driverIds } } : {}).sort({ createdAt: -1, _id: -1 }).limit(limit)
+      .select('passengerId driverId status trip createdAt').lean();
     const ids = [...new Set(rides.flatMap((ride) => [ride.passengerId, ride.driverId]).filter((id) => /^[a-f\d]{24}$/i.test(String(id))))];
     const people = await models.User.find({ _id: { $in: ids } }).select('firstName lastName toda').lean();
     return buildTrips(rides, new Map(people.map((person) => [String(person._id), person])));
   }
-  async function dashboard() {
+  const trips = async (access) => listTrips(await managedDriverIds(access), TRIP_LIMIT);
+  // An admin's counts cover their TODA's drivers and the trips they took.
+  async function dashboard(access) {
+    const ids = await managedDriverIds(access), online = connectedIds();
     const [totalAccounts, onlineNow, ongoingTrips, recentTrips, pendingDrivers] = await Promise.all([
-      models.User.countDocuments({ role: { $ne: 'admin' } }),
-      models.User.countDocuments({ _id: { $in: [...connectedIds()] }, role: { $ne: 'admin' } }),
-      models.Ride.countDocuments({ status: { $in: ACTIVE_STATUSES } }),
-      trips(3),
-      models.User.countDocuments(PENDING_DRIVERS),
+      ids ? ids.length : models.User.countDocuments({ role: { $nin: STAFF_ROLES } }),
+      ids ? ids.filter((id) => online.has(id)).length : models.User.countDocuments({ _id: { $in: [...online] }, role: { $nin: STAFF_ROLES } }),
+      models.Ride.countDocuments({ status: { $in: ACTIVE_STATUSES }, ...(ids ? { driverId: { $in: ids } } : {}) }),
+      listTrips(ids, 3),
+      models.User.countDocuments({ ...PENDING_DRIVERS, ...(ids ? { _id: { $in: ids } } : {}) }),
     ]);
     return { totalAccounts, onlineNow, ongoingTrips, recentTrips, pendingDrivers };
   }
   // Account Approval: the drivers waiting for approval, and those suspended
-  // (who can be unblocked), newest first.
-  async function approvals() {
-    const drivers = await models.User.find({ role: 'driver', $or: [{ approval: 'pending' }, { terminatedAt: { $exists: true } }] })
+  // (who can be unblocked), newest first; an admin's from their TODA only.
+  async function approvals(access) {
+    const ids = await managedDriverIds(access);
+    const drivers = await models.User.find({ role: 'driver', $or: [{ approval: 'pending' }, { terminatedAt: { $exists: true } }], ...(ids ? { _id: { $in: ids } } : {}) })
       .sort({ createdAt: -1, _id: -1 }).limit(ACCOUNT_LIMIT).select(DRIVER_FIELDS).lean();
-    const ids = connectedIds();
-    return { drivers: drivers.map((user) => buildDriver(user, ids)) };
+    const online = connectedIds();
+    return { drivers: drivers.map((user) => buildDriver(user, online)) };
   }
   const checkDriverId = (id) => requireValue(/^[a-f\d]{24}$/i.test(id), 404, 'No driver has this ID.');
-  async function driver(id) {
+  // A driver of another TODA is "not found" for an admin, as if there were none.
+  async function driver(id, access) {
     checkDriverId(id);
     const user = await models.User.findOne({ _id: id, role: 'driver' }).select(DRIVER_FIELDS).lean();
-    requireValue(user, 404, 'No driver has this ID.');
+    requireValue(user && managesDriver(access, user), 404, 'No driver has this ID.');
     return { driver: buildDriver(user, connectedIds()) };
   }
-  // Why a decision changed nothing: the driver is gone, or was already decided on.
-  async function undecided(id, message) {
-    requireValue(await models.User.exists({ _id: id, role: 'driver' }), 404, 'No driver has this ID.');
+  // Why a decision changed nothing: the driver is gone (or no longer one this
+  // access manages), or was already decided on.
+  async function undecided(id, message, access) {
+    const user = await models.User.findOne({ _id: id, role: 'driver' }).select('toda').lean();
+    requireValue(user && managesDriver(access, user), 404, 'No driver has this ID.');
     throw new HttpError(409, message);
   }
   // Emails the driver the admin's decision. The decision stands even when the
@@ -406,24 +472,25 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
     catch (error) { console.error(`${purpose} email failed:`, error.message); return false; }
   }
   // The admin found the driver on their TODA's list: they can go online.
-  async function approve(id) {
-    checkDriverId(id);
-    const user = await models.User.findOneAndUpdate({ _id: id, ...PENDING_DRIVERS }, { $set: { approval: 'approved', approvedAt: new Date(clock()) } },
+  // Each decision takes the deciding account's access (req.adminAccess).
+  async function approve(id, access) {
+    const managed = await managedDriver(id, access);
+    const user = await models.User.findOneAndUpdate({ _id: id, ...PENDING_DRIVERS, ...managed }, { $set: { approval: 'approved', approvedAt: new Date(clock()) } },
       { returnDocument: 'after' }).select(DRIVER_FIELDS).lean();
-    if (!user) await undecided(id, 'This driver is no longer waiting for approval.');
+    if (!user) await undecided(id, 'This driver is no longer waiting for approval.', access);
     await onApproved(id);
     return { driver: buildDriver(user, connectedIds()), emailed: await tell(user, 'driverApproved') };
   }
   // Suspends a driver until an admin unblocks them: the account is disabled,
   // their number and email cannot sign up again, every session ends and any
   // trip they are on is cancelled.
-  async function terminate(id, body) {
-    checkDriverId(id);
+  async function terminate(id, body, access) {
+    const managed = await managedDriver(id, access);
     const reason = cleanText(body?.reason, 200);
-    const user = await models.User.findOneAndUpdate({ _id: id, role: 'driver', terminatedAt: { $exists: false } },
+    const user = await models.User.findOneAndUpdate({ _id: id, role: 'driver', terminatedAt: { $exists: false }, ...managed },
       { $set: { disabled: true, available: false, locationAvailable: false, terminatedAt: new Date(clock()), terminationReason: reason } },
       { returnDocument: 'after' }).select(DRIVER_FIELDS).lean();
-    if (!user) await undecided(id, 'This driver was already suspended.');
+    if (!user) await undecided(id, 'This driver was already suspended.', access);
     const phone = normalizePhilippinePhone(user.phone) || user.phone;
     await models.Blocked.updateOne({ phone }, { $set: { email: (user.email || '').toLowerCase(), userId: id, reason: `Driver terminated${reason ? `: ${reason}` : ''}` } }, { upsert: true });
     await models.Session.deleteMany({ userId: user._id });
@@ -432,30 +499,30 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
   }
   // Removes a driver's account completely, so they can sign up again (with
   // corrected details): Delete, or Decline for a driver waiting for approval.
-  async function discard(id, body, filter, missing, purpose) {
-    checkDriverId(id);
+  async function discard(id, body, access, filter, missing, purpose) {
+    const managed = await managedDriver(id, access);
     const reason = cleanText(body?.reason, 200);
-    const user = await models.User.findOneAndDelete({ _id: id, ...filter }).select(DRIVER_FIELDS).lean();
-    if (!user) await undecided(id, missing);
+    const user = await models.User.findOneAndDelete({ _id: id, ...filter, ...managed }).select(DRIVER_FIELDS).lean();
+    if (!user) await undecided(id, missing, access);
     await Promise.all([models.Session.deleteMany({ userId: user._id }), models.ResetCode.deleteMany({ userId: user._id })]);
     await onSuspended(id, 'Driver account removed');
     return { driver: buildDriver(user, new Set()), emailed: await tell(user, purpose, reason) };
   }
   // A suspended driver must be unblocked first, so a blocked number never
   // outlives the account that explains it.
-  const remove = (id, body) => discard(id, body, { role: 'driver', terminatedAt: { $exists: false } },
+  const remove = (id, body, access) => discard(id, body, access, { role: 'driver', terminatedAt: { $exists: false } },
     'Unblock this driver before deleting the account.', 'driverDeleted');
   // Declines a driver's registration, say for a mistyped plate or TODA: their
   // number and email stay free, so they can sign up again with the right details.
-  const decline = (id, body) => discard(id, body, PENDING_DRIVERS, 'This driver is no longer waiting for approval.', 'driverDeclined');
+  const decline = (id, body, access) => discard(id, body, access, PENDING_DRIVERS, 'This driver is no longer waiting for approval.', 'driverDeclined');
   // Undoes a suspension: the number and email are freed and the driver waits
   // for approval again.
-  async function unblock(id) {
-    checkDriverId(id);
-    const user = await models.User.findOneAndUpdate({ _id: id, role: 'driver', terminatedAt: { $exists: true } },
+  async function unblock(id, access) {
+    const managed = await managedDriver(id, access);
+    const user = await models.User.findOneAndUpdate({ _id: id, role: 'driver', terminatedAt: { $exists: true }, ...managed },
       { $set: { disabled: false, approval: 'pending' }, $unset: { terminatedAt: 1, terminationReason: 1, approvedAt: 1 } },
       { returnDocument: 'after' }).select(DRIVER_FIELDS).lean();
-    if (!user) await undecided(id, 'This driver is not suspended.');
+    if (!user) await undecided(id, 'This driver is not suspended.', access);
     await models.Blocked.deleteMany({ userId: id });
     return { driver: buildDriver(user, connectedIds()) };
   }
@@ -487,6 +554,8 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
     requireValue(report.status === 'pending', 409, 'This report was already reviewed.');
     const passenger = await models.User.findById(report.passengerId);
     requireValue(passenger, 404, 'The reported account no longer exists.');
+    // A passenger made staff since: a penalty would suspend a staff account.
+    requireValue(!isStaff(passenger.role), 409, 'The reported account is now a staff account. Dismiss this report instead.');
     const penalty = penaltyFor((passenger.offenses || 0) + 1), now = clock();
     // Only one admin's review counts, even if two press at once.
     const claimed = await models.Report.findOneAndUpdate({ _id: id, status: 'pending' }, { $set: { status: 'upheld', reviewedBy: String(admin._id), reviewedAt: new Date(now), penalty: {
@@ -509,7 +578,7 @@ function createAdmin({ models, presence, clock, adminPhones, sendEmail = null, o
     requireValue(updated, 409, 'This report was already reviewed.');
     return { report: (await reports()).reports.find((item) => item.key === id) };
   }
-  return { middleware, overview, accounts, todas, history, trips, cancelTrip, dashboard, reports, uphold, dismiss, approvals, driver, approve, decline, terminate, remove, unblock };
+  return { middleware, superadminsOnly, overview, accounts, todas, history, trips, cancelTrip, dashboard, reports, uphold, dismiss, approvals, driver, approve, decline, terminate, remove, unblock };
 }
 
-module.exports = { ADMIN_CANCELLATION, createAdmin, parseAdminPhones, buildOverview, buildReports, buildRideRoutes, buildAccounts, buildDriver, buildTodas, driverApproval, buildTrips, buildHistory, historySummary, historyPeriod, tripStatus };
+module.exports = { ADMIN_CANCELLATION, NO_ACCESS, NO_TODA, SUPERADMINS_ONLY, createAdmin, adminAccess, managesDriver, buildOverview, buildReports, buildRideRoutes, buildAccounts, buildDriver, buildTodas, driverApproval, buildTrips, buildHistory, historySummary, historyPeriod, tripStatus };

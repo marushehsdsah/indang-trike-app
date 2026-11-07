@@ -24,6 +24,7 @@ const colors = {
   statusInactive: '#9AA0A6',    // gray   - inactive account
   roleRider: '#F5A623',         // yellow-orange "RIDER" badge
   rolePassenger: '#2FA84F',     // green  "PASSENGER" badge
+  roleAdmin: '#123D22',         // dark green "ADMIN" / "SUPERADMIN" badge
 
   // ---- Neutrals ---------------------------------------------------
   background: '#F6F7F5',        // app background

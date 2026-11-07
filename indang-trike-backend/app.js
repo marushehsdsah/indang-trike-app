@@ -6,15 +6,17 @@ const { Server } = require('socket.io');
 const { createModels } = require('./models');
 const { createAuth } = require('./auth');
 const { createDispatch } = require('./dispatch');
-const { createAdmin } = require('./admin');
+const { createAdmin, adminAccess, managesDriver } = require('./admin');
+const { isStaff } = require('../utils/roles');
 const { createChat } = require('./chat');
 const { createBrevoMailer } = require('./mailer');
 const { createFares } = require('./fares');
 const { requireValue, profileFields, publicUser, photoBytes } = require('./policy');
 const { SERVICE_AREA_NAME, INDANG_BOUNDARY_SHAPE } = require('../data/indangMap');
+const { roundToCentavos } = require('../data/fares');
 const SERVICE_AREA_PLACES = require('../assets/places/service-area-places.json');
 
-async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://127.0.0.1:27017/indang_trike_db', clock = Date.now, dispatchOptions, adminPhones = process.env.GOD_VIEW_ADMIN_PHONES || '', sendEmail = createBrevoMailer() } = {}) {
+async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://127.0.0.1:27017/indang_trike_db', clock = Date.now, dispatchOptions, sendEmail = createBrevoMailer() } = {}) {
   const connection = await mongoose.createConnection(mongoUri, { serverSelectionTimeoutMS: 5000 }).asPromise();
   const models = createModels(connection);
   await Promise.all(Object.values(models).map((model) => model.init()));
@@ -30,7 +32,7 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   const fares = createFares({ models });
   await fares.load();
   const dispatch = createDispatch({ models, io, clock, presence, fares, options: dispatchOptions });
-  const admin = createAdmin({ models, presence, clock, adminPhones, sendEmail,
+  const admin = createAdmin({ models, presence, clock, sendEmail,
     onSuspended: (id, reason) => dispatch.run(() => dispatch.suspended(id, reason)), onApproved: (id) => dispatch.notify(id),
     onCancelTrip: (id, reason) => dispatch.run(() => dispatch.adminCancel(id, reason)) });
   const chat = createChat({ models, io, clock });
@@ -67,43 +69,48 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   app.post('/api/password/verify', async (req, res) => res.json(await auth.checkResetCode(req.body)));
   app.post('/api/password/reset', async (req, res) => res.json(await auth.resetPassword(req.body)));
   app.use('/api', auth.middleware);
+  // Staff only (utils/roles.js): a superadmin, or an admin with a TODA.
   app.use('/api/admin', admin.middleware);
+  // The app's admin screens (IndangGoAdmin): Dashboard, Accounts, Trips,
+  // Account Approval and Driver Review. A superadmin sees everyone; an admin
+  // only their TODA's drivers and those drivers' trips. Drivers who sign up
+  // wait here for an admin to check them against their TODA's list of
+  // registered drivers. God view's Accounts view uses these too.
+  app.get('/api/admin/dashboard', async (req, res) => res.json(await admin.dashboard(req.adminAccess)));
+  app.get('/api/admin/accounts', async (req, res) => res.json(await admin.accounts(req.adminAccess)));
+  app.get('/api/admin/trips', async (req, res) => res.json({ trips: await admin.trips(req.adminAccess) }));
+  app.get('/api/admin/approvals', async (req, res) => res.json(await admin.approvals(req.adminAccess)));
+  app.get('/api/admin/drivers/:id', async (req, res) => res.json(await admin.driver(req.params.id, req.adminAccess)));
+  app.post('/api/admin/drivers/:id/approve', async (req, res) => res.json(await admin.approve(req.params.id, req.adminAccess)));
+  app.post('/api/admin/drivers/:id/decline', async (req, res) => res.json(await admin.decline(req.params.id, req.body, req.adminAccess)));
+  app.post('/api/admin/drivers/:id/terminate', async (req, res) => res.json(await admin.terminate(req.params.id, req.body, req.adminAccess)));
+  app.post('/api/admin/drivers/:id/delete', async (req, res) => res.json(await admin.remove(req.params.id, req.body, req.adminAccess)));
+  app.post('/api/admin/drivers/:id/unblock', async (req, res) => res.json(await admin.unblock(req.params.id, req.adminAccess)));
+  // Everything below is God view's, for superadmins only; an admin route
+  // added after this line is too.
+  app.use('/api/admin', admin.superadminsOnly);
   app.get('/api/admin/overview', async (req, res) => res.json(await admin.overview()));
   app.get('/api/admin/rides/:id/messages', async (req, res) => res.json(await chat.transcript(req.params.id)));
   // The service area and the same places layer the app draws (assets/places).
   app.get('/api/admin/map', (req, res) => res.json({ boundary: INDANG_BOUNDARY_SHAPE, places: SERVICE_AREA_PLACES }));
-  // The admin interface's Dashboard, Accounts and Trips screens (IndangGoAdmin),
-  // and God view's Accounts view.
-  app.get('/api/admin/dashboard', async (req, res) => res.json(await admin.dashboard()));
-  app.get('/api/admin/accounts', async (req, res) => res.json(await admin.accounts()));
   // God view's TODAs tab: each TODA's drivers, with their ratings.
   app.get('/api/admin/todas', async (req, res) => res.json(await admin.todas()));
   // One account's trip history (God view).
   app.get('/api/admin/accounts/:id', async (req, res) => res.json(await admin.history(req.params.id, req.query.days)));
-  app.get('/api/admin/trips', async (req, res) => res.json({ trips: await admin.trips() }));
-  // An admin cancels a booking or trip that has not ended (God view's trip histories).
+  // A superadmin cancels a booking or trip that has not ended (God view's trip histories).
   app.post('/api/admin/rides/:id/cancel', async (req, res) => res.json(await admin.cancelTrip(req.params.id, req.body)));
   // Drivers' reports about passengers (God view's Reports tab): upholding one
   // suspends the passenger, longer each time, then disables the account.
   app.get('/api/admin/reports', async (req, res) => res.json(await admin.reports()));
   app.post('/api/admin/reports/:id/uphold', async (req, res) => res.json(await admin.uphold(req.params.id, req.user)));
   app.post('/api/admin/reports/:id/dismiss', async (req, res) => res.json(await admin.dismiss(req.params.id, req.user)));
-  // Drivers who sign up wait for an admin to check them against their TODA's
-  // list of registered drivers (the app's Account Approval, and God view).
-  app.get('/api/admin/approvals', async (req, res) => res.json(await admin.approvals()));
-  app.get('/api/admin/drivers/:id', async (req, res) => res.json(await admin.driver(req.params.id)));
-  app.post('/api/admin/drivers/:id/approve', async (req, res) => res.json(await admin.approve(req.params.id)));
-  app.post('/api/admin/drivers/:id/decline', async (req, res) => res.json(await admin.decline(req.params.id, req.body)));
-  app.post('/api/admin/drivers/:id/terminate', async (req, res) => res.json(await admin.terminate(req.params.id, req.body)));
-  app.post('/api/admin/drivers/:id/delete', async (req, res) => res.json(await admin.remove(req.params.id, req.body)));
-  app.post('/api/admin/drivers/:id/unblock', async (req, res) => res.json(await admin.unblock(req.params.id)));
-  // God view's Fares tab: each TODA's fares, which an admin changes when the
-  // fares change. New bookings are charged the saved fares at once.
+  // God view's Fares tab: each TODA's fares, which a superadmin changes when
+  // the fares change. New bookings are charged the saved fares at once.
   app.get('/api/admin/fares', async (req, res) => res.json(await fares.sheet()));
   app.post('/api/admin/fares', async (req, res) => res.json(await fares.update(req.body, req.user)));
-  // Admin accounts oversee the service; they do not book, drive or chat on trips.
+  // Staff accounts oversee the service; they do not book, drive or chat on trips.
   app.use(['/api/rides', '/api/driver', '/api/passenger'], (req, res, next) => {
-    requireValue(req.user.role !== 'admin', 403, 'Admin accounts cannot book or drive.');
+    requireValue(!isStaff(req.user.role), 403, 'Admin accounts cannot book or drive.');
     next();
   });
   // fares: what the app quotes with (data/fares.js quoteTrip's prices), and
@@ -129,12 +136,14 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
     const user = await models.User.findByIdAndUpdate(req.user._id, update, { returnDocument: 'after' });
     dispatch.notify(req.user._id); res.json({ user: publicUser(user) });
   });
-  // A profile picture is shown to its owner, to admins, and to the other person
-  // on a trip they share or a booking a driver can see; to no one else.
+  // A profile picture is shown to its owner, to superadmins, to an admin for
+  // their TODA's drivers, and to the other person on a trip they share or a
+  // booking a driver can see; to no one else.
   app.get('/api/users/:id/photo', async (req, res) => {
-    const id = req.params.id, me = String(req.user._id);
+    const id = req.params.id, me = String(req.user._id), access = adminAccess(req.user);
     requireValue(/^[a-f0-9]{24}$/i.test(id), 404, 'No photo.');
-    const allowed = id === me || req.user.role === 'admin' || await models.Ride.exists({ $or: [
+    const managed = async () => managesDriver(access, await models.User.findOne({ _id: id, role: 'driver' }).select('toda').lean());
+    const allowed = id === me || access?.superadmin || (access && await managed()) || await models.Ride.exists({ $or: [
       { passengerId: me, $or: [{ driverId: id }, { driverSlot: id }] },
       { passengerId: id, $or: [{ driverId: me }, { driverSlot: me }] },
       ...(req.user.role === 'driver' ? [{ passengerId: id, status: 'searching', active: true }] : []),
@@ -196,7 +205,9 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
         todayTrips: { $sum: { $cond: [{ $gte: ['$completedAt', start] }, 1, 0] } },
         todayFare: { $sum: { $cond: [{ $gte: ['$completedAt', start] }, '$fare', 0] } } } },
     ]);
-    res.json(totals ? { trips: totals.trips, totalFare: totals.totalFare, todayTrips: totals.todayTrips, todayFare: totals.todayFare } : { trips: 0, totalFare: 0, todayTrips: 0, todayFare: 0 });
+    // Fares may have centavos, so their sums are rounded to the centavo.
+    res.json(totals ? { trips: totals.trips, totalFare: roundToCentavos(totals.totalFare), todayTrips: totals.todayTrips, todayFare: roundToCentavos(totals.todayFare) }
+      : { trips: 0, totalFare: 0, todayTrips: 0, todayFare: 0 });
   });
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error);

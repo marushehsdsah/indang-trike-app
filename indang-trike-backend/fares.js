@@ -1,14 +1,15 @@
 const { createHash } = require('node:crypto');
 const fareData = require('../assets/fares/indang-fares.json');
 const todaData = require('../assets/geo/indang-todas.json');
-const { TARIPA_PRICES, farePrices } = require('../data/fares');
+const { TARIPA_PRICES, farePrices, roundToCentavos } = require('../data/fares');
 const { BARANGAY_NAMES } = require('../data/todaZones');
 const { HttpError, requireValue } = require('./policy');
 
 // The fares in force: the taripa (assets/fares/indang-fares.json, priced by
 // data/fares.js) with the amounts an admin changed in God view's Fares tab.
-// Only amounts change, in whole pesos; the areas, their barangays and the
-// rules stay as the taripa lists them. The changed amounts are one document
+// Only amounts change, in pesos and centavos (at most two decimal places,
+// like ₱12.50); the areas, their barangays and the rules stay as the taripa
+// lists them. The changed amounts are one document
 // in the database, so every booking after a save is charged the new fare;
 // trips already booked keep theirs. The app quotes with the fares /api/config
 // sends, and /api/state names their revision so a phone knows to fetch them
@@ -17,7 +18,11 @@ const { HttpError, requireValue } = require('./policy');
 const MIN_FARE = 1, MAX_FARE = 1000;
 const SHEET_ID = 'current';
 const PERIODS = ['day', 'night'];
-const validFare = (value) => Number.isInteger(value) && value >= MIN_FARE && value <= MAX_FARE;
+// A number from ₱1 to ₱1000 with at most two decimal places. The check allows
+// for floating point (0.29 * 100 is 28.999999999999996).
+const validFare = (value) => typeof value === 'number' && Number.isFinite(value) && value >= MIN_FARE && value <= MAX_FARE
+  && Math.abs(value * 100 - Math.round(value * 100)) < 1e-6;
+const FARE_RULE = `Fares are ₱${MIN_FARE} to ₱${MAX_FARE}, with at most 2 decimal places, like ₱12.50`;
 
 // Where a listed trip starts.
 const FROM = { poblacion: 'From the Poblacion', palengke: 'From the Palengke sub-terminal', cvsu: 'From the CvSU gate', bunaCerca: 'From the Buna Cerca junction' };
@@ -77,7 +82,7 @@ function createFares({ models }) {
   let saved = { prices: {}, version: 0, updatedAt: null, updatedBy: null }, inForce, revision;
   function use(document) {
     const prices = {};
-    for (const [key, value] of Object.entries(document?.prices ?? {})) if (Object.hasOwn(TARIPA_PRICES, key) && validFare(value)) prices[key] = value;
+    for (const [key, value] of Object.entries(document?.prices ?? {})) if (Object.hasOwn(TARIPA_PRICES, key) && validFare(value)) prices[key] = roundToCentavos(value);
     saved = { prices, version: document?.version ?? 0, updatedAt: document?.updatedAt ?? null, updatedBy: document?.updatedByName ?? null };
     inForce = farePrices(prices); revision = revisionOf(inForce);
   }
@@ -111,7 +116,7 @@ function createFares({ models }) {
       requireValue(!keys.has(change.key), 400, `${labelOf(change.key)} is listed twice.`);
       keys.add(change.key);
       requireValue(Number.isFinite(change.from), 400, 'Refresh the fares and try again.');
-      requireValue(validFare(change.to), 400, `Fares are whole pesos from ₱${MIN_FARE} to ₱${MAX_FARE} (${labelOf(change.key)}).`);
+      requireValue(validFare(change.to), 400, `${FARE_RULE} (${labelOf(change.key)}).`);
     }
     return serial(async () => {
       await read();
@@ -119,7 +124,7 @@ function createFares({ models }) {
       if (stale.length) throw new HttpError(409, `${listLabels(stale)} changed since you opened the fares. Check the fares shown now, then save again.`);
       const prices = { ...saved.prices };
       // A fare set back to the taripa's amount follows the taripa again.
-      for (const { key, to } of changes) { if (to === TARIPA_PRICES[key]) delete prices[key]; else prices[key] = to; }
+      for (const { key, to: typed } of changes) { const to = roundToCentavos(typed); if (to === TARIPA_PRICES[key]) delete prices[key]; else prices[key] = to; }
       const name = [admin?.firstName, admin?.lastName].filter(Boolean).join(' ') || 'An admin';
       let document;
       try {

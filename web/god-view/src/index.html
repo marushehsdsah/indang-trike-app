@@ -24,19 +24,19 @@
     </section>
     <section class="login-panel">
       <form id="login-form" class="login-card">
-        <span class="eyebrow">ADMIN ACCESS</span><h2>Welcome to God view</h2><p class="muted">Sign in with your approved IndangGO account.</p>
+        <span class="eyebrow">SUPERADMIN ACCESS</span><h2>Welcome to God view</h2><p class="muted">Sign in with your IndangGO superadmin account.</p>
         <label for="phone">Mobile number</label><input id="phone" name="phone" type="tel" autocomplete="username" placeholder="09XX XXX XXXX" required>
         <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" placeholder="Your app password" required>
         <p id="login-error" class="error-text" role="alert" hidden></p>
         <button id="sign-in" class="primary" type="submit">Open dashboard <span aria-hidden="true">↗</span></button>
         <p id="login-progress" class="muted small" role="status" hidden>Connecting… A sleeping server can take up to a minute to wake.</p>
-        <p class="login-note">Access is limited to accounts approved by the pilot administrator.</p>
+        <p class="login-note">Access is limited to superadmin accounts. TODA admins manage their drivers in the IndangGO app.</p>
       </form>
     </section>
   </main>
 
   <main id="dashboard" class="dashboard" hidden>
-    <header class="topbar"><a class="brand" href="./"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#rickshaw"/></svg></span><span class="brand-name">Indang<span class="brand-go">GO</span></span></a><span class="topbar-divider"></span><span class="topbar-account"><span class="topbar-role">Administrator</span><span id="admin-name" class="admin-name"></span></span><div class="topbar-right"><button id="sign-out" class="quiet light">Sign out</button></div></header>
+    <header class="topbar"><a class="brand" href="./"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="#rickshaw"/></svg></span><span class="brand-name">Indang<span class="brand-go">GO</span></span></a><span class="topbar-divider"></span><span class="topbar-account"><span class="topbar-role">Superadmin</span><span id="admin-name" class="admin-name"></span></span><div class="topbar-right"><button id="sign-out" class="quiet light">Sign out</button></div></header>
     <nav class="view-tabs" aria-label="God view"><a class="view-tab" href="#live" data-view="live" aria-current="page">Live map</a><a class="view-tab" href="#accounts" data-view="accounts">Accounts<span id="accounts-badge" class="tab-badge pending" hidden></span></a><a class="view-tab" href="#todas" data-view="todas">TODAs</a><a class="view-tab" href="#reports" data-view="reports">Reports<span id="reports-badge" class="tab-badge" hidden></span></a><a class="view-tab" href="#fares" data-view="fares">Fares<span id="fares-badge" class="tab-badge pending" title="Unsaved fare changes" hidden></span></a></nav>
     <div id="live-view">
     <section class="page-heading"><div><h1>Live overview <span id="area-name" class="area-chip">Service area</span></h1><p class="muted">The people moving through your city, right now.</p></div><div class="sync-panel"><span id="connection-status" class="connection" role="status">Connecting</span><span id="last-updated" class="small muted">Waiting for the first update</span><button id="refresh" class="quiet">Refresh now</button></div></section>
@@ -68,7 +68,7 @@
     </div>
 
     <div id="accounts-view" hidden>
-    <section class="page-heading"><div><span class="eyebrow">PILOT ACCOUNTS</span><h1>All accounts</h1><p class="muted">Every driver and passenger on IndangGO, online or offline.</p></div><div class="sync-panel"><span id="accounts-updated" class="small muted">Loading accounts…</span><button id="accounts-refresh" class="quiet">Refresh now</button></div></section>
+    <section class="page-heading"><div><span class="eyebrow">PILOT ACCOUNTS</span><h1>All accounts</h1><p class="muted">Every driver, passenger and admin on IndangGO, online or offline.</p></div><div class="sync-panel"><span id="accounts-updated" class="small muted">Loading accounts…</span><button id="accounts-refresh" class="quiet">Refresh now</button></div></section>
     <section class="metrics three" aria-label="Account summary">
       <div class="metric"><span class="metric-label">All accounts</span><strong id="account-count-all">—</strong><span id="account-note-all" class="metric-note">Loading…</span></div>
       <div class="metric"><span class="metric-label"><i class="legend-dot online"></i> Online</span><strong id="account-count-online">—</strong><span id="account-note-online" class="metric-note">Loading…</span></div>
@@ -79,16 +79,15 @@
     <section class="accounts-panel" aria-label="Accounts">
       <div class="accounts-toolbar">
         <label class="search-label" for="account-search">Search accounts</label><input id="account-search" type="search" placeholder="Search a name, mobile number, email, plate or TODA…" autocomplete="off">
-        <div id="account-types" class="filters" role="group" aria-label="Filter by account type"><button data-type="all" aria-pressed="true">Everyone</button><button data-type="driver" aria-pressed="false">Drivers</button><button data-type="passenger" aria-pressed="false">Passengers</button><button data-type="pending" aria-pressed="false">Pending approval</button></div>
+        <div id="account-types" class="filters" role="group" aria-label="Filter by account type"><button data-type="all" aria-pressed="true">Everyone</button><button data-type="driver" aria-pressed="false">Drivers</button><button data-type="passenger" aria-pressed="false">Passengers</button><button data-type="admin" aria-pressed="false">Admins</button><button data-type="pending" aria-pressed="false">Pending approval</button></div>
         <div id="account-statuses" class="filters" role="group" aria-label="Filter by online or offline"><button data-status="all" aria-pressed="true">All</button><button data-status="online" aria-pressed="false">Online</button><button data-status="offline" aria-pressed="false">Offline</button></div>
-        <label class="hide-admins" for="hide-admins"><input id="hide-admins" type="checkbox"> Hide admin accounts</label>
         <span id="account-result-count" class="count-pill">0 shown</span>
       </div>
       <table id="accounts-table" class="accounts-table">
         <thead><tr><th scope="col">Account</th><th scope="col">Type</th><th scope="col">Mobile number</th><th scope="col">Vehicle</th><th scope="col">Status</th><th scope="col"><span class="search-label">Map</span></th></tr></thead>
         <tbody id="account-rows"></tbody>
       </table>
-      <div id="accounts-empty" class="empty-state"><span aria-hidden="true">◎</span><h3>Loading accounts</h3><p>Getting every driver and passenger account.</p></div>
+      <div id="accounts-empty" class="empty-state"><span aria-hidden="true">◎</span><h3>Loading accounts</h3><p>Getting every driver, passenger and admin account.</p></div>
       <div class="people-footer"><span id="accounts-footnote">Online means the app is open and connected. Refreshes every 10 seconds.</span></div>
     </section>
     </div>
@@ -125,6 +124,7 @@
     </section>
     <ol class="penalty-ladder" aria-label="Penalties for upheld reports"><li><strong>1st offense</strong><span>24-hour suspension</span></li><li><strong>2nd offense</strong><span>3-day suspension</span></li><li><strong>3rd offense</strong><span>Disabled for good · number and email blocked</span></li></ol>
     <p id="reports-error" class="notice" role="alert" hidden></p>
+    <p id="reports-action-error" class="notice" role="alert" hidden></p>
     <section class="accounts-panel" aria-labelledby="reports-title">
       <div class="accounts-toolbar">
         <h2 id="reports-title" class="panel-title">Reports</h2>
@@ -154,6 +154,7 @@
       <div class="metric"><span id="history-fares-label" class="metric-label">Fares</span><strong id="history-fares">—</strong><span class="metric-note">From completed trips</span></div>
     </section>
     <p id="history-error" class="notice" role="alert" hidden></p>
+    <p id="history-action-error" class="notice" role="alert" hidden></p>
     <p id="history-note" class="notice success" role="status" hidden></p>
     <section class="accounts-panel" aria-labelledby="history-title">
       <div class="accounts-toolbar">

@@ -180,6 +180,39 @@ test('an unknown number is told so and gets no email; reset codes have the same 
   await assert.rejects(auth.resetPassword({ phone: form.phone, code: sent[1].code, password: 'brand-new-password' }), { status: 400, message: /expired/ });
 });
 
+test('staff have no Forgot password: a superadmin\'s or admin\'s number is answered as one no account uses', async () => {
+  const { auth, models, sent } = setup();
+  const NO_ACCOUNT = { status: 404, message: 'No account uses this mobile number.' };
+  // Seeded with no email, and ones made before that still have an email.
+  await models.User.create({ phone: '+639171111111', password: 'stored-hash', firstName: 'Pilot', lastName: 'Super', email: '', role: 'superadmin' });
+  await models.User.create({ phone: '+639172222222', password: 'stored-hash', firstName: 'Old', lastName: 'Super', email: 'old.super@gmail.com', role: 'superadmin' });
+  await models.User.create({ phone: '+639175555555', password: 'stored-hash', firstName: 'Toda', lastName: 'Officer', email: '', role: 'admin', toda: 'BCITODA' });
+  await models.User.create({ phone: '+639176666666', password: 'stored-hash', firstName: 'Old', lastName: 'Officer', email: 'old.officer@gmail.com', role: 'admin', toda: 'ITODA' });
+  for (const phone of ['09171111111', '09172222222', '09175555555', '09176666666', '09180000000']) {
+    await assert.rejects(auth.sendResetCode({ phone }), NO_ACCOUNT, phone);
+    await assert.rejects(auth.checkResetCode({ phone, code: '123456' }), NO_ACCOUNT, phone);
+    await assert.rejects(auth.resetPassword({ phone, code: '123456', password: 'brand-new-password' }), NO_ACCOUNT, phone);
+  }
+  assert.equal(sent.length, 0, 'no code is emailed');
+  assert.equal(models.ResetCode.docs.length, 0);
+  assert.ok(models.User.docs.every((user) => user.password === 'stored-hash'), 'no password changed');
+
+  // A code sent before the account became staff changes nothing, even
+  // reached through another account with that email.
+  for (const [index, role] of ['admin', 'superadmin'].entries()) {
+    const email = `officer${index}@gmail.com`;
+    const account = await models.User.create({ phone: `+63917333333${index}`, password: 'stored-hash', firstName: 'Toda', lastName: 'Officer', email, role: 'passenger' });
+    await auth.sendResetCode({ phone: `0917333333${index}` });
+    const code = sent.at(-1).code;
+    assert.equal(sent.at(-1).to, email, role);
+    account.role = role;
+    await assert.rejects(auth.resetPassword({ phone: `0917333333${index}`, code, password: 'brand-new-password' }), NO_ACCOUNT, role);
+    await models.User.create({ phone: `+63917444444${index}`, password: 'stored-hash', firstName: 'Same', lastName: 'Email', email, role: 'passenger' });
+    await assert.rejects(auth.resetPassword({ phone: `0917444444${index}`, code, password: 'brand-new-password' }), { status: 400, message: /expired/ }, role);
+    assert.equal(account.password, 'stored-hash', role);
+  }
+});
+
 test('a reset code is not a sign-up code', async () => {
   const { auth, sent, advance } = await signedUp();
   await auth.sendResetCode({ phone: form.phone });

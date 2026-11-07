@@ -12,8 +12,10 @@ android
   Indang, booking short tricycle trips within the town.
 - **Drivers:** TODA (tricycle operators and drivers association) members on
   low- to mid-range, often older Android phones.
-- **Pilot admins:** watch connected drivers and passengers on the separate God
-  view website (`web/god-view`).
+- **Superadmins:** watch connected drivers and passengers on the separate God
+  view website (`web/god-view`), and manage every TODA's drivers.
+- **TODA admins:** officers of one TODA who approve and manage that TODA's
+  drivers from the app's admin screens.
 
 Both app roles use the phone outdoors in bright sun, glancing at it while
 waiting or driving, often one-handed or with the phone mounted on the trike,

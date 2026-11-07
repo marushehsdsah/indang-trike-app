@@ -6,6 +6,7 @@ const { io } = require('socket.io-client');
 const { createBackend } = require('../indang-trike-backend/app');
 const { ADMIN_CANCELLATION } = require('../indang-trike-backend/admin');
 const { DEFAULT_TRIP } = require('../data/indangMap');
+const { findToda } = require('../data/todaZones');
 const { fareTotal, quoteTrip } = require('../data/fares');
 const { getRoadGraph } = require('../data/roadNetwork');
 const { calculateRoute } = require('../utils/roadGraph');
@@ -18,6 +19,8 @@ let now = Date.now();
 const sockets = [];
 // Atlas allows database names of at most 38 bytes.
 const dbName = `indang_test_${randomUUID().replaceAll('-', '').slice(0, 24)}`;
+// The superadmin's number; the God view test makes the account a superadmin,
+// and later tests log in with it.
 const adminPhone = '09179999999';
 // Stands in for Brevo: the last code emailed to each address, and every
 // notice to a driver about an admin's decision.
@@ -27,7 +30,7 @@ const fix = (latitude = 14.197805) => ({ latitude, longitude: 120.881639, accura
 
 before(async () => {
   const mongoRoot = process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017';
-  backend = await createBackend({ mongoUri: `${mongoRoot}/${dbName}`, clock: () => now, adminPhones: adminPhone, sendEmail });
+  backend = await createBackend({ mongoUri: `${mongoRoot}/${dbName}`, clock: () => now, sendEmail });
   await new Promise((resolve) => backend.server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${backend.server.address().port}`;
 });
@@ -90,7 +93,7 @@ test('health reports the database and the service area bookings are accepted in'
   assert.deepEqual(await request('/health'), { status: 200, body: { ok: true, serviceArea: 'Indang' } });
 });
 
-test('the separate God view website may call the API, but every overview needs admin authorization', async () => {
+test('the separate God view website may call the API, but every overview needs a superadmin', async () => {
   // The dashboard is its own website (web/god-view); the API no longer serves it.
   assert.equal((await fetch(`${base}/god-view/`)).status, 404);
   const preflight = await fetch(`${base}/api/admin/overview`, { method: 'OPTIONS', headers: {
@@ -101,7 +104,11 @@ test('the separate God view website may call the API, but every overview needs a
   assert.equal((await request('/admin/overview')).status, 401);
   const ordinary = await account();
   assert.equal((await request('/admin/overview', ordinary.token)).status, 403);
+  // The number that was once on GOD_VIEW_ADMIN_PHONES grants nothing now:
+  // only the superadmin role, set in the database, does.
   const admin = await account('passenger', adminPhone);
+  assert.deepEqual(await request('/admin/overview', admin.token), { status: 403, body: { error: 'This account does not have admin access.' } });
+  await backend.models.User.updateOne({ _id: admin.user.id }, { $set: { role: 'superadmin' } });
   assert.equal((await request('/admin/map', ordinary.token)).status, 403);
   const map = await request('/admin/map', admin.token);
   assert.equal(map.body.boundary.features.length, 1, 'Indang');
@@ -129,30 +136,120 @@ test('the separate God view website may call the API, but every overview needs a
   assert.equal((await request('/admin/overview', admin.token)).status, 401);
 });
 
-test('an admin account added in the database logs in on the app login, may use God view, and cannot ride', async () => {
+// As one is added in Atlas (or by the local scripts): the password as a bcrypt
+// hash, the role, and for an admin their TODA, in whatever spelling. Staff
+// are seeded with no email (for now an admin too).
+async function staffAccount(role, fields = {}) {
   const phone = `0917${sequence++}`;
-  // As an administrator adds one in Atlas: the password as a bcrypt hash, and role "admin".
   await backend.models.User.collection.insertOne({ phone: `+63${phone.slice(1)}`, password: await bcrypt.hash('strong-password', 10),
-    firstName: 'Pilot', lastName: 'Admin', email: `${phone}@example.com`, role: 'admin', createdAt: new Date(now), updatedAt: new Date(now) });
+    firstName: 'Staff', lastName: role === 'superadmin' ? 'Super' : 'Officer',
+    role, createdAt: new Date(now), updatedAt: new Date(now), ...fields });
   const login = await request('/login', null, { phone, password: 'strong-password' });
   assert.equal(login.status, 200, JSON.stringify(login.body));
-  const admin = login.body;
+  return login.body;
+}
+// Every God view request, for superadmins only.
+const GOD_VIEW = [['/admin/overview'], ['/admin/map'], ['/admin/todas'], ['/admin/reports'], ['/admin/fares'], ['/admin/fares', { changes: [] }],
+  ['/admin/accounts/0123456789abcdef01234567'], ['/admin/rides/0123456789abcdef01234567/messages'], ['/admin/rides/0123456789abcdef01234567/cancel', {}],
+  ['/admin/reports/0123456789abcdef01234567/uphold', {}], ['/admin/reports/0123456789abcdef01234567/dismiss', {}], ['/admin/no-such-page']];
+
+test('an admin of a TODA logs in on the app login, uses the app\'s admin screens but not God view, and cannot ride', async () => {
+  const admin = await staffAccount('admin', { toda: 'BCITODA' });
   assert.equal(admin.user.role, 'admin');
+  assert.equal(admin.user.toda, 'BCITODA');
   assert.equal(admin.user.profileComplete, true);
   assert.equal((await request('/state', admin.token)).status, 200);
-  // The app's live link makes the admin present, but admins are not shown among the riders.
+  // The app's live link makes the admin present, but staff are not shown among the riders.
   const socket = await connect(admin.token);
-  const overview = await request('/admin/overview', admin.token);
+  const superadmin = (await request('/login', null, { phone: adminPhone, password: 'strong-password' })).body;
+  const watcher = await connect(superadmin.token);
+  const overview = await request('/admin/overview', superadmin.token);
   assert.equal(overview.status, 200);
-  assert.equal(overview.body.users.some(item => item.id === admin.user.id), false);
-  assert.equal((await book(admin)).status, 403);
-  assert.equal((await request('/passenger/location', admin.token, fix())).status, 403);
-  assert.equal((await request('/driver/availability', admin.token, { available: true })).status, 403);
-  socket.disconnect();
-  // Sign-up cannot make one.
-  const other = `0917${sequence++}`;
-  const signupAdmin = await request('/register/code', null, { phone: other, password: 'strong-password', firstName: 'Not', lastName: 'Admin', email: `${other}@example.com`, role: 'admin' });
-  assert.equal(signupAdmin.status, 400);
+  assert.equal(overview.body.users.some(item => [admin.user.id, superadmin.user.id].includes(item.id)), false);
+  for (const path of ['/admin/dashboard', '/admin/accounts', '/admin/trips', '/admin/approvals']) assert.equal((await request(path, admin.token)).status, 200, path);
+  for (const [path, body] of GOD_VIEW) {
+    assert.deepEqual(await request(path, admin.token, body), { status: 403, body: { error: "God view is for superadmins. Manage your TODA's drivers in the IndangGO app." } }, path);
+  }
+  // Paths the server reads as the same route reach the same check.
+  for (const path of ['/admin/Dashboard', '/admin/dashboard/']) assert.equal((await request(path, admin.token)).status, 200, path);
+  for (const path of ['/admin/Overview', '/admin/overview/']) assert.equal((await request(path, admin.token)).status, 403, path);
+  // Neither staff role books or drives.
+  for (const staff of [admin, superadmin]) {
+    assert.equal((await book(staff)).status, 403);
+    assert.equal((await request('/passenger/location', staff.token, fix())).status, 403);
+    assert.equal((await request('/driver/availability', staff.token, { available: true })).status, 403);
+  }
+  // A profile edit keeps the role and the TODA, and saves no email.
+  assert.equal(admin.user.email, '');
+  const edited = await request('/me', admin.token, { firstName: 'Staff', lastName: 'Officer', email: 'officer@example.com', role: 'superadmin', toda: 'ITODA' }, 'PATCH');
+  assert.equal(edited.status, 200, JSON.stringify(edited.body));
+  assert.deepEqual([edited.body.user.role, edited.body.user.toda, edited.body.user.email, edited.body.user.profileComplete], ['admin', 'BCITODA', '', true]);
+  assert.equal((await request('/admin/overview', admin.token)).status, 403, 'still not a superadmin');
+  socket.disconnect(); watcher.disconnect();
+  // Sign-up cannot make either staff role.
+  for (const role of ['admin', 'superadmin']) {
+    const other = `0917${sequence++}`;
+    const signup = await request('/register/code', null, { phone: other, password: 'strong-password', firstName: 'Not', lastName: 'Staff', email: `${other}@example.com`, role });
+    assert.equal(signup.status, 400, role);
+  }
+  await request('/logout', admin.token, {});
+  await request('/logout', superadmin.token, {});
+});
+
+test('a superadmin seeded with no email signs in, edits its names, and has no Forgot password, nor for now does an admin', async () => {
+  const superadmin = await staffAccount('superadmin');
+  assert.deepEqual([superadmin.user.role, superadmin.user.email, superadmin.user.profileComplete], ['superadmin', '', true]);
+  for (const path of ['/admin/overview', '/admin/dashboard']) assert.equal((await request(path, superadmin.token)).status, 200, path);
+  // A profile edit needs no email, and one sent is not saved.
+  for (const body of [{ firstName: 'Pilot', lastName: 'Super' }, { firstName: 'Pilot', lastName: 'Super', email: 'someone@example.com' }]) {
+    const edited = await request('/me', superadmin.token, body, 'PATCH');
+    assert.equal(edited.status, 200, JSON.stringify(edited.body));
+    const { firstName, email, role, profileComplete } = edited.body.user;
+    assert.deepEqual({ firstName, email, role, profileComplete }, { firstName: 'Pilot', email: '', role: 'superadmin', profileComplete: true });
+  }
+  assert.equal((await backend.models.User.findById(superadmin.user.id).lean()).email, '');
+  // Forgot password answers its number exactly as a number no account uses,
+  // and so it does for the superadmin made earlier with an email (adminPhone),
+  // and for now for a TODA admin, with no email or one left from before.
+  const legacy = await backend.models.User.findOne({ phone: `+63${adminPhone.slice(1)}` }).lean();
+  assert.equal(legacy.role, 'superadmin');
+  assert.ok(legacy.email, 'made from a signed-up account, so it has an email');
+  const officer = await staffAccount('admin', { toda: 'BCITODA' });
+  const oldOfficer = await staffAccount('admin', { toda: 'ITODA', email: 'old.officer@example.com' });
+  assert.deepEqual([officer.user.email, officer.user.profileComplete], ['', true]);
+  const staff = [superadmin, officer, oldOfficer].map((account) => account.user);
+  const attempt = { code: '123456', password: 'a-new-password' };
+  for (const path of ['/password/code', '/password/verify', '/password/reset']) {
+    const unknown = await request(path, null, { phone: '09189999999', ...attempt });
+    assert.deepEqual(unknown, { status: 404, body: { error: 'No account uses this mobile number.' } }, path);
+    for (const phone of [...staff.map((user) => user.phone), adminPhone]) assert.deepEqual(await request(path, null, { phone, ...attempt }), unknown, `${path} ${phone}`);
+  }
+  assert.equal(await backend.models.ResetCode.countDocuments({ userId: { $in: [...staff.map((user) => user.id), legacy._id] } }), 0, 'no code was sent');
+  // Every one still signs in with the password they had.
+  for (const phone of [...staff.map((user) => user.phone), adminPhone]) {
+    const login = await request('/login', null, { phone, password: 'strong-password' });
+    assert.equal(login.status, 200, phone);
+    await request('/logout', login.body.token, {});
+  }
+  for (const account of [superadmin, officer, oldOfficer]) await request('/logout', account.token, {});
+});
+
+test('an admin without one of Indang\'s TODAs reaches nothing until a superadmin assigns one', async () => {
+  const unassigned = await staffAccount('admin');
+  const NO_TODA = { error: 'This admin account is not assigned to a TODA yet. Ask a superadmin to assign one.' };
+  for (const [path, body] of [['/admin/dashboard'], ['/admin/accounts'], ['/admin/approvals'], ['/admin/overview'], ['/admin/drivers/0123456789abcdef01234567/approve', {}]]) {
+    assert.deepEqual(await request(path, unassigned.token, body), { status: 403, body: NO_TODA }, path);
+  }
+  // A TODA that is not Indang's counts as none.
+  await backend.models.User.updateOne({ _id: unassigned.user.id }, { $set: { toda: 'Pilot TODA' } });
+  assert.deepEqual(await request('/admin/dashboard', unassigned.token), { status: 403, body: NO_TODA });
+  // Assigned one, the same session works at once.
+  await backend.models.User.updateOne({ _id: unassigned.user.id }, { $set: { toda: 'ITODA' } });
+  assert.equal((await request('/admin/dashboard', unassigned.token)).status, 200);
+  // A role typed wrong in Atlas grants nothing.
+  await backend.models.User.updateOne({ _id: unassigned.user.id }, { $set: { role: 'SuperAdmin' } });
+  assert.deepEqual(await request('/admin/dashboard', unassigned.token), { status: 403, body: { error: 'This account does not have admin access.' } });
+  await backend.models.User.deleteOne({ _id: unassigned.user.id });
 });
 
 test('the admin interface lists the accounts and trips in the database, for admins only', async () => {
@@ -183,13 +280,26 @@ test('the admin interface lists the accounts and trips in the database, for admi
 
   const { accounts, total } = (await request('/admin/accounts', admin.token)).body;
   assert.equal(total, accounts.length);
+  assert.equal(total, await backend.models.User.countDocuments(), 'a superadmin gets every account');
   assert.deepEqual(accounts.find((item) => item.key === passenger.user.id),
     { key: passenger.user.id, id: passenger.user.phone.replace('+63', '0'), name: 'Test passenger', email: passenger.user.email, role: 'PASSENGER', status: 'Offline', languageWarnings: 0 });
   assert.deepEqual(accounts.find((item) => item.key === driver.user.id),
     { key: driver.user.id, id: driver.user.phone.replace('+63', '0'), name: 'Test driver', email: driver.user.email, role: 'RIDER', status: 'Online', languageWarnings: 0, toda: 'Test TODA', plate: driver.user.plate, approval: 'Approved' });
-  assert.equal(accounts.some((item) => item.name === 'Pilot Admin'), false, 'admin accounts are not listed');
-  assert.equal(accounts.find((item) => item.key === admin.user.id).admin, true, 'a God view admin\'s own account is marked, so God view can hide it');
-  assert.equal(accounts.length, await backend.models.User.countDocuments({ role: { $ne: 'admin' } }));
+  // Staff accounts (the admins added earlier in this run, and the superadmins)
+  // are listed too, after everyone else, for the Admins filter: a superadmin
+  // as SUPERADMIN, an admin as ADMIN with the Indang TODA they manage.
+  const staff = await backend.models.User.find({ role: { $in: ['admin', 'superadmin'] } }).sort({ createdAt: -1, _id: -1 }).lean();
+  assert.ok(staff.some((user) => user.role === 'admin') && staff.some((user) => String(user._id) === admin.user.id));
+  assert.deepEqual(accounts.slice(-staff.length).map((item) => item.key), staff.map((user) => String(user._id)), 'the staff, newest first, come last');
+  assert.ok(accounts.slice(0, -staff.length).every((item) => ['PASSENGER', 'RIDER'].includes(item.role)));
+  const listed = (user) => accounts.find((item) => item.key === String(user._id));
+  for (const user of staff) {
+    if (user.role === 'superadmin') assert.equal(listed(user).role, 'SUPERADMIN');
+    else assert.deepEqual([listed(user).role, listed(user).toda], ['ADMIN', findToda(user.toda)?.name || ''], user.toda);
+  }
+  const self = listed({ _id: admin.user.id });
+  assert.deepEqual([self.id, self.role, self.status], [adminPhone, 'SUPERADMIN', 'Offline']);
+  assert.deepEqual(Object.keys(self).sort(), ['email', 'id', 'key', 'languageWarnings', 'name', 'role', 'status'], 'no password or other secrets');
 
   // One account's whole trip history, as passenger or as driver.
   const fare = (await backend.models.Ride.findById(completed.id)).fare;
@@ -210,12 +320,12 @@ test('the admin interface lists the accounts and trips in the database, for admi
     [{ key: completed.id, as: 'driver', status: 'Completed', other: 'Test passenger' }], 'only the trips this driver accepted');
   assert.equal(driverHistory.account.status, 'Online');
   assert.equal((await request(`/admin/accounts/${driver.user.id}`, passenger.token)).status, 403);
-  // Admin accounts (added earlier in this run) have no trip history to show.
-  const adminAccount = String((await backend.models.User.findOne({ role: 'admin' }))._id);
-  for (const id of [adminAccount, '0123456789abcdef01234567', 'not-an-id']) assert.equal((await request(`/admin/accounts/${id}`, admin.token)).status, 404, id);
+  // Staff accounts never ride, so they have no trip history to show.
+  for (const id of [...staff.map((user) => String(user._id)), '0123456789abcdef01234567', 'not-an-id']) assert.equal((await request(`/admin/accounts/${id}`, admin.token)).status, 404, id);
 
   const dashboard = (await request('/admin/dashboard', admin.token)).body;
-  assert.deepEqual(dashboard, { totalAccounts: accounts.length, onlineNow: 1, ongoingTrips: 1, recentTrips: trips.slice(0, 3), pendingDrivers: await backend.models.User.countDocuments({ role: 'driver', approval: 'pending' }) });
+  // The Dashboard counts the people using the service: staff are not among them.
+  assert.deepEqual(dashboard, { totalAccounts: accounts.filter((item) => ['PASSENGER', 'RIDER'].includes(item.role)).length, onlineNow: 1, ongoingTrips: 1, recentTrips: trips.slice(0, 3), pendingDrivers: await backend.models.User.countDocuments({ role: 'driver', approval: 'pending' }) });
 
   // A trip history of the last 7 days leaves out the completed trip, booked 10 days ago.
   const day = 24 * 3600000, booked = await backend.models.Ride.findById(completed.id).lean();
@@ -351,6 +461,98 @@ test('an admin can decline a driver\'s registration, and the driver can sign up 
   assert.deepEqual(await request(`/admin/drivers/${again.body.user.id}/decline`, admin.token, {}), { status: 409, body: { error: 'This driver is no longer waiting for approval.' } });
   await backend.models.User.deleteOne({ _id: again.body.user.id });
   await request('/logout', admin.token, {});
+});
+
+test('an admin sees and manages only the drivers of their TODA, and a superadmin every driver', async () => {
+  const superadmin = (await request('/login', null, { phone: adminPhone, password: 'strong-password' })).body;
+  // Drivers of two of Indang's TODAs, saved in the spellings hand edits and
+  // older data use, and one of a TODA not on Indang's list.
+  async function driverOf(toda, approved) {
+    const driver = await account('driver', undefined, { approved });
+    await backend.models.User.updateOne({ _id: driver.user.id }, { $set: { toda } });
+    return driver;
+  }
+  const bci = await driverOf('BCITODA', true), bciPending = await driverOf('bci toda', false);
+  const itodaPending = await driverOf('ITODA PITODA', false), other = await driverOf('Test TODA', false);
+  const passenger = await account(), rider = await account();
+  const ride = (passengerId, driverId, status, extra = {}) => backend.models.Ride.create({
+    passengerId, driverId, idempotencyKey: randomUUID(), status, active: false, trip: DEFAULT_TRIP, passengers: 1, fare: 50, ...extra });
+  const bciTrip = await ride(passenger.user.id, bci.user.id, 'completed');
+  const otherTrip = await ride(passenger.user.id, other.user.id, 'completed');
+  const ongoing = await ride(rider.user.id, bci.user.id, 'in_progress', { active: true, driverSlot: bci.user.id });
+  // The admin's TODA as typed by hand.
+  const admin = await staffAccount('admin', { toda: 'bci toda' });
+  const keys = (list) => list.map((item) => item.key).sort();
+  const NOT_FOUND = { status: 404, body: { error: 'No driver has this ID.' } };
+
+  // Every list and count covers BCITODA's drivers and their trips, and no passenger.
+  const accounts = (await request('/admin/accounts', admin.token)).body;
+  assert.deepEqual(keys(accounts.accounts), [bci.user.id, bciPending.user.id].sort());
+  assert.equal(accounts.total, 2);
+  assert.ok(accounts.accounts.every((item) => item.role === 'RIDER' && item.toda === 'BCITODA'));
+  assert.deepEqual(keys((await request('/admin/approvals', admin.token)).body.drivers), [bciPending.user.id]);
+  assert.deepEqual(keys((await request('/admin/trips', admin.token)).body.trips), [String(bciTrip._id), String(ongoing._id)].sort());
+  const live = await connect(bci.token);
+  const dashboard = (await request('/admin/dashboard', admin.token)).body;
+  assert.deepEqual({ ...dashboard, recentTrips: dashboard.recentTrips.map((trip) => trip.key) },
+    { totalAccounts: 2, onlineNow: 1, ongoingTrips: 1, recentTrips: [String(ongoing._id), String(bciTrip._id)], pendingDrivers: 1 });
+
+  // Another TODA's driver, a driver of no listed TODA, or a passenger is not
+  // found for this admin, to view or to decide on, and stays as it was.
+  for (const id of [itodaPending.user.id, other.user.id, passenger.user.id]) {
+    assert.deepEqual(await request(`/admin/drivers/${id}`, admin.token), NOT_FOUND, id);
+    for (const decision of ['approve', 'decline', 'terminate', 'delete', 'unblock']) {
+      assert.deepEqual(await request(`/admin/drivers/${id}/${decision}`, admin.token, {}), NOT_FOUND, `${decision} ${id}`);
+    }
+  }
+  const untouched = await backend.models.User.findById(itodaPending.user.id).lean();
+  assert.deepEqual([untouched.approval, untouched.disabled, untouched.terminatedAt], ['pending', false, undefined]);
+  assert.ok(await backend.models.User.exists({ _id: other.user.id }));
+
+  // Their own drivers they approve, suspend, unblock and decline as before.
+  assert.equal((await request(`/admin/drivers/${bciPending.user.id}`, admin.token)).body.driver.toda, 'BCITODA');
+  const approved = await request(`/admin/drivers/${bciPending.user.id}/approve`, admin.token, {});
+  assert.deepEqual([approved.status, approved.body.driver.approval], [200, 'Approved'], JSON.stringify(approved.body));
+  assert.deepEqual(await request(`/admin/drivers/${bciPending.user.id}/approve`, admin.token, {}), { status: 409, body: { error: 'This driver is no longer waiting for approval.' } });
+  assert.equal((await request(`/admin/drivers/${bciPending.user.id}/terminate`, admin.token, { reason: 'Not on the list' })).status, 200);
+  assert.equal((await request(`/admin/drivers/${bciPending.user.id}/unblock`, admin.token, {})).status, 200);
+  assert.equal((await request(`/admin/drivers/${bciPending.user.id}/decline`, admin.token, {})).status, 200);
+  assert.equal(await backend.models.User.exists({ _id: bciPending.user.id }), null);
+
+  // Profile pictures: their drivers' only; a superadmin's, anyone's.
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0, 1]);
+  await backend.models.User.updateMany({ _id: { $in: [bci.user.id, other.user.id] } }, { $set: { photo: jpeg, photoAt: new Date(now) } });
+  const photo = async (id, token) => (await fetch(`${base}/api/users/${id}/photo`, { headers: { Authorization: `Bearer ${token}` } })).status;
+  assert.deepEqual([await photo(bci.user.id, admin.token), await photo(other.user.id, admin.token)], [200, 404]);
+  assert.deepEqual([await photo(bci.user.id, superadmin.token), await photo(other.user.id, superadmin.token)], [200, 200]);
+
+  // A superadmin moves the admin to ITODA: the same session sees ITODA's
+  // drivers at once, one saved under its former name too, and BCITODA's no more.
+  await backend.models.User.updateOne({ _id: admin.user.id }, { $set: { toda: 'ITODA' } });
+  assert.deepEqual(keys((await request('/admin/approvals', admin.token)).body.drivers), [itodaPending.user.id]);
+  assert.deepEqual(await request(`/admin/drivers/${bci.user.id}`, admin.token), NOT_FOUND);
+
+  // A superadmin sees and decides on every driver, a listed TODA's or not.
+  const everyone = keys((await request('/admin/accounts', superadmin.token)).body.accounts);
+  for (const id of [bci.user.id, itodaPending.user.id, other.user.id, passenger.user.id]) assert.ok(everyone.includes(id), id);
+  assert.ok(keys((await request('/admin/trips', superadmin.token)).body.trips).includes(String(otherTrip._id)));
+  assert.equal((await request(`/admin/drivers/${other.user.id}/approve`, superadmin.token, {})).status, 200);
+
+  // A passenger made staff after being reported is not penalized for it.
+  const reported = await account();
+  const report = await backend.models.Report.create({ rideId: String(otherTrip._id), reporterId: other.user.id, passengerId: reported.user.id, reason: 'fake_booking' });
+  await backend.models.User.updateOne({ _id: reported.user.id }, { $set: { role: 'superadmin' } });
+  assert.deepEqual(await request(`/admin/reports/${report._id}/uphold`, superadmin.token, {}),
+    { status: 409, body: { error: 'The reported account is now a staff account. Dismiss this report instead.' } });
+  assert.equal((await backend.models.User.findById(reported.user.id)).offenses, 0, 'no penalty');
+  assert.equal((await request(`/admin/reports/${report._id}/dismiss`, superadmin.token, {})).status, 200);
+
+  live.disconnect();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  await backend.models.Ride.deleteMany({ _id: { $in: [bciTrip._id, otherTrip._id, ongoing._id] } });
+  await backend.models.Report.deleteOne({ _id: report._id });
+  await backend.models.User.deleteMany({ _id: { $in: [bci.user.id, itodaPending.user.id, other.user.id, passenger.user.id, rider.user.id, reported.user.id, admin.user.id] } });
+  await request('/logout', superadmin.token, {});
 });
 
 test('an admin can cancel any booking or trip that has not ended, and the driver is free for the next booking', async () => {
@@ -846,7 +1048,7 @@ test('an assigned ride survives server restart and expires authentication by ser
   await online(d); const booked = await book(p), offer = (await state(d)).offer;
   await action(d, offer.id, 'accept', { offerId: offer.offerId });
   await backend.close();
-  backend = await createBackend({ mongoUri: `${process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017'}/${dbName}`, clock: () => now, adminPhones: adminPhone, sendEmail });
+  backend = await createBackend({ mongoUri: `${process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017'}/${dbName}`, clock: () => now, sendEmail });
   await new Promise((resolve) => backend.server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${backend.server.address().port}`;
   const restored = await state(p);
@@ -922,7 +1124,7 @@ test('fares changed in God view are charged on new bookings, sent to the app, an
     for (const [changes, why] of [
       [[], 'nothing changed'], [[{ key: 'area/nowhere/special/poblacion/day', from: 1, to: 2 }], 'not on the taripa'],
       [[{ key: '__proto__', from: 1, to: 2 }], 'not a fare'], [[{ key: purok3Night, from: 39, to: 0 }], 'free'],
-      [[{ key: purok3Night, from: 39, to: 40.5 }], 'centavos'], [[{ key: purok3Night, from: 39, to: '40' }], 'text'],
+      [[{ key: purok3Night, from: 39, to: 40.555 }], 'more than two decimal places'], [[{ key: purok3Night, from: 39, to: '40' }], 'text'],
       [[{ key: purok3Night, from: 39, to: 1001 }], 'over the limit'], [[{ key: purok3Night, to: 40 }], 'no amount on screen'],
       [[{ key: purok3Night, from: 39, to: 40 }, { key: purok3Night, from: 39, to: 41 }], 'listed twice'],
       [[{ key: 'area/bancod-purok-3/regular/poblacion/day/price', from: 17, to: 18 }], 'regular trips are not offered'],
@@ -979,14 +1181,28 @@ test('fares changed in God view are charged on new bookings, sent to the app, an
 
     // The saved fares are in force after a restart.
     await backend.close();
-    backend = await createBackend({ mongoUri: `${process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017'}/${dbName}`, clock: () => now, adminPhones: adminPhone, sendEmail });
+    backend = await createBackend({ mongoUri: `${process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017'}/${dbName}`, clock: () => now, sendEmail });
     await new Promise((resolve) => backend.server.listen(0, '127.0.0.1', resolve));
     base = `http://127.0.0.1:${backend.server.address().port}`;
     assert.equal((await request('/config', passenger.token)).body.fares.prices[purok3Night], 45);
     assert.equal((await state(passenger)).fareRevision, saved.body.revision);
 
+    // Fares may have centavos: they are saved, charged and quoted to the centavo.
+    const centavos = await save([{ key: purok3Night, from: 45, to: 45.5 }, { key: 'extraPassenger', from: 20, to: 12.25 }]);
+    assert.equal(centavos.status, 200, JSON.stringify(centavos.body));
+    assert.deepEqual([centavos.body.prices[purok3Night], centavos.body.prices.extraPassenger], [45.5, 12.25]);
+    now = Date.UTC(2026, 9, 2, 14, 0); // 10:00 PM in the Philippines
+    const decimal = await book({ fareRevision: centavos.body.revision });
+    assert.equal(decimal.status, 201, JSON.stringify(decimal.body));
+    assert.equal(decimal.body.ride.fare, 57.75, 'the night fare and the extra passenger, with centavos');
+    assert.equal(decimal.body.ride.fareDetails.extraFare, 12.25);
+    const centavoPrices = (await request('/config', passenger.token)).body.fares.prices;
+    assert.equal(fareTotal(quoteTrip({ pickup: plaza.coordinate, dropoff: bancod.coordinate, at: now, prices: centavoPrices }), { passengers: 3 }), 57.75, 'the app quotes the same');
+    assert.equal((await action(passenger, decimal.body.ride.id, 'cancel')).status, 200);
+    now = Date.UTC(2026, 9, 2, 2, 0); // 10:00 AM
+
     // A fare set back to the taripa's amount follows the taripa again.
-    const reset = await save([{ key: purok3Night, from: 45, to: 39 }, { key: 'extraPassenger', from: 20, to: 15 }, { key: 'flat', from: 50, to: 45 },
+    const reset = await save([{ key: purok3Night, from: 45.5, to: 39 }, { key: 'extraPassenger', from: 12.25, to: 15 }, { key: 'flat', from: 50, to: 45 },
       { key: purok3Day, from: 36, to: 34 }]);
     assert.equal(reset.status, 200, JSON.stringify(reset.body));
     assert.deepEqual((await backend.models.FareSheet.findById('current').lean()).prices, {});

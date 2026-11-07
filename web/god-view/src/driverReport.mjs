@@ -3,7 +3,7 @@
 // their rating, their totals for the time frame the admin chose, and each trip
 // booked in it. Built from /api/admin/accounts/<id>?days=<days> by pdf.mjs.
 import { A4, createPdf, fitText, textWidth } from './pdf.mjs';
-import { cancellationLabel, formatDistance, formatPhone, statusLabel } from './model.mjs';
+import { cancellationLabel, formatDistance, formatPhone, pesoDigits, statusLabel } from './model.mjs';
 
 // Dates and times in the pilot's time zone, whatever the admin's computer uses.
 const ZONE = 'Asia/Manila';
@@ -13,8 +13,9 @@ const isoDay = new Intl.DateTimeFormat('en-CA', { timeZone: ZONE, year: 'numeric
 const day = value => dayFormat.format(new Date(value));
 const time = value => timeFormat.format(new Date(value));
 
-// The standard PDF fonts have no ₱, so fares read "PHP 1,250.50".
-export const pesos = fare => Number.isFinite(fare) ? `PHP ${fare.toLocaleString('en-PH', { maximumFractionDigits: 2 })}` : '—';
+// The standard PDF fonts have no ₱, so fares read "PHP 1,250.50" (or
+// "PHP 45" without centavos).
+export const pesos = fare => Number.isFinite(fare) ? `PHP ${pesoDigits(fare)}` : '—';
 
 // A driver's status as the PDF names it: Registered (approved by an admin,
 // or from before approval), Pending (waiting for an admin to check them
@@ -117,7 +118,11 @@ export function driverReport(data, { generatedAt }) {
     const x = MARGIN + index * (tileWidth + 8);
     pdf.rect(x, tilesTop, tileWidth, 60, { fill: COLORS.soft });
     label(title, x + 12, tilesTop + 17);
-    pdf.text(fitText(value, tileWidth - 24, 'bold', 16), x + 12, tilesTop + 38, { font: 'bold', size: 16 });
+    // A long amount ("PHP 36,000.50") is set smaller, down to 11 pt, rather
+    // than cut short.
+    let size = 16;
+    while (size > 11 && textWidth(value, 'bold', size) > tileWidth - 24) size -= 0.5;
+    pdf.text(fitText(value, tileWidth - 24, 'bold', size), x + 12, tilesTop + 38, { font: 'bold', size });
     pdf.text(fitText(note, tileWidth - 24, 'regular', 7.5), x + 12, tilesTop + 51, { size: 7.5, color: COLORS.muted });
   });
 

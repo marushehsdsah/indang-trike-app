@@ -60,6 +60,11 @@ function farePrices(prices) {
   return Object.fromEntries(Object.keys(TARIPA_PRICES).map((key) => [key, price(key)]));
 }
 
+// An amount to the centavo. Fares set in God view may have centavos (₱12.50),
+// and adding such amounts in floating point leaves a trace (10.15 + 5.30 is
+// 15.450000000000001), so every total is rounded to two decimal places.
+const roundToCentavos = (amount) => Math.round(amount * 100) / 100;
+
 // Night is 9:00 PM to 4:00 AM, Philippine time, whatever the phone or server
 // clock's own time zone.
 function isNightAt(time) {
@@ -209,7 +214,7 @@ function quoteTrip({ pickup, dropoff, route = null, at = Date.now(), prices = nu
     const fromJunction = fromBunaCerca && endpoint === 'dropoff' && priced.length === 1 && Object.hasOwn(TERMINALS.bunaCerca.special, leg.area.id);
     return fromJunction ? { ...leg, fare: price(`bunaCerca/${leg.area.id}/${period}`), origin: 'bunaCerca' } : { ...leg, origin };
   });
-  const fare = legs.reduce((sum, leg) => sum + leg.fare, 0);
+  const fare = roundToCentavos(legs.reduce((sum, leg) => sum + leg.fare, 0));
   const area = legs.length === 1 ? legs[0].area : { id: legs.map((leg) => leg.area.id).join('+'), label: legs.map((leg) => leg.area.label).join(' + ') };
   return { ...base, special: { fare, origin: legs[0].origin, area, legs } };
 }
@@ -223,7 +228,7 @@ const extraPassengerFare = (quote) => (Number.isFinite(quote.extraPassenger) ? q
 function fareTotal(quote, { passengers = 1 } = {}) {
   if (quote.flat !== null && quote.flat !== undefined) return quote.flat;
   if (!quote.special) return null;
-  return quote.special.fare + Math.max(0, passengers - SPECIAL.basePassengers) * extraPassengerFare(quote);
+  return roundToCentavos(quote.special.fare + Math.max(0, passengers - SPECIAL.basePassengers) * extraPassengerFare(quote));
 }
 
 // What the ride stores and both apps show beside the fare.
@@ -243,6 +248,7 @@ module.exports = {
   fareDetails,
   farePrices,
   fareTotal,
+  roundToCentavos,
   getFareArea: (id) => AREA_BY_ID.get(id) ?? null,
   isNightAt,
   quoteTrip,

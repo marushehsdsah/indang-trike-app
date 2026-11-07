@@ -12,7 +12,9 @@
 // =============================================================
 
 // key: unique per account. id: the account's mobile number.
-// role: 'RIDER' (driver) | 'PASSENGER'
+// role: 'RIDER' (driver) | 'PASSENGER' | 'ADMIN' (an admin of one TODA, its
+// toda; '' while they have none) | 'SUPERADMIN' (every TODA). Staff have no
+// email (for now an admin neither).
 // status: 'Available' (a driver taking ride requests) | 'Online' (app open) | 'Offline'
 // Drivers also have toda, plate, capacity, joined (when they signed up) and
 // approval: 'Pending' (waiting for an admin's approval) | 'Approved' |
@@ -25,6 +27,9 @@ export const accounts = [
   { key: 'a5', id: '09171234570', name: 'Kuya Virgilio', email: 'virgilio.toda@email.com', role: 'RIDER', status: 'Offline', toda: 'BITODA', plate: 'GHI 3456', capacity: 4, joined: '2026-10-22T02:10:00.000Z', approval: 'Pending' },
   { key: 'a6', id: '09171234571', name: 'Maria Clara', email: 'maria.clara@email.com', role: 'PASSENGER', status: 'Offline' },
   { key: 'a7', id: '09171234588', name: 'Lito Camagong', email: 'lito.c@email.com', role: 'RIDER', status: 'Offline', toda: 'ALITODA', plate: 'JKL 7788', capacity: 4, joined: '2026-10-18T05:30:00.000Z', approval: 'Suspended', terminatedAt: '2026-10-19T02:00:00.000Z', terminationReason: 'Plate not on the TODA list' },
+  // Staff accounts, listed after everyone else, as the API lists them.
+  { key: 's1', id: '09171234590', name: 'Ana Villanueva', email: '', role: 'ADMIN', status: 'Offline', toda: 'ITODA' },
+  { key: 's2', id: '09171234599', name: 'Romar Dela Cruz', email: '', role: 'SUPERADMIN', status: 'Online' },
 ];
 
 // status: 'Ongoing' | 'Completed' | 'Cancelled' | 'No driver' (no driver took it)

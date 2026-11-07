@@ -14,7 +14,8 @@ below).
 - **Welcome screen** — "Login successful" confirmation shown after login.
 - **Bottom navigation** — Dashboard / Accounts / Trips.
 - **Dashboard** — quick stat cards + a recent trips list.
-- **Accounts** — search by name/ID, filter by Driver/Passenger, list of accounts.
+- **Accounts** — search by name/ID, filter by Driver/Passenger/Admin, list of
+  accounts.
 - **Trips** — search by trip ID, Toda ID, passenger or driver, filter by
   Ongoing / Finished / Cancelled, list of trip records.
 - **Hamburger menu** (top left) — switch between **Dashboard** (the
@@ -32,14 +33,22 @@ below).
   the driver is emailed when approved, declined, suspended or deleted,
   with the optional reason typed here.
 - **Profile** — opened from the avatar at the top right: the admin's name,
-  Admin ID and role, and a Logout button.
+  Admin ID and role (Superadmin, or Admin with their TODA), and a Logout
+  button.
 
 Inside the IndangGO app, Dashboard, Accounts, Trips and Account Approval
 load real data from the API (`GET /api/admin/dashboard`, `/accounts`,
 `/trips`, `/approvals`, `/drivers/<id>`), pulling down refreshes them,
 and a driver's review sends the admin's decision (`POST
 /api/admin/drivers/<id>/approve`, `/decline`, `/terminate` (Suspend), `/delete`,
-`/unblock`).
+`/unblock`). A superadmin sees every account and trip; Accounts lists the
+staff accounts too (superadmins, and each TODA's admins with their TODA),
+which its Admins filter shows on their own, while the Dashboard counts only
+passengers and drivers. An admin sees only their TODA's drivers and those
+drivers' trips (no passengers or staff): the Dashboard names the TODA, and
+Accounts has no Drivers/Passengers/Admins filter.
+The API decides what each may see and do (`../indang-trike-backend/admin.js`);
+see [Superadmins and admins](../docs/god-view.md#superadmins-and-admins).
 Run on its own, this folder shows the fake data in
 `src/data/mockData.js` instead, in the same shape, and the decisions
 change that fake data.
@@ -48,8 +57,9 @@ change that fake data.
 
 > **Inside the IndangGO app** these screens run from the main project:
 > start it with `npm run dev` in the repository root and log in on the
-> app's own login page with an admin account (a user with role
-> `"admin"`, added only in the database); the app then opens Welcome,
+> app's own login page with a staff account (a user with role
+> `"superadmin"`, or `"admin"` with a TODA, added only in the
+> database); the app then opens Welcome,
 > skipping this folder's Login. Don't run `npm install`
 > in this folder there — a second `node_modules` here would load a
 > second copy of React into the app and break it ("Invalid hook

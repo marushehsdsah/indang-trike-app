@@ -19,6 +19,9 @@ import { createContext, useContext } from 'react';
 import { accounts, trips, currentAdmin } from './data/mockData';
 
 const mockDrivers = () => accounts.filter((account) => account.role === 'RIDER');
+// The Dashboard counts the people using the service, as the API does: staff
+// accounts (ADMIN, SUPERADMIN) are listed in Accounts but not counted there.
+const mockUsers = () => accounts.filter((account) => account.role === 'RIDER' || account.role === 'PASSENGER');
 // Fresh copies, as the API sends: a decision changes the mock data in place,
 // and a screen must see a new list to show it.
 const copies = (list) => list.map((item) => ({ ...item }));
@@ -26,8 +29,8 @@ const copies = (list) => list.map((item) => ({ ...item }));
 // The mock data, shaped as the API sends it.
 const MOCK = {
   dashboard: () => ({
-    totalAccounts: accounts.length,
-    onlineNow: accounts.filter((account) => account.status !== 'Offline').length,
+    totalAccounts: mockUsers().length,
+    onlineNow: mockUsers().filter((account) => account.status !== 'Offline').length,
     ongoingTrips: trips.filter((trip) => trip.status === 'Ongoing').length,
     recentTrips: trips.slice(0, 3),
     pendingDrivers: mockDrivers().filter((driver) => driver.approval === 'Pending').length,

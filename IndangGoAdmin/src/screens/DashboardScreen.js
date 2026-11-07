@@ -9,6 +9,9 @@
 //   the API in the IndangGO app (GET /api/admin/dashboard), or
 //   data/mockData.js when this runs on its own. Pull down to refresh.
 // - "Online Now" counts passengers and drivers with the app open.
+// - An admin (not a superadmin) gets only their TODA's drivers and
+//   their trips: the heading names the TODA, and "Total Accounts"
+//   reads "Drivers".
 // - "View All" jumps to the Trips tab via the onViewAllTrips prop
 //   (wired up in App.js).
 // - While drivers wait for approval, a card says how many and
@@ -24,10 +27,13 @@ import useAdminData from '../useAdminData';
 import StatusBadge from '../components/StatusBadge';
 import TopHeader from '../components/TopHeader';
 import LoadState, { RefreshError } from '../components/LoadState';
+import { useAdminSession } from '../session';
 
 export default function DashboardScreen({ onViewAllTrips }) {
   const navigation = useNavigation();
   const { data, loading, refreshing, error, reload, refresh } = useAdminData('dashboard');
+  // An admin's numbers cover only their TODA's drivers.
+  const { admin } = useAdminSession();
 
   return (
     <View style={styles.screen}>
@@ -37,7 +43,8 @@ export default function DashboardScreen({ onViewAllTrips }) {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[colors.brandGreen]} />}
       >
-        <Text style={styles.heading}>Dashboard</Text>
+        <Text style={[styles.heading, Boolean(admin.toda) && styles.headingWithScope]}>Dashboard</Text>
+        {admin.toda ? <Text style={styles.scope}>{admin.toda} drivers</Text> : null}
 
         {!data ? <LoadState loading={loading} error={error} onRetry={reload} /> : <>
         {error && <RefreshError message={error} />}
@@ -46,7 +53,7 @@ export default function DashboardScreen({ onViewAllTrips }) {
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statNumber}>{data.totalAccounts}</Text>
-            <Text style={styles.statLabel}>Total Accounts</Text>
+            <Text style={styles.statLabel}>{admin.toda ? 'Drivers' : 'Total Accounts'}</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statNumber}>{data.onlineNow}</Text>
@@ -127,6 +134,14 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '800',
     color: colors.textPrimary,
+    marginBottom: 16,
+  },
+  headingWithScope: {
+    marginBottom: 2,
+  },
+  scope: {
+    fontSize: 13,
+    color: colors.textSecondary,
     marginBottom: 16,
   },
   statsRow: {

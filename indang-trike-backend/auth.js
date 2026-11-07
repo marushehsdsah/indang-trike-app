@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const { HttpError, requireValue, normalizePhilippinePhone, profileFields, publicUser } = require('./policy');
 const { suspensionOf, suspensionMessage } = require('../utils/reports');
 const { maskEmail } = require('../utils/maskEmail');
+const { usesEmail } = require('../utils/roles');
 
 const hashToken = (token) => createHash('sha256').update(token).digest('hex');
 const hashCode = (email, code) => createHash('sha256').update(`${email}:${code}`).digest('hex');
@@ -100,11 +101,16 @@ function createAuth(models, clock, { sendEmail } = {}) {
   // Forgot password goes by the mobile number the account logs in with: a code
   // goes to the email that account signed up with, the app checks it, then the
   // code and a new password change it. The app shows the email only masked.
+  // It is for passengers and drivers. Staff have none (utils/roles.js
+  // usesEmail: superadmins, and for now TODA admins): their passwords are
+  // replaced only by seeding the database again, and their numbers get the
+  // same answer as one no account uses, so trying numbers cannot tell which
+  // ones are staff (even one saved with an email earlier).
   async function resetAccount(body) {
     const phone = normalizePhilippinePhone(body.phone);
     requireValue(phone, 400, 'Enter a valid Philippine mobile number.');
     const user = await User.findOne({ phone: { $in: [phone, `0${phone.slice(3)}`, phone.slice(1), phone.slice(3)] } });
-    requireValue(user?.email, 404, 'No account uses this mobile number.');
+    requireValue(user?.email && usesEmail(user.role), 404, 'No account uses this mobile number.');
     return { user, email: user.email.toLowerCase() };
   }
   async function sendResetCode(body) {
@@ -121,8 +127,9 @@ function createAuth(models, clock, { sendEmail } = {}) {
     const { email } = await resetAccount(body);
     requireValue(validPassword(body.password), 400, PASSWORD_RULE);
     const entry = await checkCode(ResetCode, email, body.code);
+    // A code sent before its account became staff changes nothing.
     const user = await User.findById(entry.userId);
-    requireValue(user, 400, 'The code expired. Ask for a new one.');
+    requireValue(user && usesEmail(user.role), 400, 'The code expired. Ask for a new one.');
     const password = await bcrypt.hash(body.password, 10);
     await useCode(ResetCode, entry);
     await User.updateOne({ _id: user._id }, { $set: { password } });

@@ -3,21 +3,26 @@
 // -------------------------------------------------------------
 // "Manage Accounts" screen: search bar (searches by name or
 // mobile number, the account's id) + a filter row to show All /
-// Riders (drivers) / Passengers, followed by a scrollable list of
-// account cards.
+// Riders (drivers) / Passengers / Admins (superadmins and the
+// admins of a TODA), followed by a scrollable list of account
+// cards.
 //
 // HOW TO EDIT:
 // - Account data comes from useAdminData('accounts'): the API in
-//   the IndangGO app (GET /api/admin/accounts, passengers and
-//   drivers, newest first), or data/mockData.js when this runs on
-//   its own. Pull down to refresh.
+//   the IndangGO app (GET /api/admin/accounts: for a superadmin,
+//   passengers and drivers newest first, then the staff accounts),
+//   or data/mockData.js when this runs on its own. Pull down to
+//   refresh.
 // - Filter options live in ROLE_FILTERS below — add a new one
-//   there if you introduce another role.
+//   there if you introduce another role. An admin (not a
+//   superadmin) gets only their TODA's drivers, so the filters are
+//   hidden for them.
 // - Tapping a driver opens their review (DriverReviewScreen.js),
 //   where they can be approved, declined, suspended, deleted or
 //   unblocked;
 //   a driver who isn't approved shows a Pending or Suspended
-//   badge. Tapping a passenger does nothing yet.
+//   badge. Tapping a passenger or a staff account does nothing
+//   yet.
 // =============================================================
 
 import React, { useMemo, useState } from 'react';
@@ -36,13 +41,20 @@ import useAdminData from '../useAdminData';
 import StatusBadge from '../components/StatusBadge';
 import TopHeader from '../components/TopHeader';
 import LoadState, { RefreshError } from '../components/LoadState';
+import { useAdminSession } from '../session';
 
-// Filter chip options shown under the search bar.
+// Filter chip options shown under the search bar, and the account
+// roles each one shows (none: every account).
 const ROLE_FILTERS = [
   { key: 'ALL', label: 'All' },
-  { key: 'RIDER', label: 'Drivers' },
-  { key: 'PASSENGER', label: 'Passengers' },
+  { key: 'RIDER', label: 'Drivers', roles: ['RIDER'] },
+  { key: 'PASSENGER', label: 'Passengers', roles: ['PASSENGER'] },
+  { key: 'ADMIN', label: 'Admins', roles: ['ADMIN', 'SUPERADMIN'] },
 ];
+
+// Staff accounts: a superadmin (every TODA), or an admin of one TODA.
+const isStaffAccount = (account) => account.role === 'ADMIN' || account.role === 'SUPERADMIN';
+const staffScope = (account) => (account.role === 'SUPERADMIN' ? 'Every TODA' : account.toda || 'No TODA yet');
 
 export default function AccountsScreen() {
   const navigation = useNavigation();
@@ -50,13 +62,17 @@ export default function AccountsScreen() {
   const [activeRoleFilter, setActiveRoleFilter] = useState('ALL');
   const { data, loading, refreshing, error, reload, refresh } = useAdminData('accounts');
   const accounts = data?.accounts;
+  // An admin (not a superadmin) gets only their TODA's drivers, so there is
+  // nothing to filter by role.
+  const { admin } = useAdminSession();
+  const oneToda = typeof admin.toda === 'string';
 
   // Recomputes only when the search text, filter, or the account
   // list itself changes.
   const filteredAccounts = useMemo(() => {
     return (accounts || []).filter((account) => {
-      const matchesRole =
-        activeRoleFilter === 'ALL' || account.role === activeRoleFilter;
+      const roles = ROLE_FILTERS.find((filter) => filter.key === activeRoleFilter)?.roles;
+      const matchesRole = !roles || roles.includes(account.role);
 
       const query = searchText.trim().toLowerCase();
       const matchesSearch =
@@ -87,8 +103,8 @@ export default function AccountsScreen() {
           />
         </View>
 
-        {/* ---- Role filter chips (Drivers / Passengers) ---- */}
-        <View style={styles.filterRow}>
+        {/* ---- Role filter chips (Drivers / Passengers / Admins) ---- */}
+        {!oneToda && <View style={styles.filterRow}>
           {ROLE_FILTERS.map((filter) => {
             const isActive = activeRoleFilter === filter.key;
             return (
@@ -105,7 +121,7 @@ export default function AccountsScreen() {
               </TouchableOpacity>
             );
           })}
-        </View>
+        </View>}
 
         {error && accounts && <RefreshError message={error} />}
 
@@ -119,7 +135,7 @@ export default function AccountsScreen() {
           onRefresh={refresh}
           ListEmptyComponent={
             <Text style={styles.emptyText}>
-              {accounts.length === 0 ? 'No accounts yet.' : 'No accounts match your search.'}
+              {accounts.length > 0 ? 'No accounts match your search.' : oneToda ? 'No drivers in your TODA yet.' : 'No accounts yet.'}
             </Text>
           }
           renderItem={({ item }) => (
@@ -155,6 +171,15 @@ export default function AccountsScreen() {
                     <Ionicons name="car-outline" size={12} color={colors.textSecondary} />
                     <Text style={styles.accountEmail} numberOfLines={1}>
                       {[item.toda, item.plate].filter(Boolean).join(' · ') || 'No TODA or plate yet'}
+                    </Text>
+                  </View>
+                ) : null}
+                {/* Staff: the TODA they manage. */}
+                {isStaffAccount(item) ? (
+                  <View style={styles.emailRow}>
+                    <Ionicons name="people-outline" size={12} color={colors.textSecondary} />
+                    <Text style={styles.accountEmail} numberOfLines={1}>
+                      {staffScope(item)}
                     </Text>
                   </View>
                 ) : null}

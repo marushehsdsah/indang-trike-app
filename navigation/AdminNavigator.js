@@ -14,23 +14,28 @@ import { useApp } from '../context/AppContext';
 
 const Stack = createNativeStackNavigator();
 
-// The admin interface (IndangGoAdmin) for an admin account (role "admin", added
-// only in the database) that logged in on the app's own login: its Welcome ->
-// Main (+ Profile, Account Approval and Driver Review) stack, as in
+// The admin interface (IndangGoAdmin) for a staff account (utils/roles.js,
+// added only in the database) that logged in on the app's own login: its
+// Welcome -> Main (+ Profile, Account Approval and Driver Review) stack, as in
 // IndangGoAdmin/App.js after its Login. Its screens show this account and load
-// their data from the API, and its Logout ends the app's session.
+// their data from the API, and its Logout ends the app's session. A superadmin
+// sees every TODA; an admin only their TODA's drivers (the API decides), and
+// the screens name that TODA.
 export default function AdminNavigator() {
   const { user, signOut, request } = useApp();
   const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'Admin';
   // The mobile number the admin logs in with, as they type it (09…).
   const adminId = user?.phone?.replace(/^\+63/, '0') || '';
+  const superadmin = user?.role === 'superadmin';
+  // An admin's TODA ('' while none is assigned); none for a superadmin.
+  const toda = superadmin ? null : user?.toda || '';
   const session = useMemo(() => ({
-    admin: { name, adminId, role: 'Administrator' }, signOut,
+    admin: { name, adminId, role: superadmin ? 'Superadmin' : 'Admin', toda }, signOut,
     // 'dashboard' | 'accounts' | 'trips' | 'approvals' | 'drivers/<key>': GET /api/admin/<name>.
     load: (dataName) => request(`/admin/${dataName}`),
     // 'drivers/<key>/approve' (or decline, terminate, delete, unblock): POST /api/admin/<path>.
     act: (path, body = {}) => request(`/admin/${path}`, body),
-  }), [name, adminId, signOut, request]);
+  }), [name, adminId, superadmin, toda, signOut, request]);
   return (
     <AdminSession.Provider value={session}>
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>

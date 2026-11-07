@@ -9,6 +9,7 @@ import useLiveLocation from '../hooks/useLiveLocation';
 import { canOpenOffline, getSessionExpiry, rideToSave, savedRide } from '../utils/offlineSession';
 import { ACTIVE_STATUSES, ASSIGNED_STATUSES, isFreshFix, mergeRide, toServerClock } from '../utils/rideState';
 import { markRead, mergeMessages, newClientId, pendingMessage } from '../utils/chatThread';
+import { isStaff } from '../utils/roles';
 
 const Context = createContext(null);
 const TOKEN_KEY = 'indanggo.session';
@@ -47,7 +48,8 @@ export function AppProvider({ children }) {
   // Pilot admins can locate connected users while their app is open. Driver
   // availability remains a separate choice controlling ride requests. Admin
   // accounts do not ride, so their GPS is never tracked.
-  const gps = useLiveLocation(Boolean(user) && foreground && user.role !== 'admin');
+  // Staff accounts (an admin or superadmin) never ride, so their phone's GPS stays off.
+  const gps = useLiveLocation(Boolean(user) && foreground && !isStaff(user.role));
   current.current = { user, ride, token, foreground, gps, connected, serverOffset, chat };
 
   const clearSession = useCallback(async () => {

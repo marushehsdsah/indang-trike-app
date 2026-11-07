@@ -34,12 +34,18 @@ runs `node server.js`, and checks `/api/health`.
 
 Each push to the branch redeploys automatically.
 
-For the admin web dashboard, set the server environment variable
-`GOD_VIEW_ADMIN_PHONES` to the approved existing account's mobile number (or a
-comma-separated list). The dashboard is a separate Render Static Site
-(`indanggo-god-view` in `render.yaml`); see [God view](god-view.md) for creating
-it, access setup, and the mobile app rollout. The local `.env.backend` file is
-not uploaded.
+The admin web dashboard (God view) is for superadmin accounts, and the app's
+admin screens for superadmins and TODA admins; both roles are set on the
+account in the database, not by a server setting (see
+[Superadmins and admins](god-view.md#superadmins-and-admins)). When moving from
+the old `GOD_VIEW_ADMIN_PHONES` list, seed a superadmin into the database (and
+give each existing admin account its TODA) right before deploying, so no one
+is locked out. A superadmin is a new account on a mobile number no other
+account uses, with no email; the accounts on that list stay as they are. Then
+delete the variable from the API service. The dashboard is a
+separate Render Static Site (`indanggo-god-view` in `render.yaml`); see
+[God view](god-view.md) for creating it and the mobile app rollout. The local
+`.env.backend` file is not uploaded.
 
 ## 3. App: standalone APK
 

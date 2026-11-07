@@ -18,6 +18,7 @@ import ProfileScreen from '../screens/ProfileScreen';
 import DriverScreen from '../screens/DriverScreen';
 import BookingsScreen from '../screens/BookingsScreen';
 import AdminNavigator from './AdminNavigator';
+import { isStaff } from '../utils/roles';
 import { useApp } from '../context/AppContext';
 import { ACTIVE_STATUSES } from '../utils/rideState';
 import { preloadRoadGraph } from '../data/roadNetwork';
@@ -35,8 +36,9 @@ export default function AppNavigator() {
     return () => cancelIdleCallback(handle);
   }, [signedIn]);
   if (loading) return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface }}><ActivityIndicator size="large" color={COLORS.brand} /></View>;
-  const driver = user?.role === 'driver', admin = user?.role === 'admin';
-  // An admin account logs in here like everyone else and gets only the admin interface.
+  const driver = user?.role === 'driver', admin = isStaff(user?.role);
+  // A staff account (an admin or superadmin) logs in here like everyone else
+  // and gets only the admin interface.
   const initial = admin ? 'Admin' : !user?.profileComplete ? 'Profile' : ride && ACTIVE_STATUSES.includes(ride.status) ? (ride.status === 'searching' ? 'Searching' : 'ActiveRide') : driver ? 'Driver' : 'Home';
   return (
     <Stack.Navigator key={user?.id || 'guest'} initialRouteName={user ? initial : 'Splash'} screenOptions={{ headerShown: false }}>

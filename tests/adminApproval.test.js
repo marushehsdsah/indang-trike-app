@@ -232,6 +232,103 @@ test('Accounts shows which drivers are not approved, and tapping a driver opens 
   assert.deepEqual(navigation.calls, [['navigate', 'DriverReview', { key: 'd3', name: 'Lito Camagong' }]]);
 });
 
+// The admin screens as the app gives them a staff account (navigation/AdminNavigator.js).
+const ADMIN = { name: 'Toda Officer', adminId: '09170000002', role: 'Admin', toda: 'BCITODA' };
+const SUPERADMIN = { name: 'Pilot Admin', adminId: '09170000001', role: 'Superadmin', toda: null };
+const DASHBOARD = { totalAccounts: 2, onlineNow: 1, ongoingTrips: 0, recentTrips: [], pendingDrivers: 0 };
+
+test('an admin\'s screens name their TODA, and Accounts has no passenger filter for them', async () => {
+  reset();
+  const server = api({ accounts: { accounts: [pending] }, dashboard: DASHBOARD });
+  const session = { ...server.session, admin: ADMIN };
+  const ProfileScreen = admin('screens/ProfileScreen.js').default;
+  const profile = await render(withSession(session, React.createElement(ProfileScreen, { navigation })));
+  const shown = texts(profile.root);
+  assert.ok(shown.includes('Admin') && shown.includes('TODA') && shown.includes('BCITODA'), shown.join(' | '));
+  const DashboardScreen = admin('screens/DashboardScreen.js').default;
+  const dashboard = await render(withSession(session, React.createElement(DashboardScreen)));
+  assert.ok(texts(dashboard.root).includes('BCITODA drivers'));
+  assert.ok(texts(dashboard.root).includes('Drivers'));
+  assert.equal(texts(dashboard.root).includes('Total Accounts'), false);
+  const AccountsScreen = admin('screens/AccountsScreen.js').default;
+  const accounts = await render(withSession(session, React.createElement(AccountsScreen)));
+  assert.equal(texts(accounts.root).includes('Passengers'), false, 'no role filter');
+  assert.ok(texts(accounts.root).includes('Dante Reyes'));
+  const empty = await render(withSession({ ...session, load: async () => ({ accounts: [] }) }, React.createElement(AccountsScreen)));
+  assert.ok(texts(empty.root).includes('No drivers in your TODA yet.'));
+  // An admin not yet assigned a TODA is told so on their profile.
+  const unassigned = await render(withSession({ ...session, admin: { ...ADMIN, toda: '' } }, React.createElement(ProfileScreen, { navigation })));
+  assert.ok(texts(unassigned.root).includes('Not assigned yet'));
+});
+
+test('a superadmin\'s screens cover every TODA, as before', async () => {
+  reset();
+  const server = api({ accounts: { accounts: [pending] }, dashboard: DASHBOARD });
+  const session = { ...server.session, admin: SUPERADMIN };
+  const profile = await render(withSession(session, React.createElement(admin('screens/ProfileScreen.js').default, { navigation })));
+  assert.ok(texts(profile.root).includes('Superadmin'));
+  assert.equal(texts(profile.root).includes('TODA'), false);
+  const dashboard = await render(withSession(session, React.createElement(admin('screens/DashboardScreen.js').default)));
+  assert.ok(texts(dashboard.root).includes('Total Accounts'));
+  const accounts = await render(withSession(session, React.createElement(admin('screens/AccountsScreen.js').default)));
+  assert.ok(['All', 'Drivers', 'Passengers', 'Admins'].every((label) => texts(accounts.root).includes(label)));
+});
+
+test('a superadmin\'s Accounts lists the staff too, and its Admins filter shows only them', async () => {
+  reset();
+  const passenger = { key: 'p1', id: '09170000902', name: 'Bea Santos', email: 'bea@example.com', role: 'PASSENGER', status: 'Offline' };
+  const superadmin = { key: 's1', id: '09170000001', name: 'Pilot Admin', email: '', role: 'SUPERADMIN', status: 'Online' };
+  const todaAdmin = { key: 'a1', id: '09170000002', name: 'Toda Officer', email: 'officer@example.com', role: 'ADMIN', status: 'Offline', toda: 'BCITODA' };
+  const newAdmin = { key: 'a2', id: '09170000003', name: 'New Officer', email: 'new@example.com', role: 'ADMIN', status: 'Offline', toda: '' };
+  const server = api({ accounts: { accounts: [pending, passenger, superadmin, todaAdmin, newAdmin] } });
+  const tree = await render(withSession({ ...server.session, admin: SUPERADMIN }, React.createElement(admin('screens/AccountsScreen.js').default)));
+  const card = (name) => tree.root.find((node) => node.type === 'TouchableOpacity' && texts(node).includes(name));
+  const names = () => ['Dante Reyes', 'Bea Santos', 'Pilot Admin', 'Toda Officer', 'New Officer'].filter((name) => texts(tree.root).includes(name));
+  assert.deepEqual(names(), ['Dante Reyes', 'Bea Santos', 'Pilot Admin', 'Toda Officer', 'New Officer'], 'All lists everyone');
+  // Each staff card names its role and the TODA it manages.
+  assert.ok(texts(card('Pilot Admin')).includes('SUPERADMIN') && texts(card('Pilot Admin')).includes('Every TODA'));
+  assert.ok(texts(card('Toda Officer')).includes('ADMIN') && texts(card('Toda Officer')).includes('BCITODA'));
+  assert.ok(texts(card('New Officer')).includes('No TODA yet'));
+  await press(tree.root, 'Admins');
+  assert.deepEqual(names(), ['Pilot Admin', 'Toda Officer', 'New Officer']);
+  await press(tree.root, 'Passengers');
+  assert.deepEqual(names(), ['Bea Santos'], 'staff are not passengers');
+  await press(tree.root, 'Drivers');
+  assert.deepEqual(names(), ['Dante Reyes']);
+  // A staff account has no review to open.
+  await press(tree.root, 'Admins');
+  await renderer.act(async () => card('Toda Officer').props.onPress());
+  assert.deepEqual(navigation.calls, []);
+});
+
+test('the app opens the admin screens as Admin of their TODA, or as Superadmin', async () => {
+  let seen;
+  const Probe = () => { seen = mocks['../session'].useAdminSession(); return null; };
+  let user;
+  const AdminNavigator = loadSource('navigation/AdminNavigator.js', {
+    react: React,
+    '@react-navigation/native-stack': { createNativeStackNavigator: () => ({ Navigator: () => React.createElement(Probe), Screen: () => null }) },
+    'react-native-safe-area-context': { SafeAreaView: ({ children }) => React.createElement('SafeAreaView', null, children) },
+    'expo-status-bar': { StatusBar: host('StatusBar') },
+    '../IndangGoAdmin/src/screens/WelcomeScreen': host('WelcomeScreen'), '../IndangGoAdmin/src/screens/MainScreen': host('MainScreen'),
+    '../IndangGoAdmin/src/screens/ProfileScreen': host('ProfileScreen'), '../IndangGoAdmin/src/screens/AccountApprovalScreen': host('AccountApprovalScreen'),
+    '../IndangGoAdmin/src/screens/DriverReviewScreen': host('DriverReviewScreen'),
+    '../IndangGoAdmin/src/theme/colors': mocks['../theme/colors'], '../IndangGoAdmin/src/session': mocks['../session'],
+    '../context/AppContext': { useApp: () => ({ user, signOut: async () => {}, request: async () => ({}) }) },
+  }).default;
+  const cases = [
+    [{ role: 'admin', toda: 'BCITODA', firstName: 'Toda', lastName: 'Officer', phone: '+639170000002' }, { name: 'Toda Officer', adminId: '09170000002', role: 'Admin', toda: 'BCITODA' }],
+    [{ role: 'admin', firstName: 'New', lastName: 'Admin', phone: '+639170000003' }, { name: 'New Admin', adminId: '09170000003', role: 'Admin', toda: '' }],
+    [{ role: 'superadmin', toda: 'BCITODA', firstName: 'Pilot', lastName: 'Admin', phone: '+639170000001' }, { name: 'Pilot Admin', adminId: '09170000001', role: 'Superadmin', toda: null }],
+  ];
+  for (const [account, expected] of cases) {
+    user = account;
+    const tree = await render(React.createElement(AdminNavigator));
+    assert.deepEqual(seen.admin, expected);
+    await renderer.act(async () => tree.unmount());
+  }
+});
+
 test('run on its own, the admin interface approves and declines the mock drivers', async () => {
   reset({ name: 'AccountApproval', params: {} });
   const AccountApprovalScreen = admin('screens/AccountApprovalScreen.js').default;

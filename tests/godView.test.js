@@ -108,17 +108,37 @@ test('the Accounts view lists every passenger and driver, online first, filtered
   assert.deepEqual(keys(filterAccounts(accounts, 'all', 'all', ' pitoda ')), ['d2']);
   assert.deepEqual(keys(filterAccounts(accounts, 'all', 'all', 'DI@EXAMPLE')), ['p2']);
   assert.deepEqual(filterAccounts(accounts, 'all', 'all', 'nobody'), []);
-  // An admin's own account shows unless the admin hides admin accounts.
-  const withAdmin = [...accounts, { key: 'a1', id: '09211234567', name: 'Ed Admin', email: '', role: 'PASSENGER', status: 'Online', admin: true }];
-  assert.deepEqual(keys(filterAccounts(withAdmin, 'all', 'online', '')), ['d1', 'p2', 'a1']);
-  assert.deepEqual(keys(filterAccounts(withAdmin, 'all', 'online', '', true)), ['d1', 'p2']);
-  assert.deepEqual(keys(filterAccounts(withAdmin, 'passenger', 'all', 'ed', true)), []);
   const counts = accountCounts(accounts);
-  assert.deepEqual(counts, { all: { total: 4, driver: 2, passenger: 2 }, online: { total: 2, driver: 1, passenger: 1 }, offline: { total: 2, driver: 1, passenger: 1 } });
+  assert.deepEqual(counts, { all: { total: 4, driver: 2, passenger: 2, admin: 0 }, online: { total: 2, driver: 1, passenger: 1, admin: 0 }, offline: { total: 2, driver: 1, passenger: 1, admin: 0 } });
   assert.equal(roleCountLabel(counts.online), '1 driver · 1 passenger');
-  assert.equal(roleCountLabel(counts.all), '2 drivers · 2 passengers');
+  assert.equal(roleCountLabel(counts.all), '2 drivers · 2 passengers', 'no admins, so none are named');
   assert.equal(formatPhone('09171234567'), '0917 123 4567');
   assert.equal(formatPhone('+639171234567'), '+639171234567', 'anything else is shown as stored');
+});
+
+test('the Accounts view\'s Admins filter lists the superadmins and the admins of each TODA', async () => {
+  const { accountCounts, accountRole, filterAccounts, roleCountLabel, staffLabel, staffNote } = await model();
+  const accounts = [
+    { key: 'p1', id: '09171234567', name: 'Ana Cruz', email: 'ana@example.com', role: 'PASSENGER', status: 'Offline' },
+    { key: 'd1', id: '09181234567', name: 'Ben Reyes', email: 'ben@example.com', role: 'RIDER', status: 'Available', toda: 'ITODA', plate: 'ABC 123', approval: 'Pending' },
+    { key: 's1', id: '09191234567', name: 'Pilot Super', email: '', role: 'SUPERADMIN', status: 'Offline' },
+    { key: 'a1', id: '09201234567', name: 'Toda Officer', email: 'officer@example.com', role: 'ADMIN', status: 'Online', toda: 'BCITODA' },
+    { key: 'a2', id: '09211234567', name: 'New Officer', email: 'new@example.com', role: 'ADMIN', status: 'Offline', toda: '' },
+  ];
+  const keys = (list) => list.map((account) => account.key);
+  assert.deepEqual(accounts.map(accountRole), ['passenger', 'driver', 'admin', 'admin', 'admin']);
+  assert.deepEqual(keys(filterAccounts(accounts, 'admin', 'all', '')), ['s1', 'a1', 'a2']);
+  assert.deepEqual(keys(filterAccounts(accounts, 'admin', 'online', '')), ['a1']);
+  assert.deepEqual(keys(filterAccounts(accounts, 'all', 'all', '')), ['p1', 'd1', 's1', 'a1', 'a2'], 'Everyone includes the staff');
+  assert.deepEqual(keys(filterAccounts(accounts, 'passenger', 'all', '')), ['p1'], 'staff are not passengers');
+  assert.deepEqual(keys(filterAccounts(accounts, 'pending', 'all', '')), ['d1']);
+  assert.deepEqual(keys(filterAccounts(accounts, 'admin', 'all', 'bcitoda')), ['a1'], 'an admin is found by their TODA');
+  assert.deepEqual(accounts.slice(2).map((account) => [staffLabel(account), staffNote(account)]),
+    [['Superadmin', 'Every TODA'], ['Admin', 'BCITODA'], ['Admin', 'No TODA yet']]);
+  const counts = accountCounts(accounts);
+  assert.deepEqual(counts.all, { total: 5, driver: 1, passenger: 1, admin: 3 });
+  assert.equal(roleCountLabel(counts.all), '1 driver · 1 passenger · 3 admins');
+  assert.equal(roleCountLabel(counts.online), '1 driver · 0 passengers · 1 admin');
 });
 
 test('a trip history filters by status, with searches that found no driver among the cancelled', async () => {
@@ -130,7 +150,7 @@ test('a trip history filters by status, with searches that found no driver among
   assert.deepEqual(keys(filterTrips(trips, 'cancelled')), ['b', 'c']);
   assert.deepEqual(keys(filterTrips(trips, 'ongoing')), ['d']);
   assert.equal(formatFare(45), '₱45');
-  assert.equal(formatFare(1250.5), '₱1,250.5');
+  assert.equal(formatFare(1250.5), '₱1,250.50');
   assert.equal(formatFare(null), '—');
   assert.equal(cancellationLabel({ cancelledBy: 'driver', cancellationReason: 'Flat tyre' }), 'By the driver: Flat tyre');
   assert.equal(cancellationLabel({ cancelledBy: 'passenger', cancellationReason: 'Cancelled by participant' }), 'By the passenger', 'the reason saved when none was given');
@@ -190,7 +210,7 @@ test("a driver's trip records PDF has their details, status, rating and totals, 
   const { pages, text } = readPdf(bytes);
   assert.equal(pages, 2, '14 trips fit under the details, the rest on page 2');
   for (const value of ['José Peña', '0917 123 4567', 'jose@example.com', 'NBC 1234', 'BCITODA', 'Registered', 'Approved to take bookings',
-    '4.7 out of 5 · 12 ratings', 'In this period: 3.5 from 2 ratings', 'Last 14 days', '30', '29', '1', 'PHP 1,250.5', 'From completed trips',
+    '4.7 out of 5 · 12 ratings', 'In this period: 3.5 from 2 ratings', 'Last 14 days', '30', '29', '1', 'PHP 1,250.50', 'From completed trips',
     '#TR-000000', '#TR-000029', 'Bea Santos', '5 / 5', 'Friendly +1', 'Safety report', 'Not earned', 'Page 1 of 2', 'Page 2 of 2']) {
     assert.ok(text.includes(value), `the PDF shows ${value}`);
   }
@@ -207,7 +227,10 @@ test("a driver's trip records PDF has their details, status, rating and totals, 
 
   assert.deepEqual(driverStanding({ approval: 'Suspended', terminatedAt: '2026-10-20T02:00:00Z', terminationReason: 'Plate did not match' }), { label: 'Suspended', note: 'Since Oct 20, 2026 · Plate did not match' });
   assert.equal(driverStanding({}).label, 'Registered', 'drivers from before approval count as registered');
-  assert.equal(pesos(45), 'PHP 45'); assert.equal(pesos(null), '—');
+  assert.equal(pesos(45), 'PHP 45'); assert.equal(pesos(12.5), 'PHP 12.50'); assert.equal(pesos(null), '—');
+  // A long total with centavos is set smaller to fit its box, never cut short.
+  const big = readPdf(driverReport({ ...data, summary: { ...data.summary, fares: 123456.5 } }, { generatedAt }).bytes).text;
+  assert.ok(big.includes('PHP 123,456.50'), 'the whole amount is shown');
   assert.equal(reportFilename({ name: '***' }, 30, generatedAt), 'indanggo-driver-trips-last-30-days-2026-10-27.pdf');
 });
 
@@ -219,12 +242,26 @@ function fareSheet() {
     town: [{ key: 'extraPassenger', label: 'Each passenger past two', note: '' }, { key: 'flat', label: 'Flat fare', note: '' }], groups: FARE_GROUPS, todas: FARE_TODAS };
 }
 
-test('fares are typed as whole pesos within the limits', async () => {
+test('fares are typed as pesos and centavos within the limits', async () => {
   const { parseFare } = await model();
   const limits = { min: 1, max: 1000 };
   assert.equal(parseFare('35', limits), 35);
   assert.equal(parseFare(' 040 ', limits), 40);
-  for (const text of ['', '0', '1001', '35.5', '-5', '3e1', 'abc', '₱35', '12345', null]) assert.equal(parseFare(text, limits), null, String(text));
+  for (const [text, amount] of [['35.5', 35.5], ['12.50', 12.5], ['10.29', 10.29], ['1.05', 1.05], ['1000.00', 1000], ['999.99', 999.99]]) assert.equal(parseFare(text, limits), amount, text);
+  for (const text of ['', '0', '0.50', '1001', '1000.01', '35.555', '35.', '.5', '35.5.0', '12,50', '-5', '3e1', 'abc', '₱35', '12345', null]) {
+    assert.equal(parseFare(text, limits), null, String(text));
+  }
+});
+
+test('a fare with centavos always shows two decimal places', async () => {
+  const { fareText, formatFare, parseFare } = await model();
+  assert.deepEqual([45, 12.5, 1250.5, 10.29, 1000].map(formatFare), ['₱45', '₱12.50', '₱1,250.50', '₱10.29', '₱1,000']);
+  // A sum with a floating-point trace shows as the amount it stands for.
+  assert.deepEqual([15.450000000000001, 24.999999999999996].map(formatFare), ['₱15.45', '₱25']);
+  assert.equal(formatFare(null), '—');
+  // A saved fare's box reads back as the same amount.
+  for (const amount of [45, 12.5, 10.29, 1000, 1.05]) assert.equal(parseFare(fareText(amount), { min: 1, max: 1000 }), amount, String(amount));
+  assert.deepEqual([45, 12.5].map(fareText), ['45', '12.50']);
 });
 
 test('each TODA lists the fares of the barangays it serves, and a shared place says who else lists it', async () => {

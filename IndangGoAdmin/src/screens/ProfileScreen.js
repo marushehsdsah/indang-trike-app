@@ -10,9 +10,9 @@
 // the back button can't return to the dashboard afterwards.
 //
 // HOW TO EDIT:
-// - Name, Admin ID and role come from the signed-in admin
-//   (../session.js), or data/mockData.js (currentAdmin) when this
-//   runs on its own.
+// - Name, Admin ID, role (Superadmin or Admin) and an admin's TODA
+//   come from the signed-in admin (../session.js), or
+//   data/mockData.js (currentAdmin) when this runs on its own.
 // - Rows in the details card live in DETAILS below.
 // - Colors come from ../theme/colors.js.
 // =============================================================
@@ -26,10 +26,12 @@ import { useAdminSession } from '../session';
 export default function ProfileScreen({ navigation }) {
   const { admin, signOut } = useAdminSession();
 
-  // Rows shown in the "Account Details" card.
+  // Rows shown in the "Account Details" card. An admin (not a superadmin)
+  // manages one TODA's drivers, so their TODA is shown too.
   const DETAILS = [
     { icon: 'id-card-outline', label: 'Admin ID', value: admin.adminId },
     { icon: 'shield-checkmark-outline', label: 'Role', value: admin.role },
+    ...(typeof admin.toda === 'string' ? [{ icon: 'people-outline', label: 'TODA', value: admin.toda || 'Not assigned yet' }] : []),
   ];
 
   const logOut = () => {
