@@ -310,10 +310,10 @@ test('the TODAs view shows ratings as "4.8 ★ (12)", lists other TODAs last, an
     driver('3', 'Cy Lim', { status: 'Online', rating: { average: 4.5, count: 8 } }),
     driver('4', 'Di Go', { approval: 'Suspended', rating: { average: 5, count: 1 } }),
   ];
-  const sheet = { todas: [{ id: 'kitoda', name: 'KITODA', drivers: [] }, { id: 'bitoda', name: 'BITODA', drivers }], other: { drivers: [], rating: { average: null, count: 0 } } };
-  assert.deepEqual(driverTodas(sheet).map((toda) => toda.id), ['bitoda', 'kitoda'], 'no other TODAs without drivers');
+  const sheet = { todas: [{ id: 'kimitoda', name: 'KIMITODA', drivers: [] }, { id: 'bitoda', name: 'BITODA', drivers }], other: { drivers: [], rating: { average: null, count: 0 } } };
+  assert.deepEqual(driverTodas(sheet).map((toda) => toda.id), ['bitoda', 'kimitoda'], 'no other TODAs without drivers');
   const withOther = driverTodas({ ...sheet, other: { drivers: [driver('5', 'Ed Uy', { toda: 'Pilot TODA' })], rating: { average: null, count: 0 } } });
-  assert.deepEqual(withOther.map((toda) => [toda.id, toda.name, toda.drivers.length]), [['bitoda', 'BITODA', 4], ['kitoda', 'KITODA', 0], [OTHER_TODAS, 'Other TODAs', 1]]);
+  assert.deepEqual(withOther.map((toda) => [toda.id, toda.name, toda.drivers.length]), [['bitoda', 'BITODA', 4], ['kimitoda', 'KIMITODA', 0], [OTHER_TODAS, 'Other TODAs', 1]]);
   assert.deepEqual(driverTodas(null), []);
 
   assert.deepEqual(driverCounts(drivers), { total: 4, online: 2, pending: 1, suspended: 1 });

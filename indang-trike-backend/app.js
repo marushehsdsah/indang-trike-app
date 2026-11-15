@@ -25,6 +25,9 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   await Promise.all([models.EmailCode.syncIndexes(), models.ResetCode.syncIndexes()]);
   // Drivers stay online across a restart; their positions count again once their apps reconnect.
   await models.User.updateMany({ role: 'driver' }, { $set: { locationAvailable: false } });
+  // The Kayquit TODA was renamed KIMITODA: drivers and its admins saved under
+  // the old name (any spelling of it) are moved to the new one.
+  await models.User.updateMany({ toda: /^[^a-z0-9]*k[^a-z0-9]*i[^a-z0-9]*t[^a-z0-9]*o[^a-z0-9]*d[^a-z0-9]*a[^a-z0-9]*$/i }, { $set: { toda: 'KIMITODA' } });
   const app = express(), server = createServer(app);
   const io = new Server(server, { cors: { origin: process.env.CORS_ORIGIN || '*' }, maxHttpBufferSize: 20000 });
   const presence = new Map(), auth = createAuth(models, clock, { sendEmail });

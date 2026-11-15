@@ -74,12 +74,12 @@ all of Indang: its drivers keep the town-wide rules and their map draws no zone.
 "ITODA PITODA" is an alias of ITODA, so drivers saved under that name are
 ITODA, and the backend shows them as ITODA.
 
-KITODA serves Kayquit I, II and III and the Ikloy River stop: a 350 m square
+KIMITODA serves Kayquit I, II and III and the Ikloy River stop: a 350 m square
 (`sizeMeters`) centred on its pin, in Kaytambog, 306 m past the Kayquit II
 border. The pin is approximate and the same as CIKTODA's Ikloy; the square
 also takes in CIKTODA's Class Villas. A strip along that border would have
 taken a third of Kaytambog, CIKTODA's barangay hall included. BERAS FARM and
-BICOL REGOIN have no pins; the KITODA list places them in the Ikloy River area,
+BICOL REGOIN have no pins; the KIMITODA list places them in the Ikloy River area,
 so they are listed under that stop's `places`.
 
 MACITODA serves Calumpang Cerca, Agus-us and Calumpang Lejos I, and the

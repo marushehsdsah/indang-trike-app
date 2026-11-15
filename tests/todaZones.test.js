@@ -173,20 +173,20 @@ test('GLITODA and TBKTODA are separate TODAs with their own areas', () => {
   assert.equal(findToda('GLITODA TBKTODA'), null, 'the combined name is gone');
 });
 
-test('KITODA serves Kayquit I, II and III and Ikloy River, not the rest of Kaytambog', () => {
-  const kitoda = findToda('KITODA');
+test('KIMITODA serves Kayquit I, II and III and Ikloy River, not the rest of Kaytambog', () => {
+  const kimitoda = findToda('KIMITODA');
   const KAYQUIT_1 = at(14.17760, 120.88285), KAYQUIT_2 = at(14.18198, 120.88003), MUZON = at(14.1448499, 120.8971981);
   const IKLOY_RIVER = at(14.18372, 120.87093), THE_RAVINE = at(14.18889, 120.86855), KAYTAMBOG = at(14.19066, 120.86770);
-  assert.deepEqual(kitoda.areas, ['Kayquit I', 'Kayquit II', 'Kayquit III', 'Ikloy River']);
-  assert.deepEqual(kitoda.stops[0].places, ['IKLOY RIVER', 'BERAS FARM', 'BICOL REGOIN'], 'Beras Farm and Bicol Region are by Ikloy River');
-  assert.equal(inArea(kitoda, KAYQUIT_1, KAYQUIT_2), true);
-  assert.equal(inArea(kitoda, MUZON, KAYQUIT_1), true, 'Muzon (Asis) on the Kayquit III border');
+  assert.deepEqual(kimitoda.areas, ['Kayquit I', 'Kayquit II', 'Kayquit III', 'Ikloy River']);
+  assert.deepEqual(kimitoda.stops[0].places, ['IKLOY RIVER', 'BERAS FARM', 'BICOL REGOIN'], 'Beras Farm and Bicol Region are by Ikloy River');
+  assert.equal(inArea(kimitoda, KAYQUIT_1, KAYQUIT_2), true);
+  assert.equal(inArea(kimitoda, MUZON, KAYQUIT_1), true, 'Muzon (Asis) on the Kayquit III border');
   assert.equal(getBarangayAt(IKLOY_RIVER), 'Kaytambog');
-  assert.equal(inArea(kitoda, KAYQUIT_2, IKLOY_RIVER), true);
-  assert.equal(inArea(kitoda, KAYQUIT_2, at(14.18372 + 0.0015, 120.87093 + 0.0015)), true, 'a corner of the 350 m square');
-  assert.equal(inArea(kitoda, KAYQUIT_2, at(14.18372 + 0.0018, 120.87093)), false, 'just past the square');
-  assert.equal(inArea(kitoda, KAYQUIT_2, THE_RAVINE), false, 'Kaytambog is CIKTODA');
-  assert.equal(inArea(kitoda, KAYQUIT_2, KAYTAMBOG), false);
+  assert.equal(inArea(kimitoda, KAYQUIT_2, IKLOY_RIVER), true);
+  assert.equal(inArea(kimitoda, KAYQUIT_2, at(14.18372 + 0.0015, 120.87093 + 0.0015)), true, 'a corner of the 350 m square');
+  assert.equal(inArea(kimitoda, KAYQUIT_2, at(14.18372 + 0.0018, 120.87093)), false, 'just past the square');
+  assert.equal(inArea(kimitoda, KAYQUIT_2, THE_RAVINE), false, 'Kaytambog is CIKTODA');
+  assert.equal(inArea(kimitoda, KAYQUIT_2, KAYTAMBOG), false);
 });
 
 test('MACITODA serves Calumpang Cerca, Agus-us, Calumpang Lejos I and a 350 m square around Macalima', () => {
