@@ -11,6 +11,7 @@ import DriverReviewScreen from '../IndangGoAdmin/src/screens/DriverReviewScreen'
 import colors from '../IndangGoAdmin/src/theme/colors';
 import { AdminSession } from '../IndangGoAdmin/src/session';
 import { useApp } from '../context/AppContext';
+import { API_BASE_URL } from '../services/api';
 
 const Stack = createNativeStackNavigator();
 
@@ -22,7 +23,7 @@ const Stack = createNativeStackNavigator();
 // sees every TODA; an admin only their TODA's drivers (the API decides), and
 // the screens name that TODA.
 export default function AdminNavigator() {
-  const { user, signOut, request } = useApp();
+  const { user, signOut, request, token } = useApp();
   const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'Admin';
   // The mobile number the admin logs in with, as they type it (09…).
   const adminId = user?.phone?.replace(/^\+63/, '0') || '';
@@ -35,7 +36,10 @@ export default function AdminNavigator() {
     load: (dataName) => request(`/admin/${dataName}`),
     // 'drivers/<key>/approve' (or decline, terminate, delete, unblock): POST /api/admin/<path>.
     act: (path, body = {}) => request(`/admin/${path}`, body),
-  }), [name, adminId, superadmin, toda, signOut, request]);
+    // 'drivers/<key>/documents/<kind>': an <Image> source for GET /api/admin/<path>,
+    // which needs the session's token like every admin request.
+    imageSource: (path) => (token ? { uri: `${API_BASE_URL}/api/admin/${path}`, headers: { Authorization: `Bearer ${token}` } } : null),
+  }), [name, adminId, superadmin, toda, signOut, request, token]);
   return (
     <AdminSession.Provider value={session}>
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>

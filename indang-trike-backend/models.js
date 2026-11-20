@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { MESSAGE_RETENTION_DAYS } = require('../utils/chat');
+const { DRIVER_DOCUMENTS } = require('../utils/driverDocuments');
 
 function createModels(connection) {
   const { Schema } = mongoose;
@@ -117,8 +118,19 @@ function createModels(connection) {
     _id: { type: String, required: true }, prices: { type: Schema.Types.Mixed, default: {} },
     version: { type: Number, default: 0 }, updatedBy: String, updatedByName: String,
   }, { timestamps: true, bufferCommands: false, minimize: false });
+  // A photo of a document a driver signed up with (utils/driverDocuments.js),
+  // one of each kind per driver, for admins to check before approving them.
+  // Kept apart from the user, which the server reads all the time; the image
+  // is loaded only when an admin opens it.
+  const driverDocumentSchema = new Schema({
+    userId: { type: Schema.Types.ObjectId, required: true },
+    kind: { type: String, enum: DRIVER_DOCUMENTS, required: true },
+    image: { type: Buffer, required: true, select: false },
+  }, { timestamps: true, bufferCommands: false });
+  driverDocumentSchema.index({ userId: 1, kind: 1 }, { unique: true });
   const User = connection.model('User', userSchema);
   const FareSheet = connection.model('FareSheet', fareSheetSchema);
+  const DriverDocument = connection.model('DriverDocument', driverDocumentSchema);
   const Report = connection.model('Report', reportSchema);
   const Blocked = connection.model('Blocked', blockedSchema);
   const Session = connection.model('Session', sessionSchema);
@@ -127,7 +139,7 @@ function createModels(connection) {
   const ResetCode = connection.model('ResetCode', resetCodeSchema);
   const Rating = connection.model('Rating', ratingSchema);
   const Message = connection.model('Message', messageSchema);
-  return { User, Session, Ride, Rating, Message, EmailCode, ResetCode, Report, Blocked, FareSheet };
+  return { User, Session, Ride, Rating, Message, EmailCode, ResetCode, Report, Blocked, FareSheet, DriverDocument };
 }
 
 module.exports = { createModels };

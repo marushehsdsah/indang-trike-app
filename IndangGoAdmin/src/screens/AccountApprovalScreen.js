@@ -27,6 +27,7 @@ import formatDate from '../formatDate';
 import StatusBadge from '../components/StatusBadge';
 import TopHeader from '../components/TopHeader';
 import LoadState, { RefreshError } from '../components/LoadState';
+import { AccountListSkeleton, SkeletonSwap } from '../components/Skeleton';
 
 // The drivers' approval, as the API names it.
 const FILTERS = [
@@ -79,7 +80,9 @@ export default function AccountApprovalScreen({ navigation }) {
         {error && drivers && <RefreshError message={error} />}
 
         {/* ---- Driver list ---- */}
-        {!drivers ? <LoadState loading={loading} error={error} onRetry={reload} /> : (
+        {/* The skeleton while the first load runs; then the data, or the error. */}
+        <SkeletonSwap loading={!drivers && loading} skeleton={<AccountListSkeleton />} style={styles.fill}>
+        {!drivers ? <LoadState error={error} onRetry={reload} /> : (
         <FlatList
           data={shownDrivers}
           keyExtractor={(item) => item.key}
@@ -129,12 +132,17 @@ export default function AccountApprovalScreen({ navigation }) {
           )}
         />
         )}
+        </SkeletonSwap>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // Around the list, so it keeps the screen's height while it fades in.
+  fill: {
+    flex: 1,
+  },
   screen: {
     flex: 1,
     backgroundColor: colors.background,

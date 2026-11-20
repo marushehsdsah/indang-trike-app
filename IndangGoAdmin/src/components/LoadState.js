@@ -1,26 +1,21 @@
 // =============================================================
 // components/LoadState.js
 // -------------------------------------------------------------
-// What a screen shows instead of its data (see useAdminData.js):
-// - LoadState: a spinner while the first load runs, or the error
-//   with a Retry button when it failed.
+// What a screen shows instead of its data (see useAdminData.js);
+// while the first load runs, a screen shows its skeleton instead
+// (components/Skeleton.js):
+// - LoadState: the error with a Retry button when the first load
+//   failed.
 // - RefreshError: a one-line note above data that is still shown
 //   after a pull-to-refresh failed.
 // =============================================================
 
 import React from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 
-export default function LoadState({ loading, error, onRetry }) {
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color={colors.brandGreen} />
-      </View>
-    );
-  }
+export default function LoadState({ error, onRetry }) {
   return (
     <View style={styles.container}>
       <Ionicons name="cloud-offline-outline" size={30} color={colors.textSecondary} />

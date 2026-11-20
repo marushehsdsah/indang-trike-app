@@ -9,7 +9,9 @@
 // load('dashboard' | 'accounts' | 'trips' | 'approvals' |
 // 'drivers/<key>') gets the data from the API (GET
 // /api/admin/<name>), and act('drivers/<key>/<decision>', body)
-// sends an admin's decision on a driver (POST /api/admin/...).
+// sends an admin's decision on a driver (POST /api/admin/...), and
+// imageSource('drivers/<key>/documents/<kind>') is the photo of a
+// document the driver signed up with, for an <Image>.
 // Run on its own (App.js), nothing provides it: the screens show
 // the mock admin and the mock data from data/mockData.js, the
 // decisions change that mock data, and Logout returns to Login.
@@ -67,6 +69,8 @@ const actMock = async (path, body = {}) => {
   return { driver: { ...driver }, emailed: false };
 };
 
-export const AdminSession = createContext({ admin: currentAdmin, signOut: null, load: loadMock, act: actMock });
+// imageSource('drivers/<key>/documents/<kind>'): what an <Image> loads a
+// driver's document photo from; the mock data has no photos.
+export const AdminSession = createContext({ admin: currentAdmin, signOut: null, load: loadMock, act: actMock, imageSource: () => null });
 
 export const useAdminSession = () => useContext(AdminSession);

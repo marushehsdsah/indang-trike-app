@@ -10,13 +10,15 @@ import TripStops from '../components/TripStops';
 import RatingPrompt, { Stars } from '../components/RatingPrompt';
 import ReportPrompt from '../components/ReportPrompt';
 import KeyboardAwareScrollView from '../components/ui/KeyboardAwareScrollView';
+import { SkeletonSwap } from '../components/ui/Skeleton';
+import { TripCardsSkeleton } from '../components/LoadingSkeletons';
 import useAccountHistory from '../hooks/useAccountHistory';
 import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n';
 import { COLORS, SPACE, TYPE } from '../theme';
 
 export default function HistoryScreen({ navigation }) {
-  const { user } = useApp(), { rides, loading, error, fromCache, reload } = useAccountHistory();
+  const { user } = useApp(), { rides, loading, loaded, error, fromCache, reload } = useAccountHistory();
   const { t, language } = useI18n();
   // rating: the id of the ride whose rating card is open.
   const [filter, setFilter] = useState('all'), [rating, setRating] = useState(null);
@@ -25,7 +27,8 @@ export default function HistoryScreen({ navigation }) {
   const locale = language === 'fil' ? 'fil-PH' : 'en-PH';
   return <Screen>
     <AppHeader title={t(driver ? 'history.driverTitle' : 'history.title')} subtitle={fromCache ? t('history.fromCache') : null} />
-    <KeyboardAwareScrollView style={styles.flex} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={reload} colors={[COLORS.brand]} />}>
+    {/* The first load shows a skeleton instead of the pull-to-refresh spinner. */}
+    <KeyboardAwareScrollView style={styles.flex} contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading && loaded} onRefresh={reload} colors={[COLORS.brand]} />}>
       <ConnectionBanner />
       <SegmentedControl value={filter} onChange={setFilter} options={[
         { value: 'all', label: t('history.all') }, { value: 'completed', label: t('history.completed') }, { value: 'cancelled', label: t('history.cancelled') },
@@ -34,7 +37,8 @@ export default function HistoryScreen({ navigation }) {
         <Text style={[TYPE.body, styles.errorText]}>{error}</Text>
         <Button label={t('common.retry')} variant="brand" size="md" onPress={reload} />
       </View>
-        : !loading && visible.length === 0 ? <EmptyState icon="history" title={t('history.emptyTitle')} message={t(driver ? 'history.emptyDriver' : 'history.emptyPassenger')} />
+        : <SkeletonSwap loading={!loaded} skeleton={<TripCardsSkeleton />}>
+        {visible.length === 0 ? <EmptyState icon="history" title={t('history.emptyTitle')} message={t(driver ? 'history.emptyDriver' : 'history.emptyPassenger')} />
         : visible.map((ride) => {
           const completed = ride.status === 'completed';
           return <Pressable key={ride.id} onPress={() => navigation.navigate('TripDetails', { ride })} accessibilityRole="button"
@@ -60,6 +64,7 @@ export default function HistoryScreen({ navigation }) {
               onSkip={() => setRating(null)} onRated={() => { setRating(null); reload(); }} />}
           </Card></Pressable>;
         })}
+        </SkeletonSwap>}
     </KeyboardAwareScrollView>
     <BottomNav active="history" navigation={navigation} />
   </Screen>;

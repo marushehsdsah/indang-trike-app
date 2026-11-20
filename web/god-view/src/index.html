@@ -40,7 +40,7 @@
     <nav class="view-tabs" aria-label="God view"><a class="view-tab" href="#live" data-view="live" aria-current="page">Live map</a><a class="view-tab" href="#accounts" data-view="accounts">Accounts<span id="accounts-badge" class="tab-badge pending" hidden></span></a><a class="view-tab" href="#todas" data-view="todas">TODAs</a><a class="view-tab" href="#reports" data-view="reports">Reports<span id="reports-badge" class="tab-badge" hidden></span></a><a class="view-tab" href="#fares" data-view="fares">Fares<span id="fares-badge" class="tab-badge pending" title="Unsaved fare changes" hidden></span></a></nav>
     <div id="live-view">
     <section class="page-heading"><div><h1>Live overview <span id="area-name" class="area-chip">Service area</span></h1><p class="muted">The people moving through your city, right now.</p></div><div class="sync-panel"><span id="connection-status" class="connection" role="status">Connecting</span><span id="last-updated" class="small muted">Waiting for the first update</span><button id="refresh" class="quiet">Refresh now</button></div></section>
-    <section class="metrics" aria-label="Online user summary">
+    <section class="metrics loading" aria-label="Online user summary">
       <div class="metric"><span class="metric-label">People online</span><strong id="count-online">—</strong><span class="metric-note">Connected to the app</span></div>
       <div class="metric"><span class="metric-label"><i class="legend-dot driver"></i> Drivers</span><strong id="count-drivers">—</strong><span id="available-note" class="metric-note">Waiting for an update</span></div>
       <div class="metric"><span class="metric-label"><i class="legend-dot passenger"></i> Passengers</span><strong id="count-passengers">—</strong><span class="metric-note">Browsing or taking a trip</span></div>
@@ -52,8 +52,10 @@
         <div class="people-heading"><h2>Who's online</h2><span id="result-count" class="count-pill">0</span></div>
         <label class="search-label" for="search">Search people or vehicles</label><input id="search" type="search" placeholder="Search a name, plate or TODA…" autocomplete="off">
         <div id="role-filters" class="filters" role="group" aria-label="Filter by account type"><button data-role="all" aria-pressed="true">Everyone</button><button data-role="driver" aria-pressed="false">Drivers</button><button data-role="passenger" aria-pressed="false">Passengers</button></div>
+        <!-- Skeletons (styles.css .skeleton) stand in for each list until its first data arrives; app.mjs fills and toggles them. -->
+        <div id="people-skeleton" class="skeleton" role="status" aria-label="Loading who's online"></div>
         <div id="user-list" class="user-list"></div>
-        <div id="empty" class="empty-state"><span aria-hidden="true">◎</span><h3>No one online yet</h3><p>Connected drivers and passengers will appear here when they open the app.</p></div>
+        <div id="empty" class="empty-state" hidden><span aria-hidden="true">◎</span><h3>No one online yet</h3><p>Connected drivers and passengers will appear here when they open the app.</p></div>
         <div class="people-footer"><span class="pulse-dot"></span><span id="list-footnote">Refreshes every 3 seconds</span></div>
       </aside>
       <section class="map-panel" aria-label="Live user map">
@@ -69,7 +71,7 @@
 
     <div id="accounts-view" hidden>
     <section class="page-heading"><div><span class="eyebrow">PILOT ACCOUNTS</span><h1>All accounts</h1><p class="muted">Every driver, passenger and admin on IndangGO, online or offline.</p></div><div class="sync-panel"><span id="accounts-updated" class="small muted">Loading accounts…</span><button id="accounts-refresh" class="quiet">Refresh now</button></div></section>
-    <section class="metrics three" aria-label="Account summary">
+    <section class="metrics three loading" aria-label="Account summary">
       <div class="metric"><span class="metric-label">All accounts</span><strong id="account-count-all">—</strong><span id="account-note-all" class="metric-note">Loading…</span></div>
       <div class="metric"><span class="metric-label"><i class="legend-dot online"></i> Online</span><strong id="account-count-online">—</strong><span id="account-note-online" class="metric-note">Loading…</span></div>
       <div class="metric"><span class="metric-label"><i class="legend-dot stale"></i> Offline</span><strong id="account-count-offline">—</strong><span id="account-note-offline" class="metric-note">Loading…</span></div>
@@ -83,11 +85,12 @@
         <div id="account-statuses" class="filters" role="group" aria-label="Filter by online or offline"><button data-status="all" aria-pressed="true">All</button><button data-status="online" aria-pressed="false">Online</button><button data-status="offline" aria-pressed="false">Offline</button></div>
         <span id="account-result-count" class="count-pill">0 shown</span>
       </div>
-      <table id="accounts-table" class="accounts-table">
+      <div id="accounts-skeleton" class="skeleton" role="status" aria-label="Loading accounts"></div>
+      <table id="accounts-table" class="accounts-table" hidden>
         <thead><tr><th scope="col">Account</th><th scope="col">Type</th><th scope="col">Mobile number</th><th scope="col">Vehicle</th><th scope="col">Status</th><th scope="col"><span class="search-label">Map</span></th></tr></thead>
         <tbody id="account-rows"></tbody>
       </table>
-      <div id="accounts-empty" class="empty-state"><span aria-hidden="true">◎</span><h3>Loading accounts</h3><p>Getting every driver, passenger and admin account.</p></div>
+      <div id="accounts-empty" class="empty-state" hidden><span aria-hidden="true">◎</span><h3>Loading accounts</h3><p>Getting every driver, passenger and admin account.</p></div>
       <div class="people-footer"><span id="accounts-footnote">Online means the app is open and connected. Refreshes every 10 seconds.</span></div>
     </section>
     </div>
@@ -117,7 +120,7 @@
 
     <div id="reports-view" hidden>
     <section class="page-heading"><div><span class="eyebrow">RIDER REPORTS</span><h1>Passenger reports</h1><p class="muted">Drivers report fake bookings and no-shows here. Upholding a report suspends the passenger.</p></div><div class="sync-panel"><span id="reports-updated" class="small muted">Loading reports…</span><button id="reports-refresh" class="quiet">Refresh now</button></div></section>
-    <section class="metrics three" aria-label="Report summary">
+    <section class="metrics three loading" aria-label="Report summary">
       <div class="metric"><span class="metric-label"><i class="legend-dot report"></i> Waiting for review</span><strong id="report-count-pending">—</strong><span id="report-note-pending" class="metric-note">Loading…</span></div>
       <div class="metric"><span class="metric-label"><i class="legend-dot stale"></i> Suspended now</span><strong id="report-count-suspended">—</strong><span class="metric-note">Passengers barred for 24 hours or 3 days</span></div>
       <div class="metric"><span class="metric-label"><i class="legend-dot disabled"></i> Disabled for good</span><strong id="report-count-disabled">—</strong><span class="metric-note">Number and email blocked from signing up</span></div>
@@ -131,11 +134,12 @@
         <div id="report-statuses" class="filters" role="group" aria-label="Filter by review"><button data-report="pending" aria-pressed="true">Waiting</button><button data-report="upheld" aria-pressed="false">Upheld</button><button data-report="dismissed" aria-pressed="false">Dismissed</button><button data-report="all" aria-pressed="false">All</button></div>
         <span id="report-result-count" class="count-pill">0 shown</span>
       </div>
-      <table id="reports-table" class="accounts-table reports-table">
+      <div id="reports-skeleton" class="skeleton" role="status" aria-label="Loading reports"></div>
+      <table id="reports-table" class="accounts-table reports-table" hidden>
         <thead><tr><th scope="col">Reported</th><th scope="col">Passenger</th><th scope="col">What happened</th><th scope="col">Trip</th><th scope="col">Decision</th></tr></thead>
         <tbody id="report-rows"></tbody>
       </table>
-      <div id="reports-empty" class="empty-state"><span aria-hidden="true">◎</span><h3>Loading reports</h3><p>Getting drivers' reports about passengers.</p></div>
+      <div id="reports-empty" class="empty-state" hidden><span aria-hidden="true">◎</span><h3>Loading reports</h3><p>Getting drivers' reports about passengers.</p></div>
       <div class="people-footer"><span>Suspended passengers are signed out at once and cannot log in until it ends. Refreshes every 10 seconds.</span></div>
     </section>
     </div>
@@ -147,7 +151,7 @@
       <label class="search-label" for="history-period">Show the trips booked in</label>
       <select id="history-period" autocomplete="off"><option value="0" selected>All time</option><option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30">Last 30 days</option></select>
     </div>
-    <section class="metrics" aria-label="Trip summary">
+    <section class="metrics loading" aria-label="Trip summary">
       <div class="metric"><span class="metric-label">Trips</span><strong id="history-count-total">—</strong><span id="history-note-total" class="metric-note">Loading…</span></div>
       <div class="metric"><span class="metric-label"><i class="legend-dot online"></i> Completed</span><strong id="history-count-completed">—</strong><span class="metric-note">Reached the destination</span></div>
       <div class="metric"><span class="metric-label"><i class="legend-dot stale"></i> Cancelled</span><strong id="history-count-cancelled">—</strong><span id="history-note-cancelled" class="metric-note">Loading…</span></div>
@@ -162,11 +166,12 @@
         <div id="history-statuses" class="filters" role="group" aria-label="Filter by trip status"><button data-trip="all" aria-pressed="true">All</button><button data-trip="completed" aria-pressed="false">Completed</button><button data-trip="cancelled" aria-pressed="false">Cancelled</button><button data-trip="ongoing" aria-pressed="false">Ongoing</button></div>
         <span id="history-result-count" class="count-pill">0 shown</span>
       </div>
-      <table id="history-table" class="accounts-table history-table">
+      <div id="history-skeleton" class="skeleton" role="status" aria-label="Loading trips"></div>
+      <table id="history-table" class="accounts-table history-table" hidden>
         <thead><tr><th scope="col">Booked</th><th scope="col">Trip</th><th scope="col">Route</th><th id="history-with-heading" scope="col">Driver</th><th scope="col">Fare</th><th scope="col">Status</th><th id="history-rating-heading" scope="col">Driver’s rating</th></tr></thead>
         <tbody id="history-rows"></tbody>
       </table>
-      <div id="history-empty" class="empty-state"><span aria-hidden="true">◎</span><h3>Loading trips</h3><p>Getting every trip this account booked or drove.</p></div>
+      <div id="history-empty" class="empty-state" hidden><span aria-hidden="true">◎</span><h3>Loading trips</h3><p>Getting every trip this account booked or drove.</p></div>
       <div class="people-footer"><span id="history-footnote">Times are when each trip was booked. Refreshes every 10 seconds.</span></div>
     </section>
     </div>

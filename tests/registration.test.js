@@ -77,8 +77,10 @@ test('creating the account needs the 6-digit code from the email', async () => {
   }
 });
 
+const documents = { license: 'data:image/jpeg;base64,/9j/AA==', registration: 'data:image/jpeg;base64,/9j/BB==', franchise: 'data:image/jpeg;base64,/9j/CC==' };
+
 test('driver registration requires and submits vehicle details', async () => {
-  const form = { ...validForm, role: 'driver', plate: 'abc 123', toda: 'Bancod', capacity: 3 };
+  const form = { ...validForm, role: 'driver', plate: 'abc 123', toda: 'Bancod', capacity: 3, documents };
   assert.ok(validateRegistration({ ...form, plate: '' }));
   assert.ok(validateRegistration({ ...form, capacity: 8 }));
   let payload;
@@ -88,6 +90,39 @@ test('driver registration requires and submits vehicle details', async () => {
   assert.equal(payload.role, 'driver');
   assert.equal(payload.plate, 'ABC 123');
   assert.equal(payload.capacity, 3);
+});
+
+test('a driver adds a photo of their license, registration and franchise, sent only once the emailed code checks out', async () => {
+  const form = { ...validForm, role: 'driver', plate: 'abc 123', toda: 'Bancod', capacity: 3, documents };
+  const without = (kind) => ({ ...form, documents: { ...documents, [kind]: undefined } });
+  assert.equal(validateRegistration(without('license')), 'Add a photo of your driver’s license.');
+  assert.equal(validateRegistration(without('registration')), 'Add a photo of your tricycle’s registration (OR/CR).');
+  assert.equal(validateRegistration(without('franchise')), 'Add a photo of your franchise (MTOP) showing the franchise number.');
+  assert.equal(validateRegistration({ ...form, documents: undefined }), 'Add a photo of your driver’s license.');
+  assert.equal(validateRegistration({ ...validForm, documents: undefined }), null, 'a passenger adds none');
+
+  // Asking for the code checks the photos are there, but does not send them.
+  const requests = [];
+  const fetchImpl = async (url, options) => { requests.push([url, JSON.parse(options.body)]); return { ok: true, json: async () => ({ ok: true }) }; };
+  await assert.rejects(requestRegistrationCode(without('franchise'), { apiBaseUrl: 'http://localhost', fetchImpl }), { message: /franchise/ });
+  assert.equal(requests.length, 0);
+  await requestRegistrationCode(form, { apiBaseUrl: 'http://localhost', fetchImpl });
+  assert.equal(requests[0][1].documents, undefined);
+
+  // Creating the account checks the code first, then sends the photos with it.
+  requests.length = 0;
+  await submitRegistration(form, { apiBaseUrl: 'http://localhost', fetchImpl });
+  assert.deepEqual(requests.map(([url]) => url), ['http://localhost/api/register/verify', 'http://localhost/api/register']);
+  assert.deepEqual([requests[0][1].code, requests[0][1].documents], ['123456', undefined]);
+  assert.deepEqual([requests[1][1].code, requests[1][1].documents], ['123456', documents]);
+
+  // A wrong code stops before the photos go.
+  requests.length = 0;
+  await assert.rejects(submitRegistration(form, { apiBaseUrl: 'http://localhost', fetchImpl: async (url, options) => {
+    requests.push([url, JSON.parse(options.body)]);
+    return { ok: false, status: 400, json: async () => ({ error: 'Incorrect code. Check your email and try again.' }) };
+  } }), { message: 'Incorrect code. Check your email and try again.' });
+  assert.deepEqual(requests.map(([url]) => url), ['http://localhost/api/register/verify']);
 });
 
 test('rejects an invalid form before contacting the backend', async () => {

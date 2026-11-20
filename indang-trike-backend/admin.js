@@ -9,6 +9,7 @@ const { ratingSummary } = require('../utils/rating');
 const { roundToCentavos } = require('../data/fares');
 const { REPORT_REASON_LABELS, penaltyFor, suspensionOf } = require('../utils/reports');
 const { STAFF_ROLES, isStaff } = require('../utils/roles');
+const { DRIVER_DOCUMENTS, DOCUMENT_LABELS } = require('../utils/driverDocuments');
 
 // What an account may reach in the admin API (utils/roles.js): everything for
 // a superadmin; for an admin, the drivers of their TODA, which must be one of
@@ -188,6 +189,14 @@ function buildTodas(drivers, connectedIds) {
     }),
     other: finish(other),
   };
+}
+
+// The photos a driver signed up with, each kind in order with when it was
+// sent (null when missing, as for drivers who signed up before photos were
+// asked for). The images themselves load one at a time (admin.document).
+function driverDocuments(documents) {
+  const byKind = new Map(documents.map((document) => [document.kind, document]));
+  return DRIVER_DOCUMENTS.map((kind) => ({ kind, label: DOCUMENT_LABELS[kind], uploadedAt: byKind.get(kind)?.createdAt || null }));
 }
 
 // Who cancelled a ride: its passenger, its driver, or an admin (who cancelled
@@ -453,9 +462,21 @@ function createAdmin({ models, presence, clock, sendEmail = null, onSuspended = 
   // A driver of another TODA is "not found" for an admin, as if there were none.
   async function driver(id, access) {
     checkDriverId(id);
-    const user = await models.User.findOne({ _id: id, role: 'driver' }).select(DRIVER_FIELDS).lean();
+    const [user, documents] = await Promise.all([
+      models.User.findOne({ _id: id, role: 'driver' }).select(DRIVER_FIELDS).lean(),
+      models.DriverDocument.find({ userId: id }).select('kind createdAt').lean(),
+    ]);
     requireValue(user && managesDriver(access, user), 404, 'No driver has this ID.');
-    return { driver: buildDriver(user, connectedIds()) };
+    return { driver: { ...buildDriver(user, connectedIds()), documents: driverDocuments(documents) } };
+  }
+  // One of the photos a driver signed up with, as JPEG bytes, for an access
+  // that manages the driver (a driver of another TODA is "not found").
+  async function document(id, kind, access) {
+    await managedDriver(id, access);
+    requireValue(DRIVER_DOCUMENTS.includes(kind), 404, 'This driver has no such photo.');
+    const found = await models.DriverDocument.findOne({ userId: id, kind }).select('+image');
+    requireValue(found?.image?.length, 404, 'This driver has no such photo.');
+    return found.image;
   }
   // Why a decision changed nothing: the driver is gone (or no longer one this
   // access manages), or was already decided on.
@@ -504,7 +525,9 @@ function createAdmin({ models, presence, clock, sendEmail = null, onSuspended = 
     const reason = cleanText(body?.reason, 200);
     const user = await models.User.findOneAndDelete({ _id: id, ...filter, ...managed }).select(DRIVER_FIELDS).lean();
     if (!user) await undecided(id, missing, access);
-    await Promise.all([models.Session.deleteMany({ userId: user._id }), models.ResetCode.deleteMany({ userId: user._id })]);
+    // Their document photos go with the account; signing up again sends new ones.
+    await Promise.all([models.Session.deleteMany({ userId: user._id }), models.ResetCode.deleteMany({ userId: user._id }),
+      models.DriverDocument.deleteMany({ userId: user._id })]);
     await onSuspended(id, 'Driver account removed');
     return { driver: buildDriver(user, new Set()), emailed: await tell(user, purpose, reason) };
   }
@@ -578,7 +601,7 @@ function createAdmin({ models, presence, clock, sendEmail = null, onSuspended = 
     requireValue(updated, 409, 'This report was already reviewed.');
     return { report: (await reports()).reports.find((item) => item.key === id) };
   }
-  return { middleware, superadminsOnly, overview, accounts, todas, history, trips, cancelTrip, dashboard, reports, uphold, dismiss, approvals, driver, approve, decline, terminate, remove, unblock };
+  return { middleware, superadminsOnly, overview, accounts, todas, history, trips, cancelTrip, dashboard, reports, uphold, dismiss, approvals, driver, document, approve, decline, terminate, remove, unblock };
 }
 
 module.exports = { ADMIN_CANCELLATION, NO_ACCESS, NO_TODA, SUPERADMINS_ONLY, createAdmin, adminAccess, managesDriver, buildOverview, buildReports, buildRideRoutes, buildAccounts, buildDriver, buildTodas, driverApproval, buildTrips, buildHistory, historySummary, historyPeriod, tripStatus };

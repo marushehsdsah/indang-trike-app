@@ -8,7 +8,7 @@ import Field from '../components/ui/Field';
 import KeyboardAwareScrollView from '../components/ui/KeyboardAwareScrollView';
 import { Card, Money } from '../components/ui/Surfaces';
 import UserAvatar from '../components/UserAvatar';
-import pickProfilePhoto from '../components/pickProfilePhoto';
+import { pickProfilePhoto } from '../components/pickPhoto';
 import OptionSheet from '../components/OptionSheet';
 import BottomNav from '../components/BottomNav';
 import ConnectionBanner from '../components/ConnectionBanner';
@@ -21,12 +21,14 @@ import Plate from '../components/Plate';
 import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n';
 import useAccountHistory from '../hooks/useAccountHistory';
+import { SkeletonSwap } from '../components/ui/Skeleton';
+import { ValueSkeleton } from '../components/LoadingSkeletons';
 import { userName } from '../utils/rideState';
 import { COLORS, FONTS, SPACE, TYPE } from '../theme';
 import { sanitizeName } from '../utils/registration';
 
 export default function ProfileScreen({ navigation }) {
-  const { user, request, refresh, signOut } = useApp(), { stats } = useAccountHistory();
+  const { user, request, refresh, signOut } = useApp(), { stats, loaded } = useAccountHistory();
   const { t } = useI18n();
   const [editing, setEditing] = useState(!user.profileComplete), [busy, setBusy] = useState(false);
   const [form, setForm] = useState({});
@@ -89,11 +91,14 @@ export default function ProfileScreen({ navigation }) {
         </View>
         <View style={styles.stats}>
           <View style={styles.flex}>
-            <Text style={styles.statValue}>{stats?.trips ?? '—'}</Text>
+            {/* Until the totals load: a skeleton; "—" when they could not be. */}
+            <SkeletonSwap loading={!loaded} skeleton={<ValueSkeleton width={32} height={20} lineHeight={28} />}><Text style={styles.statValue}>{stats?.trips ?? '—'}</Text></SkeletonSwap>
             <Text style={TYPE.caption}>{t('profile.completedTrips')}</Text>
           </View>
           <View style={styles.flex}>
-            {stats ? <Money amount={stats.totalFare} size={24} /> : <Text style={styles.statValue}>—</Text>}
+            <SkeletonSwap loading={!loaded} skeleton={<ValueSkeleton width={64} height={20} lineHeight={28} />}>
+              {stats ? <Money amount={stats.totalFare} size={24} /> : <Text style={styles.statValue}>—</Text>}
+            </SkeletonSwap>
             <Text style={TYPE.caption}>{t(driver ? 'profile.cashEarned' : 'profile.farePaid')}</Text>
           </View>
         </View>

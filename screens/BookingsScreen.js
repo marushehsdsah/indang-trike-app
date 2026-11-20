@@ -11,6 +11,8 @@ import ConnectionBanner from '../components/ConnectionBanner';
 import TripStops from '../components/TripStops';
 import { RatingBadge } from '../components/RatingPrompt';
 import KeyboardAwareScrollView from '../components/ui/KeyboardAwareScrollView';
+import { SkeletonSwap } from '../components/ui/Skeleton';
+import { BookingCardsSkeleton } from '../components/LoadingSkeletons';
 import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n';
 import { formatDistance } from '../utils/routeDirections';
@@ -27,6 +29,9 @@ export default function BookingsScreen({ navigation }) {
   const { user, ride, gps, connected, request, rideAction, bookingsVersion } = useApp();
   const { t } = useI18n();
   const [bookings, setBookings] = useState([]), [loading, setLoading] = useState(true), [error, setError] = useState(null);
+  // Whether the list has loaded once (or failed to); until then it shows a
+  // skeleton, and never again during the reloads every RELOAD_MS.
+  const [loaded, setLoaded] = useState(false);
   const [taking, setTaking] = useState(null), [focused, setFocused] = useState(false);
   const active = ride && ACTIVE_STATUSES.includes(ride.status) && ride.status !== 'searching';
   const fresh = gps.status === 'ready' && isFreshFix(gps.fix, Date.now());
@@ -36,7 +41,7 @@ export default function BookingsScreen({ navigation }) {
     setLoading(true);
     try { setBookings((await request('/driver/bookings')).bookings); setError(null); }
     catch (failure) { setError(failure.message); }
-    finally { setLoading(false); }
+    finally { setLoading(false); setLoaded(true); }
   }, [request]);
   useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
   useEffect(() => {
@@ -68,7 +73,7 @@ export default function BookingsScreen({ navigation }) {
   return <Screen>
     <AppHeader title={t('bookings.title')} subtitle={ready && !loading ? t('bookings.count', { count: bookings.length }) : null} />
     <KeyboardAwareScrollView style={styles.flex} contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={ready && loading} onRefresh={ready ? reload : undefined} enabled={ready} colors={[COLORS.brand]} />}>
+      refreshControl={<RefreshControl refreshing={ready && loading && loaded} onRefresh={ready ? reload : undefined} enabled={ready} colors={[COLORS.brand]} />}>
       <ConnectionBanner />
       {blocked ? <View style={styles.blocked}>
         <EmptyState icon={blocked.icon} title={blocked.title} message={blocked.message} />
@@ -78,7 +83,8 @@ export default function BookingsScreen({ navigation }) {
           <Text style={[TYPE.body, styles.errorText]}>{error}</Text>
           <Button label={t('common.retry')} variant="brand" size="md" onPress={reload} />
         </View>
-        : !loading && bookings.length === 0 ? <EmptyState icon="clipboard-text-search-outline" title={t('bookings.emptyTitle')} message={t('bookings.emptyMessage')} />
+        : <SkeletonSwap loading={!loaded} skeleton={<BookingCardsSkeleton />}>
+        {bookings.length === 0 ? <EmptyState icon="clipboard-text-search-outline" title={t('bookings.emptyTitle')} message={t('bookings.emptyMessage')} />
         : bookings.map((booking) => <Pressable key={booking.id} onPress={() => open(booking)} accessibilityRole="button" accessibilityHint={t('bookings.openA11y')}
           style={({ pressed }) => pressed && styles.pressed}><Card style={styles.card}>
           <View style={styles.row}>
@@ -105,6 +111,7 @@ export default function BookingsScreen({ navigation }) {
               disabled={Boolean(taking) || !connected} onPress={() => take(booking)} />
           </View>
         </Card></Pressable>)}
+        </SkeletonSwap>}
     </KeyboardAwareScrollView>
     <BottomNav active="bookings" navigation={navigation} />
   </Screen>;

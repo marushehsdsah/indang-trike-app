@@ -7,6 +7,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import IconButton from './ui/IconButton';
 import { Chip } from './ui/Surfaces';
 import UserAvatar from './UserAvatar';
+import { SkeletonSwap } from './ui/Skeleton';
+import { ChatBubblesSkeleton } from './LoadingSkeletons';
 import { useApp } from '../context/AppContext';
 import { useI18n } from '../i18n';
 import useKeyboardHeight from '../hooks/useKeyboardHeight';
@@ -89,6 +91,9 @@ export default function ChatSheet({ ride, person, asDriver, onClose }) {
 
   const open = canChat(ride.status), name = userName(person);
   const messages = chat.rideId === ride.id ? chat.messages : [];
+  // Until this trip's messages have loaded, "No messages yet" would not be
+  // true yet: bubbles of a skeleton stand in. A failed load shows its error.
+  const waiting = !(chat.rideId === ride.id && chat.loaded) && !error && !messages.length;
   const lastMine = [...messages].reverse().find((message) => message.senderId === user.id);
   const send = (content) => { setError(null); sendChat(ride.id, content); };
   const submit = () => {
@@ -129,6 +134,7 @@ export default function ChatSheet({ ride, person, asDriver, onClose }) {
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
           onLayout={() => listRef.current?.scrollToEnd({ animated: false })}>
           <Text style={[TYPE.caption, styles.centered]}>{t('chat.privacy', { name: person.firstName || name })}</Text>
+          <SkeletonSwap loading={waiting} skeleton={<ChatBubblesSkeleton />} style={styles.messages}>
           {!messages.length && <Text style={[TYPE.bodyMuted, styles.centered]}>{t(open ? 'chat.empty' : 'chat.emptyClosed')}</Text>}
           {messages.map((message) => {
             const mine = message.senderId === user.id, state = messageState(message);
@@ -136,6 +142,7 @@ export default function ChatSheet({ ride, person, asDriver, onClose }) {
               showState={mine && (message === lastMine || (state !== 'sent' && state !== 'seen'))}
               onRetry={() => retryChat(ride.id, message.clientId)} />;
           })}
+          </SkeletonSwap>
         </ScrollView>
 
         {error && <Text style={[TYPE.caption, styles.error]}>{error}</Text>}
@@ -183,6 +190,8 @@ const styles = StyleSheet.create({
   headerText: { flex: 1 },
   list: { flex: 1 },
   listContent: { padding: SPACE.lg, gap: SPACE.md },
+  // The messages keep their spacing inside the skeleton's fade-in wrapper.
+  messages: { gap: SPACE.md },
   centered: { textAlign: 'center' },
   row: { maxWidth: '82%' },
   rowMine: { alignSelf: 'flex-end', alignItems: 'flex-end' },

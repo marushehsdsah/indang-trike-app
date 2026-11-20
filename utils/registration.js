@@ -1,4 +1,5 @@
 const { containsProfanity } = require('./profanity');
+const { DOCUMENT_MISSING, missingDocument } = require('./driverDocuments');
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Names allow letters (including Ñ and accented letters) and spaces only.
@@ -40,6 +41,8 @@ function validateRegistration(form) {
   if (form.role === 'driver' && (!form.plate?.trim() || !form.toda?.trim() || !Number.isInteger(form.capacity) || form.capacity < 1 || form.capacity > 4)) {
     return 'Enter your plate, TODA, and capacity (1–4).';
   }
+  // A driver adds a photo of each document for the admin who approves them.
+  if (form.role === 'driver' && missingDocument(form.documents)) return DOCUMENT_MISSING[missingDocument(form.documents)];
 
   return null;
 }
@@ -110,11 +113,15 @@ function requestRegistrationCode(form, options) {
   return postRegistration('/api/register/code', form, {}, options);
 }
 
-// Step two: the same form with the emailed code creates the account.
+// Step two: the same form with the emailed code creates the account. A
+// driver's document photos are large, so the code is checked first and the
+// photos go only with a code that works, once.
 async function submitRegistration(form, options) {
   const code = String(form.code ?? '').replace(/\s/g, '');
   if (!/^\d{6}$/.test(code)) throw new Error('Enter the 6-digit code from your email.');
-  return postRegistration('/api/register', form, { code }, options);
+  if (form.role !== 'driver') return postRegistration('/api/register', form, { code }, options);
+  await postRegistration('/api/register/verify', form, { code }, options);
+  return postRegistration('/api/register', form, { code, documents: form.documents }, options);
 }
 
 module.exports = {

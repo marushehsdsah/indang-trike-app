@@ -5,12 +5,16 @@ import { readSessionCache, updateSessionCache } from '../services/sessionCache';
 import { trimHistory } from '../utils/offlineSession';
 
 // History and totals from the server, falling back to the copy saved on the
-// phone (fromCache) when the server cannot be reached.
+// phone (fromCache) when the server cannot be reached. loaded: there is
+// something to show (the saved copy, or the server's answer or error); until
+// then the screens show skeletons, and never again after, even while a later
+// reload runs.
 export default function useAccountHistory() {
   const { request, ride, user } = useApp();
   const [saved] = useState(() => { const cache = readSessionCache(); return cache?.user?.id === user?.id ? cache : null; });
   const [rides, setRides] = useState(saved?.history || []), [stats, setStats] = useState(saved?.stats || null);
   const [loading, setLoading] = useState(true), [error, setError] = useState(null), [fromCache, setFromCache] = useState(Boolean(saved?.history));
+  const [loaded, setLoaded] = useState(Boolean(saved?.history));
   const userId = user?.id;
   const reload = useCallback(async () => {
     setLoading(true);
@@ -23,8 +27,8 @@ export default function useAccountHistory() {
       if (cache?.user?.id === userId && cache.history) { setRides(cache.history); setStats(cache.stats || null); setFromCache(true); setError(null); }
       else setError(failure.message);
     }
-    finally { setLoading(false); }
+    finally { setLoading(false); setLoaded(true); }
   }, [request, userId]);
   useFocusEffect(useCallback(() => { reload(); }, [reload, ride?.status]));
-  return { rides, stats, loading, error, fromCache, reload };
+  return { rides, stats, loading, loaded, error, fromCache, reload };
 }

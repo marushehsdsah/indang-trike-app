@@ -1,6 +1,6 @@
 const { randomBytes, randomInt, createHash } = require('node:crypto');
 const bcrypt = require('bcryptjs');
-const { HttpError, requireValue, normalizePhilippinePhone, profileFields, publicUser } = require('./policy');
+const { HttpError, requireValue, cleanText, normalizePhilippinePhone, profileFields, publicUser, documentImages } = require('./policy');
 const { suspensionOf, suspensionMessage } = require('../utils/reports');
 const { maskEmail } = require('../utils/maskEmail');
 const { usesEmail } = require('../utils/roles');
@@ -14,7 +14,7 @@ const validPassword = (password) => typeof password === 'string' && password.len
 const PASSWORD_RULE = 'Password must have at least 8 characters and at most 72 bytes.';
 
 function createAuth(models, clock, { sendEmail } = {}) {
-  const { User, Session, EmailCode, ResetCode, Blocked } = models;
+  const { User, Session, EmailCode, ResetCode, Blocked, DriverDocument } = models;
   // Stores a new code in `Codes` (EmailCode or ResetCode) and emails it.
   async function issueCode(Codes, email, purpose, extra = {}) {
     requireValue(sendEmail, 503, 'Email verification is not set up on this server.');
@@ -74,16 +74,37 @@ function createAuth(models, clock, { sendEmail } = {}) {
     await issueCode(EmailCode, email, 'signup');
     return { email, message: 'We sent a 6-digit code to your email.' };
   }
+  // Checks a sign-up code without using it up, so the app sends a driver's
+  // document photos only once the code is right. A right code gives its try
+  // back, leaving the sign-up that follows one to check it with.
+  async function verifySignupCode(body) {
+    const entry = await checkCode(EmailCode, cleanText(body.email, 254).toLowerCase(), body.code);
+    await EmailCode.updateOne({ _id: entry._id }, { $inc: { attempts: -1 } });
+    return { ok: true };
+  }
   async function register(body) {
     const { phone, role, fields } = await checkSignup(body);
+    // A driver's document photos are checked before the code, so a bad photo
+    // does not use up one of the code's tries.
+    const documents = role === 'driver' ? documentImages(body.documents) : null;
     await useCode(EmailCode, await checkCode(EmailCode, fields.email, body.code));
+    let user;
     try {
       // A new driver waits for an admin to check them against their TODA's list.
-      return publicUser(await User.create({ phone, password: await bcrypt.hash(body.password, 10), role, ...fields, ...(role === 'driver' ? { approval: 'pending' } : {}) }));
+      user = await User.create({ phone, password: await bcrypt.hash(body.password, 10), role, ...fields, ...(role === 'driver' ? { approval: 'pending' } : {}) });
     } catch (error) {
       if (error.code === 11000) throw new HttpError(409, 'Phone number already registered.');
       throw error;
     }
+    if (documents) {
+      // A driver is never left waiting for approval without their photos.
+      try { await DriverDocument.insertMany(Object.entries(documents).map(([kind, image]) => ({ userId: user._id, kind, image }))); }
+      catch (error) {
+        await Promise.all([User.deleteOne({ _id: user._id }), DriverDocument.deleteMany({ userId: user._id })]);
+        throw error;
+      }
+    }
+    return publicUser(user);
   }
   async function login(body) {
     const phone = normalizePhilippinePhone(body.phone);
@@ -156,7 +177,7 @@ function createAuth(models, clock, { sendEmail } = {}) {
       next();
     } catch (error) { next(error); }
   }
-  return { sendSignupCode, register, login, sendResetCode, checkResetCode, resetPassword, authenticate, middleware };
+  return { sendSignupCode, verifySignupCode, register, login, sendResetCode, checkResetCode, resetPassword, authenticate, middleware };
 }
 
 module.exports = { createAuth, maskEmail };

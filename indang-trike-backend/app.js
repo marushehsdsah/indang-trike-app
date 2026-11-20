@@ -45,6 +45,11 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
   // A profile picture is the one larger body (policy.js MAX_PHOTO_BYTES, in base64).
   app.use('/api/me/photo', express.json({ limit: '256kb' }));
+  // So is a driver's sign-up, with their three document photos
+  // (utils/driverDocuments.js MAX_DOCUMENT_BYTES each, in base64); only that
+  // last step of it, not the code requests before it.
+  const signupJson = express.json({ limit: '2mb' });
+  app.use('/api/register', (req, res, next) => (req.path === '/' ? signupJson(req, res, next) : next()));
   app.use(express.json({ limit: '32kb' }));
   const attempts = new Map();
   app.use(['/api/register', '/api/login', '/api/password'], (req, res, next) => {
@@ -60,6 +65,8 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   // Signing up takes two calls: the form gets an emailed code, then the form
   // with that code creates the account.
   app.post('/api/register/code', async (req, res) => res.json(await auth.sendSignupCode(req.body)));
+  // A driver's app checks the code first, then sends the form with the photos.
+  app.post('/api/register/verify', async (req, res) => res.json(await auth.verifySignupCode(req.body)));
   app.post('/api/register', async (req, res) => {
     const user = await auth.register(req.body);
     res.status(201).json({ user, message: user.pendingApproval
@@ -84,6 +91,9 @@ async function createBackend({ mongoUri = process.env.MONGO_URL || 'mongodb://12
   app.get('/api/admin/trips', async (req, res) => res.json({ trips: await admin.trips(req.adminAccess) }));
   app.get('/api/admin/approvals', async (req, res) => res.json(await admin.approvals(req.adminAccess)));
   app.get('/api/admin/drivers/:id', async (req, res) => res.json(await admin.driver(req.params.id, req.adminAccess)));
+  // A photo the driver signed up with (license, registration or franchise),
+  // for an admin who manages that driver. The admin middleware keeps it out of every cache.
+  app.get('/api/admin/drivers/:id/documents/:kind', async (req, res) => res.type('image/jpeg').send(await admin.document(req.params.id, req.params.kind, req.adminAccess)));
   app.post('/api/admin/drivers/:id/approve', async (req, res) => res.json(await admin.approve(req.params.id, req.adminAccess)));
   app.post('/api/admin/drivers/:id/decline', async (req, res) => res.json(await admin.decline(req.params.id, req.body, req.adminAccess)));
   app.post('/api/admin/drivers/:id/terminate', async (req, res) => res.json(await admin.terminate(req.params.id, req.body, req.adminAccess)));

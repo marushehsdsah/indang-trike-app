@@ -34,7 +34,9 @@ async function main() {
     async function account(phone, role, firstName, { approved = true } = {}) {
       const form = { phone, role, firstName, lastName: 'Pilot', email: `${phone}@example.com`, password: 'pilot-test-password', ...(role === 'driver' ? { plate: 'TEST-101', toda: 'Test TODA', capacity: 4 } : {}) };
       await request('/register/code', form);
-      const { user } = await request('/register', { ...form, code: emailedCodes.get(form.email) });
+      // A driver's document photos go with the last step, as the app sends them.
+      const documents = role === 'driver' ? Object.fromEntries(['license', 'registration', 'franchise'].map((kind) => [kind, `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2]).toString('base64')}`])) : undefined;
+      const { user } = await request('/register', { ...form, code: emailedCodes.get(form.email), documents });
       if (role === 'driver' && approved) await backend.models.User.updateOne({ _id: user.id }, { $set: { approval: 'approved' } });
       return request('/login', { phone, password: 'pilot-test-password' });
     }
@@ -109,8 +111,27 @@ async function main() {
     // Accounts: every account, online or not, the staff included (the
     // superadmin and the TODA's admin, neither with the app open).
     await page.locator('#person-details [aria-label="Close user details"]').click();
+    // The live view's data arrived with the login: no skeleton is left.
+    assert.equal(await page.locator('#people-skeleton').isHidden(), true);
+    const shimmering = (id) => page.locator(id).evaluate((node) => node.closest('.metrics').classList.contains('loading'));
+    assert.equal(await shimmering('#count-online'), false);
+    // Until the accounts arrive, a skeleton stands in for the list and its
+    // numbers (seen after 0.3 s), never "No accounts yet".
+    let releaseAccounts;
+    const accountsHeld = new Promise((resolve) => { releaseAccounts = resolve; });
+    await page.route('**/api/admin/accounts', async (route) => { await accountsHeld; await route.continue(); });
     await page.locator('.view-tab[data-view=accounts]').click();
+    await page.locator('#accounts-skeleton').waitFor({ state: 'visible' });
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('#accounts-skeleton')).opacity === '1');
+    assert.deepEqual([await page.locator('#accounts-skeleton .skeleton-row').count(), await page.locator('#accounts-skeleton').getAttribute('role')], [6, 'status']);
+    assert.equal(await page.locator('#accounts-empty').isHidden(), true);
+    assert.equal(await shimmering('#account-count-all'), true);
+    releaseAccounts();
     await page.waitForFunction(() => document.querySelector('#account-count-all').textContent === '5');
+    // Only once the held request went through (removing it earlier would release it twice).
+    await page.unroute('**/api/admin/accounts');
+    assert.equal(await page.locator('#accounts-skeleton').isHidden(), true);
+    assert.equal(await shimmering('#account-count-all'), false);
     assert.equal(await page.locator('#map').isVisible(), false);
     assert.equal(await page.locator('#account-count-online').textContent(), '3');
     assert.equal(await page.locator('#account-count-offline').textContent(), '2');

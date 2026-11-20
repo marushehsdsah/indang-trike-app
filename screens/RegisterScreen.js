@@ -11,6 +11,7 @@ import Button from '../components/ui/Button';
 import Field from '../components/ui/Field';
 import KeyboardAwareScrollView from '../components/ui/KeyboardAwareScrollView';
 import TodaPicker from '../components/TodaPicker';
+import DocumentPhotos from '../components/DocumentPhotos';
 import { SegmentedControl } from '../components/ui/Surfaces';
 import { COLORS, RADIUS, SPACE, TYPE } from '../theme';
 import { useI18n } from '../i18n';
@@ -39,6 +40,8 @@ export default function RegisterScreen({ navigation }) {
   const [plate, setPlate] = useState('');
   const [toda, setToda] = useState('');
   const [capacity, setCapacity] = useState('4');
+  // A driver's document photos: kind -> { uri, data } (components/DocumentPhotos.js).
+  const [documents, setDocuments] = useState({});
   // After the form is sent, the email the code went to; the screen then asks
   // for the code. resendAt is when another code may be asked for.
   const [codeSentTo, setCodeSentTo] = useState(null);
@@ -57,6 +60,8 @@ export default function RegisterScreen({ navigation }) {
   const form = {
     firstName, lastName, email, phone, password, confirmPassword, acceptedTerms: isChecked,
     role, plate, toda, capacity: Number(capacity),
+    // Each photo as the JPEG data URL that is sent.
+    documents: Object.fromEntries(Object.entries(documents).filter(([, photo]) => photo).map(([kind, photo]) => [kind, photo.data])),
   };
 
   const sendCode = async () => {
@@ -211,6 +216,8 @@ export default function RegisterScreen({ navigation }) {
           <Field label={t('field.plate')} placeholder={t('field.platePlaceholder')} value={plate} onChangeText={setPlate} autoCapitalize="characters" maxLength={24} />
           <TodaPicker value={toda} onChange={setToda} />
           <Field label={t('field.capacity')} value={capacity} onChangeText={setCapacity} keyboardType="number-pad" maxLength={1} />
+          <DocumentPhotos documents={documents} disabled={isSubmitting}
+            onChange={(kind, photo) => setDocuments((current) => ({ ...current, [kind]: photo }))} />
         </>}
 
         <Field

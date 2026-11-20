@@ -41,6 +41,49 @@ function storeToken(value) { token = value; try { value ? sessionStorage.setItem
 function showAdminName(user) { $('admin-name').textContent = [user?.firstName, user?.lastName].map(part => (part || '').trim()).filter(Boolean).join(' '); }
 function showError(id, message) { $(id).textContent = message; $(id).hidden = !message; }
 
+// Skeleton loading (styles.css .skeleton): grey shapes stand in for a view's
+// data until its first load arrives, never for data already shown, and never
+// after a load failed (the error shows instead).
+function bone(className = '', width = '') {
+  const node = document.createElement('span'); node.className = `bone${className ? ` ${className}` : ''}`;
+  if (width) node.style.width = width;
+  return node;
+}
+// Rows of shapes for a list's skeleton, with an avatar for lists of people.
+function fillSkeleton(id, rows, avatar) {
+  $(id).replaceChildren(...Array.from({ length: rows }, (_, index) => {
+    const row = document.createElement('div'), lines = document.createElement('div');
+    row.className = 'skeleton-row'; lines.className = 'skeleton-lines';
+    lines.append(bone('', `${[55, 42, 61, 48, 37, 52][index % 6]}%`), bone('thin', `${[34, 27, 40, 30, 24, 36][index % 6]}%`));
+    if (avatar) row.append(bone('avatar-bone'));
+    row.append(lines, bone('pill'));
+    return row;
+  }));
+}
+// Shows the skeleton `id` while `loading`; true when data has just replaced
+// it, so the data fades in.
+function showSkeleton(id, loading) {
+  const skeleton = $(id), replaced = !skeleton.hidden && !loading;
+  skeleton.hidden = !loading;
+  return replaced;
+}
+// A summary's numbers shimmer while `loading`; returns them, to fade in.
+function loadingMetrics(firstId, loading) {
+  const metrics = $(firstId).closest('.metrics');
+  metrics.classList.toggle('loading', loading);
+  return [...metrics.querySelectorAll('strong')];
+}
+// Fades nodes in once (styles.css .fade-in).
+function fadeIn(...nodes) {
+  for (const node of nodes) {
+    node.classList.remove('fade-in'); void node.offsetWidth; node.classList.add('fade-in');
+    node.addEventListener('animationend', function done(event) {
+      if (event.target !== node) return;
+      node.classList.remove('fade-in'); node.removeEventListener('animationend', done);
+    });
+  }
+}
+
 async function request(path, { auth = token, body, signal } = {}) {
   let response;
   try {
@@ -196,7 +239,10 @@ function render() {
   });
   list.replaceChildren(...nodes);
   if (focused) nodes.find(node => node.dataset.userId === focused)?.focus({ preventScroll: true });
-  $('empty').hidden = users.length > 0;
+  // Until the first update: skeletons, not "No one online yet".
+  const loading = !snapshot && $('connection-error').hidden, numbers = loadingMetrics('count-online', loading);
+  if (showSkeleton('people-skeleton', loading)) fadeIn(list, ...numbers);
+  $('empty').hidden = users.length > 0 || loading;
   $('empty').querySelector('h3').textContent = snapshot?.users.length ? 'No matching people' : 'No one online yet';
   $('empty').querySelector('p').textContent = snapshot?.users.length ? 'Try another name or account type.' : 'Connected drivers and passengers will appear here when they open the app.';
   const routes = visibleRoutes(users);
@@ -438,7 +484,9 @@ function renderAccounts() {
   if (focused) $('account-rows').querySelector(`[data-account-key="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
   $('accounts-table').hidden = !shown.length;
   const failed = !accounts && !$('accounts-error').hidden, empty = $('accounts-empty');
-  empty.hidden = shown.length > 0;
+  const loading = !accounts && !failed, numbers = loadingMetrics('account-count-all', loading);
+  if (showSkeleton('accounts-skeleton', loading)) fadeIn($('accounts-table'), empty, ...numbers);
+  empty.hidden = shown.length > 0 || loading;
   empty.querySelector('h3').textContent = failed ? 'Accounts unavailable' : !accounts ? 'Loading accounts' : list.length ? 'No matching accounts' : 'No accounts yet';
   empty.querySelector('p').textContent = failed ? 'Use Refresh now to try again.' : !accounts ? 'Getting every driver and passenger account.' : list.length ? 'Try another name, number, type or status.' : 'Drivers and passengers appear here once they sign up in the app.';
   $('accounts-footnote').textContent = accounts && accountsTotal > list.length
@@ -476,7 +524,20 @@ const shortDate = date => date.toLocaleDateString([], { month: 'short', day: 'nu
 
 function renderProfile(account) {
   const profile = $('history-profile'), failed = !account && !$('history-error').hidden;
-  if (!account) { profile.replaceChildren(text('h1', failed ? 'Account unavailable' : 'Loading account…')); return; }
+  if (failed) { delete profile.dataset.loading; profile.replaceChildren(text('h1', 'Account unavailable')); return; }
+  if (!account) {
+    // A skeleton of the profile, built once so its timing is not restarted
+    // by every redraw; the heading stays for screen readers.
+    if (profile.dataset.loading) return;
+    const lines = document.createElement('div'), skeleton = document.createElement('div');
+    lines.className = 'skeleton-lines'; skeleton.className = 'skeleton profile-skeleton';
+    lines.append(text('h1', 'Loading account…', 'search-label'), bone('thin', '30%'), bone('title'), bone('thin', '85%'));
+    skeleton.append(bone('avatar-bone large'), lines);
+    profile.replaceChildren(skeleton); profile.dataset.loading = 'true';
+    return;
+  }
+  const arrived = Boolean(profile.dataset.loading);
+  delete profile.dataset.loading;
   const kind = accountRole(account), online = isOnline(account);
   const heading = document.createElement('h1');
   heading.append(text('span', account.name, 'profile-name'), text('span', online ? 'Online' : 'Offline', `status-pill ${online ? 'online' : 'offline'}`));
@@ -503,6 +564,7 @@ function renderProfile(account) {
     if (account.approval === 'Pending') copy.append(text('p', `Check these details against ${account.toda || 'the TODA'}'s list of registered drivers. Until approved, this driver gets no bookings.`, 'muted small'));
   }
   profile.replaceChildren(text('span', initials(account.name), `avatar large ${kind}`), copy);
+  if (arrived) fadeIn(profile);
 }
 
 // What each decision on a driver asks and says. Suspend and Delete ask for
@@ -628,7 +690,10 @@ function renderHistory() {
   $('history-rows').replaceChildren(...shown.map(tripRow));
   $('history-table').hidden = !shown.length;
   const failed = !loaded && !$('history-error').hidden, empty = $('history-empty');
-  empty.hidden = shown.length > 0;
+  // Also while another period loads: none of its trips are on screen yet.
+  const loading = !loaded && !failed, numbers = loadingMetrics('history-count-total', loading);
+  if (showSkeleton('history-skeleton', loading)) fadeIn($('history-table'), empty, ...numbers);
+  empty.hidden = shown.length > 0 || loading;
   empty.querySelector('h3').textContent = failed ? 'Trip history unavailable' : !loaded ? 'Loading trips' : trips.length ? `No ${historyFilter} trips${within}` : historyDays ? `No trips${within}` : 'No trips yet';
   empty.querySelector('p').textContent = failed ? 'Use Refresh now to try again.' : !loaded ? `Getting every trip this account booked or drove${within}.` : trips.length ? 'Try another status.'
     : historyDays ? 'Choose All time to see older trips.' : driver ? 'Trips appear here once this driver accepts a request.' : 'Trips appear here once this passenger books a ride.';
@@ -789,7 +854,9 @@ function renderReports() {
   $('report-rows').replaceChildren(...shown.map(reportRow));
   $('reports-table').hidden = !shown.length;
   const failed = !reports && !$('reports-error').hidden, empty = $('reports-empty');
-  empty.hidden = shown.length > 0;
+  const loading = !reports && !failed, numbers = loadingMetrics('report-count-pending', loading);
+  if (showSkeleton('reports-skeleton', loading)) fadeIn($('reports-table'), empty, ...numbers);
+  empty.hidden = shown.length > 0 || loading;
   empty.querySelector('h3').textContent = failed ? 'Reports unavailable' : !reports ? 'Loading reports' : reportFilter === 'pending' ? 'No reports waiting' : list.length ? 'No reports here' : 'No reports yet';
   empty.querySelector('p').textContent = failed ? 'Use Refresh now to try again.' : !reports ? "Getting drivers' reports about passengers." : reportFilter === 'pending' ? 'New reports from drivers appear here for review.' : 'Try another filter.';
 }
@@ -1070,6 +1137,8 @@ setInterval(() => { if (snapshot && !document.hidden) {
   if (now() - snapshot.serverTime > 10000) { connected = false; showError('connection-error', 'Updates are delayed. Displayed positions are last known while we reconnect.'); }
   render();
 } }, 1000);
+fillSkeleton('people-skeleton', 6, true); fillSkeleton('accounts-skeleton', 6, true);
+fillSkeleton('reports-skeleton', 4, false); fillSkeleton('history-skeleton', 5, false);
 try { token = sessionStorage.getItem(tokenKey) || ''; } catch {}
 if (token) {
   $('login').hidden = true; $('dashboard').hidden = false; refresh(); loadReports();

@@ -25,7 +25,9 @@ below).
   drivers; a Suspended filter lists the drivers an admin cut off. Until
   approved, a driver can't go online or get bookings.
 - **Driver Review** — opened from Account Approval or a driver in
-  Accounts: the driver's sign-up details and the decisions open to them
+  Accounts: the driver's sign-up details, the photos they signed up with
+  (driver's license, registration OR/CR, franchise MTOP; tap one to see
+  it full screen and zoom in), and the decisions open to them
   (Approve or Decline for a pending driver; Suspend or Delete for an
   approved one; Unblock for a suspended one). Declining removes the
   registration, so a driver who typed a detail wrong can sign up again
@@ -39,7 +41,9 @@ below).
 Inside the IndangGO app, Dashboard, Accounts, Trips and Account Approval
 load real data from the API (`GET /api/admin/dashboard`, `/accounts`,
 `/trips`, `/approvals`, `/drivers/<id>`), pulling down refreshes them,
-and a driver's review sends the admin's decision (`POST
+a driver's review loads each photo from `GET
+/api/admin/drivers/<id>/documents/<license|registration|franchise>`
+(admins only, never cached), and sends the admin's decision (`POST
 /api/admin/drivers/<id>/approve`, `/decline`, `/terminate` (Suspend), `/delete`,
 `/unblock`). A superadmin sees every account and trip; Accounts lists the
 staff accounts too (superadmins, and each TODA's admins with their TODA),
@@ -145,7 +149,9 @@ src/
     TopHeader.js            <- shared top bar (hamburger menu + title + avatar -> Profile)
     BottomNav.js             <- shared bottom tab bar
     StatusBadge.js            <- colored status/role pill used everywhere
-    LoadState.js              <- spinner / error + Retry while a screen's data loads
+    LoadState.js              <- error + Retry when a screen's first load fails
+    Skeleton.js               <- shimmering grey shapes while a screen's first load runs
+    DriverDocuments.js        <- a driver's license/registration/franchise photos + full-screen viewer
   theme/
     colors.js                 <- ALL colors live here — edit this to re-skin
   data/

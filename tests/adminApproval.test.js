@@ -1,14 +1,18 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadSource, flush, React, renderer } = require('./helpers/reactHarness');
+const { createMotion } = require('./helpers/motionMock');
 
 // The admin interface (IndangGoAdmin) with React Native's components drawn as
 // plain elements: the hamburger menu, Account Approval and Driver Review.
 const alerts = [];
 const host = (name) => name;
+const motion = createMotion(React);
 const reactNative = {
   View: host('View'), Text: host('Text'), TextInput: host('TextInput'), TouchableOpacity: host('TouchableOpacity'), Pressable: host('Pressable'),
-  ScrollView: host('ScrollView'), ActivityIndicator: host('ActivityIndicator'), RefreshControl: host('RefreshControl'),
+  ScrollView: host('ScrollView'), ActivityIndicator: host('ActivityIndicator'), RefreshControl: host('RefreshControl'), Image: host('Image'),
+  Animated: motion.Animated, Easing: motion.Easing, AccessibilityInfo: motion.AccessibilityInfo,
+  useWindowDimensions: () => ({ width: 400, height: 800 }),
   Modal: ({ visible, children }) => (visible ? React.createElement('Modal', null, children) : null),
   FlatList: ({ data, renderItem, keyExtractor, ListEmptyComponent }) => React.createElement('FlatList', null, data.length
     ? data.map((item, index) => React.createElement(React.Fragment, { key: keyExtractor(item) }, renderItem({ item, index })))
@@ -28,19 +32,23 @@ const routing = {
 const refocus = () => renderer.act(async () => { for (const effect of focusEffects) effect(); });
 
 const mocks = { react: React, 'react-native': reactNative, '@expo/vector-icons': { Ionicons: host('Ionicons') }, '@react-navigation/native': routing,
-  'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 24, bottom: 0, left: 0, right: 0 }) } };
+  'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 24, bottom: 0, left: 0, right: 0 }) },
+  'expo-linear-gradient': { LinearGradient: motion.LinearGradient } };
 const admin = (file, extra = {}) => loadSource(`IndangGoAdmin/src/${file}`, { ...mocks, ...extra });
 mocks['../theme/colors'] = admin('theme/colors.js');
 mocks['./data/mockData'] = admin('data/mockData.js');
 mocks['./session'] = mocks['../session'] = admin('session.js');
 mocks['../useAdminData'] = admin('useAdminData.js');
 mocks['../formatDate'] = admin('formatDate.js');
-for (const name of ['StatusBadge', 'LoadState', 'TopHeader']) mocks[`../components/${name}`] = admin(`components/${name}.js`);
+mocks['./Skeleton'] = mocks['../components/Skeleton'] = admin('components/Skeleton.js');
+for (const name of ['StatusBadge', 'LoadState', 'TopHeader', 'DriverDocuments']) mocks[`../components/${name}`] = admin(`components/${name}.js`);
 const TopHeader = mocks['../components/TopHeader'].default;
 const { AdminSession } = mocks['../session'];
 
 const textOf = (node) => (typeof node === 'string' ? node : (node.children || []).map(textOf).join(''));
 const texts = (root) => root.findAll((node) => node.type === 'Text').map(textOf);
+// The skeletons on screen (components/Skeleton.js).
+const progressbars = (root) => root.findAll((node) => node.type === 'View' && node.props.accessibilityRole === 'progressbar');
 // The button labelled `label`: by its accessibility label, or by all of its text.
 const pressable = (root, label) => root.find((node) => typeof node.props.onPress === 'function' && typeof node.type === 'string' && node.type !== 'Text'
   && (node.props.accessibilityLabel === label || texts(node).join('') === label));
@@ -214,6 +222,136 @@ test('Driver Review approves or declines a pending driver, suspends an approved 
   assert.equal(alerts.at(-1)[0], 'Driver unblocked');
 });
 
+test('Driver Review shows the photos of the driver\'s license, registration and franchise, and opens each full screen', async () => {
+  const DriverReviewScreen = admin('screens/DriverReviewScreen.js').default;
+  const screen = (session) => withSession(session, React.createElement(DriverReviewScreen, { navigation, route: { params: { key: 'd1' } } }));
+  reset({ name: 'DriverReview', params: { key: 'd1' } });
+  const at = '2026-10-22T02:00:00.000Z';
+  const documents = [{ kind: 'license', label: 'Driver’s license', uploadedAt: at }, { kind: 'registration', label: 'Registration (OR/CR)', uploadedAt: at },
+    { kind: 'franchise', label: 'Franchise (MTOP)', uploadedAt: at }];
+  const address = (kind) => `https://api.test/api/admin/drivers/d1/documents/${kind}`;
+  // Each photo loads with the admin's token, as the app's session gives it.
+  const imageSource = (path) => ({ uri: `https://api.test/api/admin/${path}`, headers: { Authorization: 'Bearer admin-token' } });
+  const server = api({ 'drivers/d1': { driver: { ...pending, documents } } });
+  const tree = await render(screen({ ...server.session, imageSource }));
+  const shown = texts(tree.root);
+  for (const text of ['Documents', 'Driver’s license', 'Registration (OR/CR)', 'Franchise (MTOP)']) assert.ok(shown.includes(text), text);
+  const images = (root = tree.root) => root.findAll((node) => node.type === 'Image').map((node) => node.props.source);
+  assert.deepEqual(images().map((source) => source.uri), ['license', 'registration', 'franchise'].map(address));
+  assert.equal(images()[0].headers.Authorization, 'Bearer admin-token');
+  assert.equal(tree.root.findAll((node) => node.type === 'Modal').length, 0);
+
+  // Each tile shimmers until its photo has downloaded.
+  const shimmering = () => progressbars(tree.root).length;
+  assert.equal(shimmering(), 3);
+  await renderer.act(async () => tree.root.findAll((node) => node.type === 'Image')[0].props.onLoad());
+  assert.equal(shimmering(), 2, 'the license arrived');
+  for (const image of tree.root.findAll((node) => node.type === 'Image').slice(1)) await renderer.act(async () => image.props.onLoad());
+  assert.equal(shimmering(), 0);
+
+  // Tapping a photo opens it full screen; Zoom draws it larger, in its own shape.
+  await press(tree.root, 'Open Franchise (MTOP)');
+  let viewer = tree.root.find((node) => node.type === 'Modal');
+  assert.ok(texts(viewer).includes('Franchise (MTOP)'));
+  const fitted = viewer.find((node) => node.type === 'Image');
+  assert.deepEqual([fitted.props.source.uri, fitted.props.resizeMode], [address('franchise'), 'contain']);
+  await renderer.act(async () => fitted.props.onLoad({ nativeEvent: { source: { width: 2000, height: 1000 } } }));
+  await press(viewer, 'Zoom in');
+  viewer = tree.root.find((node) => node.type === 'Modal');
+  assert.deepEqual(viewer.find((node) => node.type === 'Image').props.style, { width: 1000, height: 500 }, '2.5 times the screen width');
+  await press(viewer, 'Fit to screen');
+  await press(tree.root, 'Close');
+  assert.equal(tree.root.findAll((node) => node.type === 'Modal').length, 0);
+
+  // A photo that did not load says so, and tapping it tries again.
+  await renderer.act(async () => tree.root.findAll((node) => node.type === 'Image')[0].props.onError());
+  assert.ok(texts(tree.root).includes('Couldn’t load. Tap to retry'));
+  assert.equal(images().length, 2);
+  await press(tree.root, 'Retry Driver’s license');
+  assert.equal(images().length, 3);
+  assert.equal(shimmering(), 1, 'it shimmers again while it downloads again');
+
+  // A driver who signed up before photos were asked for has none to show.
+  const legacy = api({ 'drivers/d1': { driver: { ...pending, documents: documents.map((document) => ({ ...document, uploadedAt: null })) } } });
+  const old = await render(screen({ ...legacy.session, imageSource }));
+  assert.ok(texts(old.root).includes('No document photos on file. This driver signed up before photos were required.'));
+  assert.equal(images(old.root).length, 0);
+  // Nor does a driver from a server without document photos, or the mock data.
+  const before = await render(screen(api({ 'drivers/d1': { driver: pending } }).session));
+  assert.ok(!texts(before.root).includes('Documents'));
+});
+
+test('each admin screen shows a shimmering skeleton while its first load runs, then its data or the error, and never on a later reload', async () => {
+  reset();
+  // Every load waits until the test answers it.
+  const loads = [];
+  const session = { admin: { name: 'Pilot Admin', adminId: '09170000001', role: 'Administrator' }, signOut: async () => {}, act: async () => ({}), imageSource: () => null,
+    load: (name) => new Promise((resolve, reject) => loads.push({ name, resolve, reject })) };
+  const answer = (value) => renderer.act(async () => { loads.shift().resolve(value); });
+  const AccountsScreen = admin('screens/AccountsScreen.js').default;
+  const before = motion.animations.length;
+  const tree = await render(withSession(session, React.createElement(AccountsScreen)));
+  const [skeleton] = progressbars(tree.root);
+  assert.equal(skeleton.props.accessibilityLabel, 'Loading', 'screen readers hear one "Loading"');
+  assert.ok(!texts(tree.root).includes('Retry'));
+  // It stays unseen for 0.3 s, so a quick load never flashes it, then fades in.
+  const added = motion.animations.slice(before);
+  assert.ok(added.some(({ kind, config }) => kind === 'timing' && config.delay === 300 && config.duration === 150 && config.useNativeDriver));
+  // The light sweeps across each shape once it has a width, on the native side, in a loop.
+  assert.ok(added.some(({ kind, started }) => kind === 'loop' && started));
+  assert.equal(tree.root.findAll((node) => node.type === 'LinearGradient').length, 0);
+  await renderer.act(async () => skeleton.findAll((node) => typeof node.props.onLayout === 'function')[0].props.onLayout({ nativeEvent: { layout: { width: 200 } } }));
+  assert.equal(tree.root.findAll((node) => node.type === 'LinearGradient').length, 1);
+
+  // A load that took longer than 0.3 s: the skeleton was seen, so the list fades in.
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  const shown = motion.animations.length;
+  await answer({ accounts: [pending] });
+  assert.equal(progressbars(tree.root).length, 0);
+  assert.ok(texts(tree.root).includes('Dante Reyes'));
+  assert.ok(motion.animations.slice(shown).some(({ kind, config }) => kind === 'timing' && config.delay === 0 && config.duration === 200));
+  assert.equal(tree.root.find((node) => node.type === 'FlatList').parent.parent.props.style[0].flex, 1, 'the list keeps the screen height while it fades in');
+  // Coming back to the screen reloads it behind the list already shown.
+  await refocus();
+  assert.equal(loads.length, 1);
+  assert.equal(progressbars(tree.root).length, 0);
+  assert.ok(texts(tree.root).includes('Dante Reyes'));
+  await answer({ accounts: [pending] });
+
+  // A first load that fails shows the error and Retry, never an endless skeleton.
+  const failing = await render(withSession(session, React.createElement(AccountsScreen)));
+  await renderer.act(async () => { loads.shift().reject(new Error('Could not connect to IndangGO.')); });
+  assert.equal(progressbars(failing.root).length, 0);
+  assert.ok(texts(failing.root).includes('Could not connect to IndangGO.') && texts(failing.root).includes('Retry'));
+  await press(failing.root, 'Retry');
+  assert.equal(progressbars(failing.root).length, 1, 'retrying a first load shows the skeleton again');
+  await answer({ accounts: [] });
+  assert.ok(texts(failing.root).includes('No accounts yet.'));
+
+  // The other screens have their own skeletons.
+  for (const [file, props] of [['DashboardScreen', {}], ['TripsScreen', {}], ['AccountApprovalScreen', { navigation }], ['DriverReviewScreen', { navigation, route: { params: { key: 'd1' } } }]]) {
+    const Screen = admin(`screens/${file}.js`).default;
+    const view = await render(withSession(session, React.createElement(Screen, props)));
+    assert.equal(progressbars(view.root).length, 1, file);
+    await renderer.act(async () => { loads.splice(0).forEach(({ reject }) => reject(new Error('offline'))); });
+    assert.equal(progressbars(view.root).length, 0, `${file} shows the error instead`);
+  }
+});
+
+test('with "Remove animations" on, a skeleton keeps still', async () => {
+  const { Skeleton, Bone } = mocks['../components/Skeleton'];
+  motion.reduced = true;
+  try {
+    const before = motion.animations.length;
+    const tree = await render(React.createElement(Skeleton, null, React.createElement(Bone)));
+    await renderer.act(async () => tree.root.find((node) => typeof node.props.onLayout === 'function').props.onLayout({ nativeEvent: { layout: { width: 200 } } }));
+    assert.equal(tree.root.findAll((node) => node.type === 'LinearGradient').length, 0, 'no light sweeps');
+    // The setting is read once drawn; a loop started before the answer stops at once.
+    assert.ok(motion.animations.slice(before).filter(({ kind, started }) => kind === 'loop' && started).every(({ stopped }) => stopped), 'no loop keeps running');
+    assert.equal(progressbars(tree.root).length, 1, 'it still says it is loading');
+  } finally { motion.reduced = false; }
+});
+
 test('Accounts shows which drivers are not approved, and tapping a driver opens their review', async () => {
   reset();
   const passenger = { key: 'p1', id: '09170000902', name: 'Bea Santos', email: 'bea@example.com', role: 'PASSENGER', status: 'Offline' };
@@ -314,7 +452,8 @@ test('the app opens the admin screens as Admin of their TODA, or as Superadmin',
     '../IndangGoAdmin/src/screens/ProfileScreen': host('ProfileScreen'), '../IndangGoAdmin/src/screens/AccountApprovalScreen': host('AccountApprovalScreen'),
     '../IndangGoAdmin/src/screens/DriverReviewScreen': host('DriverReviewScreen'),
     '../IndangGoAdmin/src/theme/colors': mocks['../theme/colors'], '../IndangGoAdmin/src/session': mocks['../session'],
-    '../context/AppContext': { useApp: () => ({ user, signOut: async () => {}, request: async () => ({}) }) },
+    '../context/AppContext': { useApp: () => ({ user, signOut: async () => {}, request: async () => ({}), token: 'staff-token' }) },
+    '../services/api': { API_BASE_URL: 'https://api.test' },
   }).default;
   const cases = [
     [{ role: 'admin', toda: 'BCITODA', firstName: 'Toda', lastName: 'Officer', phone: '+639170000002' }, { name: 'Toda Officer', adminId: '09170000002', role: 'Admin', toda: 'BCITODA' }],
@@ -325,6 +464,9 @@ test('the app opens the admin screens as Admin of their TODA, or as Superadmin',
     user = account;
     const tree = await render(React.createElement(AdminNavigator));
     assert.deepEqual(seen.admin, expected);
+    // A driver's document photos load with the session's token.
+    assert.deepEqual(seen.imageSource('drivers/d1/documents/license'),
+      { uri: 'https://api.test/api/admin/drivers/d1/documents/license', headers: { Authorization: 'Bearer staff-token' } });
     await renderer.act(async () => tree.unmount());
   }
 });

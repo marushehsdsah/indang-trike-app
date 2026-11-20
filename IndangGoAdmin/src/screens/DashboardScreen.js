@@ -28,6 +28,7 @@ import StatusBadge from '../components/StatusBadge';
 import TopHeader from '../components/TopHeader';
 import LoadState, { RefreshError } from '../components/LoadState';
 import { useAdminSession } from '../session';
+import { DashboardSkeleton, SkeletonSwap } from '../components/Skeleton';
 
 export default function DashboardScreen({ onViewAllTrips }) {
   const navigation = useNavigation();
@@ -46,7 +47,9 @@ export default function DashboardScreen({ onViewAllTrips }) {
         <Text style={[styles.heading, Boolean(admin.toda) && styles.headingWithScope]}>Dashboard</Text>
         {admin.toda ? <Text style={styles.scope}>{admin.toda} drivers</Text> : null}
 
-        {!data ? <LoadState loading={loading} error={error} onRetry={reload} /> : <>
+        {/* The skeleton while the first load runs; then the data, or the error. */}
+        <SkeletonSwap loading={!data && loading} skeleton={<DashboardSkeleton />}>
+        {!data ? <LoadState error={error} onRetry={reload} /> : <>
         {error && <RefreshError message={error} />}
 
         {/* ---- Quick stat summary cards ---- */}
@@ -116,6 +119,7 @@ export default function DashboardScreen({ onViewAllTrips }) {
           ))}
         </View>
         </>}
+        </SkeletonSwap>
       </ScrollView>
     </View>
   );

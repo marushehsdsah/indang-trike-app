@@ -34,6 +34,7 @@ const colors = {
   textSecondary: '#6B7280',     // secondary / muted text
   textOnDark: '#FFFFFF',        // text placed on dark/green surfaces
   placeholder: '#9CA3AF',       // input placeholder text
+  skeleton: '#E4E8EB',          // grey shapes standing in for loading content
 
   // ---- Bottom nav ---------------------------------------------------
   navActiveBg: '#FFC229',       // active tab pill background

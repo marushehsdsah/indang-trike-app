@@ -17,7 +17,9 @@
   --ink:#20352f;
   --muted:#78857f;
   --line:#e4eae6;
-  --purple:#7552c7
+  --purple:#7552c7;
+  --bone:#e6ebe8;
+  --bone-glow:#f7f9f8
 }
 *{
   box-sizing:border-box
@@ -1496,6 +1498,122 @@ input::placeholder{
   *{
     transition:none!important;
     scroll-behavior:auto!important
+  }
+}
+/* Skeleton loading: grey shapes stand in for a view's data while its first
+   load runs, with a soft light sweeping across them (a 1 s sweep, then a
+   short pause). They appear only after 0.3 s, so a quick load never flashes
+   them, and the data that replaces them fades in (app.mjs fadeIn). Grey
+   shapes only, never made-up names or numbers. */
+.skeleton{
+  opacity:0;
+  animation:skeleton-appear .15s ease-out .3s forwards
+}
+.skeleton-row{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:14px 16px;
+  border-bottom:1px solid #f0f3f0
+}
+.skeleton-row:last-child{
+  border-bottom:0
+}
+.skeleton-lines{
+  flex:1;
+  display:grid;
+  gap:8px;
+  min-width:0
+}
+.bone{
+  display:block;
+  height:11px;
+  border-radius:6px;
+  background:linear-gradient(90deg,var(--bone) 35%,var(--bone-glow) 50%,var(--bone) 65%) var(--bone);
+  background-size:300% 100%;
+  animation:shimmer 1.4s ease-in-out infinite
+}
+.bone.thin{
+  height:8px
+}
+.bone.avatar-bone{
+  width:36px;
+  height:36px;
+  border-radius:10px;
+  flex-shrink:0
+}
+.bone.avatar-bone.large{
+  width:54px;
+  height:54px;
+  border-radius:15px
+}
+.bone.pill{
+  width:64px;
+  height:20px;
+  border-radius:999px;
+  flex-shrink:0
+}
+.bone.title{
+  height:26px;
+  width:240px;
+  max-width:100%;
+  margin:6px 0 10px
+}
+.profile-skeleton{
+  display:flex;
+  align-items:flex-start;
+  gap:16px
+}
+.profile-skeleton .skeleton-lines{
+  width:min(340px,60vw)
+}
+/* A summary's numbers, until they arrive (the "—" inside stays for screen
+   readers, unseen). */
+.metrics.loading strong{
+  align-self:flex-start;
+  width:64px;
+  border-radius:7px;
+  color:transparent;
+  background:linear-gradient(90deg,var(--bone) 35%,var(--bone-glow) 50%,var(--bone) 65%) var(--bone);
+  background-size:300% 100%;
+  opacity:0;
+  animation:skeleton-appear .15s ease-out .3s forwards,shimmer 1.4s ease-in-out .3s infinite
+}
+/* The light enters on the left and leaves on the right, then pauses. */
+@keyframes shimmer{
+  0%{
+    background-position:100% 0
+  }
+  71%,100%{
+    background-position:0 0
+  }
+}
+@keyframes skeleton-appear{
+  to{
+    opacity:1
+  }
+}
+.fade-in{
+  animation:fade-in .2s ease-out
+}
+@keyframes fade-in{
+  from{
+    opacity:0
+  }
+}
+/* Reduced motion: no sweep and no fades; a skeleton still waits 0.3 s. */
+@media(prefers-reduced-motion:reduce){
+  .bone{
+    animation:none
+  }
+  .skeleton{
+    animation-duration:0s
+  }
+  .metrics.loading strong{
+    animation:skeleton-appear 0s .3s forwards
+  }
+  .fade-in{
+    animation:none
   }
 }
 /* Reports: drivers' reports about passengers, and the admin's decision. */

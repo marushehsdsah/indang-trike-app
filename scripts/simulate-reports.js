@@ -16,6 +16,7 @@ const { randomUUID } = require('node:crypto');
 const { io } = require('socket.io-client');
 const { createBackend } = require('../indang-trike-backend/app');
 const { DEFAULT_TRIP } = require('../data/indangMap');
+const { DRIVER_DOCUMENTS } = require('../utils/driverDocuments');
 
 const PORT = Number(process.env.PORT) || 4100;
 const MONGO = process.env.SIM_MONGO_URL || 'mongodb://127.0.0.1:27017/indang_report_sim';
@@ -23,6 +24,7 @@ const MONGO = process.env.SIM_MONGO_URL || 'mongodb://127.0.0.1:27017/indang_rep
 const PASSWORD = 'simulation-only';
 const ADMIN_PHONE = '09170000001';
 const DAY = 24 * 60 * 60 * 1000;
+const PLACEHOLDER_JPEG = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0]).toString('base64')}`;
 
 // The server's clock runs `offset` behind or ahead of the real one, so past
 // offenses can be played out days ago.
@@ -45,7 +47,10 @@ async function account(phone, firstName, lastName, role = 'passenger') {
   const form = { phone, password: PASSWORD, firstName, lastName, email: `${firstName}.${lastName}@sim.indanggo.test`.toLowerCase().replaceAll(' ', ''), role,
     ...(role === 'driver' ? { plate: `SIM ${phone.slice(-3)}`, toda: 'Simulation TODA', capacity: 4 } : {}) };
   await call('/register/code', null, form);
-  await call('/register', null, { ...form, code: codes.get(form.email) });
+  // A driver signs up with a photo of each document (utils/driverDocuments.js);
+  // here a tiny placeholder JPEG stands in for each.
+  const documents = role === 'driver' ? Object.fromEntries(DRIVER_DOCUMENTS.map((kind) => [kind, PLACEHOLDER_JPEG])) : undefined;
+  await call('/register', null, { ...form, code: codes.get(form.email), documents });
   return login(phone);
 }
 async function login(phone) {

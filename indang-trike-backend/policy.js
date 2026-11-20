@@ -7,6 +7,7 @@ const { resolveBookingRoute, createBookingPayload } = require('../utils/bookingR
 const { ratingSummary } = require('../utils/rating');
 const { containsProfanity } = require('../utils/profanity');
 const { usesEmail } = require('../utils/roles');
+const { DRIVER_DOCUMENTS, DOCUMENT_LABELS, DOCUMENT_MISSING, MAX_DOCUMENT_BYTES } = require('../utils/driverDocuments');
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -44,15 +45,24 @@ const AWAITING_APPROVAL = 'Your driver account is waiting for admin approval.';
 // The profile picture's version, or null without one: the app adds it to the
 // photo's address, so a new picture is not hidden by the old one in a cache.
 const photoVersion = (user) => (user?.photoAt ? new Date(user.photoAt).getTime() : null);
+// The bytes of a JPEG the app sent as a data URL, at most maxBytes long;
+// `invalid` and `tooLarge` are the messages when it is not one or too big.
+function jpegBytes(photo, maxBytes, invalid, tooLarge) {
+  const match = typeof photo === 'string' && /^data:image\/jpeg;base64,([A-Za-z0-9+/]+=*)$/.exec(photo);
+  requireValue(match, 400, invalid);
+  const bytes = Buffer.from(match[1], 'base64');
+  requireValue(bytes.length <= maxBytes, 413, tooLarge);
+  requireValue(bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff, 400, invalid);
+  return bytes;
+}
 // A profile picture is a JPEG the app has already cut to a small square.
 const MAX_PHOTO_BYTES = 150 * 1024;
-function photoBytes(photo) {
-  const match = typeof photo === 'string' && /^data:image\/jpeg;base64,([A-Za-z0-9+/]+=*)$/.exec(photo);
-  requireValue(match, 400, 'Choose a photo for your profile picture.');
-  const bytes = Buffer.from(match[1], 'base64');
-  requireValue(bytes.length <= MAX_PHOTO_BYTES, 413, 'This photo is too large. Choose another one.');
-  requireValue(bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff, 400, 'Choose a photo for your profile picture.');
-  return bytes;
+const photoBytes = (photo) => jpegBytes(photo, MAX_PHOTO_BYTES, 'Choose a photo for your profile picture.', 'This photo is too large. Choose another one.');
+// A signing-up driver's document photos, { license, registration, franchise },
+// each a JPEG the app made small enough: their bytes, by kind.
+function documentImages(documents) {
+  return Object.fromEntries(DRIVER_DOCUMENTS.map((kind) => [kind, jpegBytes(documents?.[kind], MAX_DOCUMENT_BYTES, DOCUMENT_MISSING[kind],
+    `The photo of your ${DOCUMENT_LABELS[kind].replace(/^./, (letter) => letter.toLowerCase())} is too large. Take it again.`)]));
 }
 // A TODA saved under a former name ("ITODA PITODA") is shown by its current one.
 function publicUser(user) {
@@ -109,4 +119,4 @@ function bookingFields(body, now = Date.now(), fares = null) {
     idempotencyKey: body.idempotencyKey };
 }
 
-module.exports = { HttpError, requireValue, cleanText, profileFields, publicUser, bookingFields, normalizePhilippinePhone, awaitingApproval, AWAITING_APPROVAL, photoBytes, photoVersion, FARES_CHANGED };
+module.exports = { HttpError, requireValue, cleanText, profileFields, publicUser, bookingFields, normalizePhilippinePhone, awaitingApproval, AWAITING_APPROVAL, photoBytes, photoVersion, FARES_CHANGED, documentImages };

@@ -42,6 +42,7 @@ import StatusBadge from '../components/StatusBadge';
 import TopHeader from '../components/TopHeader';
 import LoadState, { RefreshError } from '../components/LoadState';
 import { useAdminSession } from '../session';
+import { AccountListSkeleton, SkeletonSwap } from '../components/Skeleton';
 
 // Filter chip options shown under the search bar, and the account
 // roles each one shows (none: every account).
@@ -126,7 +127,9 @@ export default function AccountsScreen() {
         {error && accounts && <RefreshError message={error} />}
 
         {/* ---- Account list ---- */}
-        {!accounts ? <LoadState loading={loading} error={error} onRetry={reload} /> : (
+        {/* The skeleton while the first load runs; then the data, or the error. */}
+        <SkeletonSwap loading={!accounts && loading} skeleton={<AccountListSkeleton />} style={styles.fill}>
+        {!accounts ? <LoadState error={error} onRetry={reload} /> : (
         <FlatList
           data={filteredAccounts}
           keyExtractor={(item) => item.key ?? item.id}
@@ -197,6 +200,7 @@ export default function AccountsScreen() {
           )}
         />
         )}
+        </SkeletonSwap>
       </View>
     </View>
   );
@@ -215,6 +219,10 @@ function statusDotColor(status) {
 }
 
 const styles = StyleSheet.create({
+  // Around the list, so it keeps the screen's height while it fades in.
+  fill: {
+    flex: 1,
+  },
   screen: {
     flex: 1,
     backgroundColor: colors.background,

@@ -11,6 +11,7 @@ const en = {
   'common.done': 'Done',
   'common.home': 'Home',
   'common.retry': 'Retry',
+  'common.loading': 'Loading…',
   'common.retryGps': 'Retry GPS',
 
   'nav.home': 'Home',
@@ -546,9 +547,20 @@ const en = {
   'register.logIn': 'Log in',
   'register.createdTitle': 'Account created',
   'register.createdMessage': 'Your account was created.',
-  'register.driverPendingMessage': 'Your driver account was created. An admin will check your details against your TODA’s list of registered drivers before you can take bookings.',
+  'register.driverPendingMessage': 'Your driver account was created. An admin will check your details and document photos against your TODA’s list of registered drivers before you can take bookings.',
   'register.continueToLogin': 'Continue to log in',
   'register.unable': 'Unable to sign up',
+  'register.documents': 'Documents',
+  'register.documentsHint': 'Add a clear photo of each one, with every name and number readable. Only IndangGO admins see them, to check you against your TODA’s records.',
+  'register.document.license': 'Driver’s license',
+  'register.document.registration': 'Registration (OR/CR)',
+  'register.document.franchise': 'Franchise (MTOP)',
+  'register.documentAdd': 'Tap to add a photo',
+  'register.documentAddFranchise': 'Tap to add a photo showing the franchise number',
+  'register.documentChange': 'Added · tap to change',
+  'register.documentRemove': 'Remove photo',
+  'register.documentFailed': 'Unable to add the photo',
+  'register.documentTooLarge': 'This photo could not be made small enough to send. Take it again.',
 };
 
 const fil = {
@@ -559,6 +571,7 @@ const fil = {
   'common.done': 'Tapos na',
   'common.home': 'Home',
   'common.retry': 'Subukan ulit',
+  'common.loading': 'Naglo-load…',
   'common.retryGps': 'Subukan ulit ang GPS',
 
   'nav.home': 'Home',
@@ -1094,9 +1107,20 @@ const fil = {
   'register.logIn': 'Mag-log in',
   'register.createdTitle': 'Nagawa na ang account',
   'register.createdMessage': 'Nagawa na ang account mo.',
-  'register.driverPendingMessage': 'Nagawa na ang driver account mo. Susuriin ng admin ang mga detalye mo sa listahan ng mga rehistradong driver ng TODA mo bago ka makakuha ng booking.',
+  'register.driverPendingMessage': 'Nagawa na ang driver account mo. Susuriin ng admin ang mga detalye at litrato ng mga dokumento mo sa listahan ng mga rehistradong driver ng TODA mo bago ka makakuha ng booking.',
   'register.continueToLogin': 'Magpatuloy sa log in',
   'register.unable': 'Hindi makapag-sign up',
+  'register.documents': 'Mga dokumento',
+  'register.documentsHint': 'Maglagay ng malinaw na litrato ng bawat isa, na nababasa ang lahat ng pangalan at numero. Ang mga admin lang ng IndangGO ang makakakita nito, para itugma ka sa listahan ng TODA mo.',
+  'register.document.license': 'Driver’s license',
+  'register.document.registration': 'Rehistro (OR/CR)',
+  'register.document.franchise': 'Prangkisa (MTOP)',
+  'register.documentAdd': 'Pindutin para maglagay ng litrato',
+  'register.documentAddFranchise': 'Pindutin para maglagay ng litratong kita ang numero ng prangkisa',
+  'register.documentChange': 'Nailagay na · pindutin para palitan',
+  'register.documentRemove': 'Alisin ang litrato',
+  'register.documentFailed': 'Hindi mailagay ang litrato',
+  'register.documentTooLarge': 'Hindi mapaliit nang sapat ang litratong ito para maipadala. Kumuha ulit.',
 };
 
 module.exports = { en, fil };

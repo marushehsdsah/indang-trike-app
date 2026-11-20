@@ -21,6 +21,8 @@ import { fareSummary } from '../i18n/messages';
 import { RatingBadge } from '../components/RatingPrompt';
 import confirmLogOut from '../components/confirmLogOut';
 import useAccountHistory from '../hooks/useAccountHistory';
+import { SkeletonSwap } from '../components/ui/Skeleton';
+import { ValueSkeleton } from '../components/LoadingSkeletons';
 import { ACTIVE_STATUSES, formatPeso, isFreshFix } from '../utils/rideState';
 import { getMunicipalityAt } from '../data/indangMap';
 import { findToda, getBarangayAt, getTodaZoneShape, todaCovers } from '../data/todaZones';
@@ -53,7 +55,7 @@ function OfferCountdown({ offerId, seconds }) {
 export default function DriverScreen({ navigation, route }) {
   const { user, ride, offer, setAvailable, rideAction, gps, connected, serverOffset, signOut, request, bookingsVersion } = useApp();
   const { t } = useI18n();
-  const { stats } = useAccountHistory();
+  const { stats, loaded } = useAccountHistory();
   const connection = useConnectionStatus();
   const gpsStatus = useGpsStatus();
   const mapRef = useRef(null);
@@ -215,9 +217,10 @@ export default function DriverScreen({ navigation, route }) {
               {pending && <Text style={[TYPE.bodyStrong, styles.pendingDetails]}>{t('plate.label', { plate: user.plate, toda: user.toda })}</Text>}
               {!active && !pending && <View style={styles.today}>
                 <Text style={[TYPE.caption, styles.todayLabel]}>{t('driver.today')}</Text>
-                <Text style={styles.todayValue}>{stats?.todayTrips ?? '—'}</Text>
+                {/* Until today's totals load: a skeleton; "—" when they could not be. */}
+                <SkeletonSwap loading={!loaded} skeleton={<ValueSkeleton width={24} />}><Text style={styles.todayValue}>{stats?.todayTrips ?? '—'}</Text></SkeletonSwap>
                 <Text style={[TYPE.caption, styles.todayUnit]}>{t('driver.tripsUnit')}</Text>
-                <Text style={styles.todayValue}>{stats ? formatPeso(stats.todayFare) : '—'}</Text>
+                <SkeletonSwap loading={!loaded} skeleton={<ValueSkeleton width={48} />}><Text style={styles.todayValue}>{stats ? formatPeso(stats.todayFare) : '—'}</Text></SkeletonSwap>
                 <Text style={[TYPE.caption, styles.todayUnit]}>{t('driver.cashUnit')}</Text>
               </View>}
               {toda && !active && <>

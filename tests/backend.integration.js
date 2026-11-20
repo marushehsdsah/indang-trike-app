@@ -12,6 +12,7 @@ const { getRoadGraph } = require('../data/roadNetwork');
 const { calculateRoute } = require('../utils/roadGraph');
 const { SEND_LIMIT, SEND_WINDOW_MS } = require('../indang-trike-backend/chat');
 const { MAX_MESSAGES_PER_RIDE, MESSAGE_RETENTION_DAYS } = require('../utils/chat');
+const { MAX_DOCUMENT_BYTES } = require('../utils/driverDocuments');
 const bcrypt = createRequire(require.resolve('../indang-trike-backend/package.json'))('bcryptjs');
 
 let backend, base, sequence = 1000000;
@@ -27,6 +28,10 @@ const adminPhone = '09179999999';
 const emailedCodes = new Map(), notices = [];
 const sendEmail = async ({ to, code, ...notice }) => { if (code) emailedCodes.set(to, code); else notices.push({ to, ...notice }); };
 const fix = (latitude = 14.197805) => ({ latitude, longitude: 120.881639, accuracy: 5, timestamp: now, speed: 0, heading: 0 });
+// Stand-ins for a driver's document photos: bytes that start like a JPEG.
+const fakeJpeg = (size = 200, fill = 7) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(size - 4, fill)]);
+const jpegData = (bytes) => `data:image/jpeg;base64,${bytes.toString('base64')}`;
+const driverDocuments = { license: jpegData(fakeJpeg(200, 1)), registration: jpegData(fakeJpeg(200, 2)), franchise: jpegData(fakeJpeg(200, 3)) };
 
 before(async () => {
   const mongoRoot = process.env.TEST_MONGO_URL || 'mongodb://127.0.0.1:27017';
@@ -51,9 +56,11 @@ async function request(path, token, body, method = body ? 'POST' : 'GET') {
   });
   return { status: response.status, body: await response.json() };
 }
-// Signs up the way the app does: the form gets an emailed code, then the form with the code.
+// Signs up the way the app does: the form gets an emailed code, then the form
+// with the code. A driver's document photos go only with the second.
 async function signup(body) {
-  const sent = await request('/register/code', null, body);
+  const { documents, ...form } = body;
+  const sent = await request('/register/code', null, form);
   if (sent.status !== 200) return sent;
   return request('/register', null, { ...body, code: emailedCodes.get(body.email) });
 }
@@ -62,7 +69,7 @@ async function account(role = 'passenger', phoneOverride, { approved = true } = 
   const phone = phoneOverride || `0917${sequence++}`;
   const result = await signup({
     phone, password: 'strong-password', firstName: 'Test', lastName: role, email: `${phone}@example.com`, role,
-    ...(role === 'driver' ? { plate: `TEST-${sequence}`, toda: 'Test TODA', capacity: 4 } : {}),
+    ...(role === 'driver' ? { plate: `TEST-${sequence}`, toda: 'Test TODA', capacity: 4, documents: driverDocuments } : {}),
   });
   assert.equal(result.status, 201, JSON.stringify(result.body));
   if (role === 'driver' && approved) await approve(result.body.user.id);
@@ -346,7 +353,7 @@ test('the admin interface lists the accounts and trips in the database, for admi
 
 test('a driver who signs up gets no bookings until an admin approves them, and an admin can suspend, unblock or delete a driver', async () => {
   const passenger = await account(), phone = `0917${sequence++}`, email = `${phone}@example.com`;
-  const form = { phone, password: 'strong-password', firstName: 'Nora', lastName: 'Driver', email, role: 'driver', plate: 'NEW-1', toda: 'Test TODA', capacity: 3 };
+  const form = { phone, password: 'strong-password', firstName: 'Nora', lastName: 'Driver', email, role: 'driver', plate: 'NEW-1', toda: 'Test TODA', capacity: 3, documents: driverDocuments };
   const registered = await signup(form);
   assert.equal(registered.status, 201, JSON.stringify(registered.body));
   assert.equal(registered.body.user.pendingApproval, true);
@@ -434,7 +441,7 @@ test('a driver who signs up gets no bookings until an admin approves them, and a
 
 test('an admin can decline a driver\'s registration, and the driver can sign up again with the same number and email', async () => {
   const phone = `0917${sequence++}`, email = `${phone}@example.com`;
-  const form = { phone, password: 'strong-password', firstName: 'Lea', lastName: 'Driver', email, role: 'driver', plate: 'TYPO-1', toda: 'Test TODA', capacity: 3 };
+  const form = { phone, password: 'strong-password', firstName: 'Lea', lastName: 'Driver', email, role: 'driver', plate: 'TYPO-1', toda: 'Test TODA', capacity: 3, documents: driverDocuments };
   const registered = await signup(form);
   assert.equal(registered.status, 201, JSON.stringify(registered.body));
   const id = registered.body.user.id;
@@ -501,6 +508,7 @@ test('an admin sees and manages only the drivers of their TODA, and a superadmin
   // found for this admin, to view or to decide on, and stays as it was.
   for (const id of [itodaPending.user.id, other.user.id, passenger.user.id]) {
     assert.deepEqual(await request(`/admin/drivers/${id}`, admin.token), NOT_FOUND, id);
+    assert.deepEqual(await request(`/admin/drivers/${id}/documents/license`, admin.token), NOT_FOUND, `photo ${id}`);
     for (const decision of ['approve', 'decline', 'terminate', 'delete', 'unblock']) {
       assert.deepEqual(await request(`/admin/drivers/${id}/${decision}`, admin.token, {}), NOT_FOUND, `${decision} ${id}`);
     }
@@ -553,6 +561,82 @@ test('an admin sees and manages only the drivers of their TODA, and a superadmin
   await backend.models.Report.deleteOne({ _id: report._id });
   await backend.models.User.deleteMany({ _id: { $in: [bci.user.id, itodaPending.user.id, other.user.id, passenger.user.id, rider.user.id, reported.user.id, admin.user.id] } });
   await request('/logout', superadmin.token, {});
+});
+
+test('a driver signs up with photos of their license, registration and franchise, which only admins can see', async () => {
+  const phone = `0917${sequence++}`, email = `${phone}@example.com`;
+  const form = { phone, password: 'strong-password', firstName: 'Ana', lastName: 'Driver', email, role: 'driver', plate: 'DOC-1', toda: 'Test TODA', capacity: 4 };
+  assert.equal((await request('/register/code', null, form)).status, 200);
+  const code = emailedCodes.get(email), tries = async () => (await backend.models.EmailCode.findOne({ email })).attempts;
+  const attempt = (documents) => request('/register', null, { ...form, code, documents });
+
+  // Each photo is needed, as a JPEG no larger than MAX_DOCUMENT_BYTES; a
+  // wrong one is refused before the code is checked, so it costs no try.
+  assert.deepEqual(await attempt(undefined), { status: 400, body: { error: 'Add a photo of your driver’s license.' } });
+  assert.deepEqual(await attempt({ ...driverDocuments, franchise: undefined }), { status: 400, body: { error: 'Add a photo of your franchise (MTOP) showing the franchise number.' } });
+  assert.equal((await attempt({ ...driverDocuments, registration: 'data:image/png;base64,iVBORw0KGgo=' })).status, 400, 'not a JPEG data URL');
+  assert.equal((await attempt({ ...driverDocuments, registration: jpegData(Buffer.from('not a jpeg')) })).status, 400, 'not JPEG bytes');
+  assert.deepEqual(await attempt({ ...driverDocuments, license: jpegData(fakeJpeg(MAX_DOCUMENT_BYTES + 1)) }),
+    { status: 413, body: { error: 'The photo of your driver’s license is too large. Take it again.' } });
+  assert.equal(await tries(), 0);
+  assert.equal(await backend.models.User.exists({ email }), null);
+
+  // The app checks the code before it sends the photos. A wrong code takes a
+  // try; the right one gives its try back.
+  assert.deepEqual(await request('/register/verify', null, { email, code: code === '000000' ? '111111' : '000000' }), { status: 400, body: { error: 'Incorrect code. Check your email and try again.' } });
+  assert.deepEqual(await request('/register/verify', null, { email: email.toUpperCase(), code }), { status: 200, body: { ok: true } });
+  assert.equal(await tries(), 1, 'only the wrong code took a try');
+  assert.equal(await backend.models.User.exists({ email }), null, 'checking the code creates nothing');
+
+  // Three photos at the largest size fit in one sign-up.
+  const largest = { license: fakeJpeg(MAX_DOCUMENT_BYTES, 1), registration: fakeJpeg(MAX_DOCUMENT_BYTES, 2), franchise: fakeJpeg(MAX_DOCUMENT_BYTES, 3) };
+  const registered = await attempt(Object.fromEntries(Object.entries(largest).map(([kind, bytes]) => [kind, jpegData(bytes)])));
+  assert.equal(registered.status, 201, JSON.stringify(registered.body));
+  const id = registered.body.user.id;
+  assert.equal(await backend.models.DriverDocument.countDocuments({ userId: id }), 3);
+  assert.equal((await backend.models.DriverDocument.findOne({ userId: id })).image, undefined, 'the image loads only when asked for');
+  // Other requests keep their small body limit.
+  assert.equal((await request('/register/code', null, { ...form, documents: driverDocuments, filler: 'x'.repeat(40 * 1024) })).status, 413);
+
+  // Driver Review lists the photos; each opens for admins only, never cached.
+  const admin = (await request('/login', null, { phone: adminPhone, password: 'strong-password' })).body;
+  const driver = (await request('/login', null, { phone, password: 'strong-password' })).body, passenger = await account();
+  const review = (await request(`/admin/drivers/${id}`, admin.token)).body.driver;
+  assert.deepEqual(review.documents.map(({ kind, label, uploadedAt }) => [kind, label, typeof uploadedAt]),
+    [['license', 'Driver’s license', 'string'], ['registration', 'Registration (OR/CR)', 'string'], ['franchise', 'Franchise (MTOP)', 'string']]);
+  assert.equal((await request('/admin/approvals', admin.token)).body.drivers.find((item) => item.key === id).documents, undefined, 'not in the list');
+  const photo = (token, kind, driverId = id) => fetch(`${base}/api/admin/drivers/${driverId}/documents/${kind}`, token ? { headers: { Authorization: `Bearer ${token}` } } : {});
+  for (const [kind, bytes] of Object.entries(largest)) {
+    const response = await photo(admin.token, kind);
+    assert.equal(response.status, 200, kind);
+    assert.deepEqual([response.headers.get('content-type'), response.headers.get('cache-control')], ['image/jpeg', 'no-store']);
+    assert.ok(Buffer.from(await response.arrayBuffer()).equals(bytes), kind);
+  }
+  for (const token of [driver.token, passenger.token]) assert.equal((await photo(token, 'license')).status, 403, 'not even the driver');
+  assert.equal((await photo(null, 'license')).status, 401);
+  assert.equal((await photo(admin.token, 'selfie')).status, 404);
+  assert.equal((await photo(admin.token, 'license', 'not-an-id')).status, 404);
+
+  // A driver who signed up before photos were asked for has none on file.
+  const earlier = await account('driver', undefined, { approved: false });
+  await backend.models.DriverDocument.deleteMany({ userId: earlier.user.id });
+  assert.deepEqual((await request(`/admin/drivers/${earlier.user.id}`, admin.token)).body.driver.documents.map((document) => document.uploadedAt), [null, null, null]);
+  assert.equal((await photo(admin.token, 'license', earlier.user.id)).status, 404);
+
+  // Suspending keeps the photos, for when the driver is unblocked; declining
+  // removes them with the registration, as deleting an account does.
+  assert.equal((await request(`/admin/drivers/${id}/terminate`, admin.token, {})).status, 200);
+  assert.equal(await backend.models.DriverDocument.countDocuments({ userId: id }), 3);
+  assert.equal((await request(`/admin/drivers/${id}/unblock`, admin.token, {})).status, 200);
+  assert.equal((await request(`/admin/drivers/${id}/decline`, admin.token, {})).status, 200);
+  assert.equal(await backend.models.DriverDocument.countDocuments({ userId: id }), 0);
+  assert.equal((await photo(admin.token, 'license')).status, 404);
+  const approved = await account('driver');
+  assert.equal(await backend.models.DriverDocument.countDocuments({ userId: approved.user.id }), 3);
+  assert.equal((await request(`/admin/drivers/${approved.user.id}/delete`, admin.token, {})).status, 200);
+  assert.equal(await backend.models.DriverDocument.countDocuments({ userId: approved.user.id }), 0);
+  await backend.models.User.deleteOne({ _id: earlier.user.id });
+  await request('/logout', admin.token, {});
 });
 
 test('an admin can cancel any booking or trip that has not ended, and the driver is free for the next booking', async () => {
@@ -712,7 +796,7 @@ test('an Indang TODA driver is offered only trips that pick up inside its TODA\'
   const poblacion = place('Poblacion', 14.19558, 120.87956);
   const phone = `0917${sequence++}`;
   const registered = await signup({ phone, password: 'strong-password', firstName: 'Pulo', lastName: 'Driver',
-    email: `${phone}@example.com`, role: 'driver', plate: 'PCH-1', toda: 'pchti toda', capacity: 4 });
+    email: `${phone}@example.com`, role: 'driver', plate: 'PCH-1', toda: 'pchti toda', capacity: 4, documents: driverDocuments });
   assert.equal(registered.status, 201, JSON.stringify(registered.body));
   assert.equal(registered.body.user.toda, 'PCHTI-TODA', 'stored under the official name');
   await approve(registered.body.user.id);

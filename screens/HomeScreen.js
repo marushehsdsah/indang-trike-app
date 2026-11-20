@@ -8,6 +8,8 @@ import Screen from '../components/ui/Screen';
 import Button from '../components/ui/Button';
 import { Card, Chip, Divider } from '../components/ui/Surfaces';
 import UserAvatar from '../components/UserAvatar';
+import { SkeletonSwap } from '../components/ui/Skeleton';
+import { RecentPlacesSkeleton } from '../components/LoadingSkeletons';
 import { MUNICIPALITIES, getMunicipalityAt } from '../data/indangMap';
 import { MAX_PASSENGERS } from '../utils/bookingRoute';
 import { tapFeedback } from '../utils/feedback';
@@ -49,7 +51,7 @@ function recentDestinations(rides) {
 export default function HomeScreen({ navigation }) {
   const { user, ride, gps } = useApp();
   const { t } = useI18n();
-  const { rides } = useAccountHistory();
+  const { rides, loaded } = useAccountHistory();
   const recent = useMemo(() => recentDestinations(rides), [rides]);
   const active = ride && ACTIVE_STATUSES.includes(ride.status);
   // The town the rider is in, from measured GPS; it picks the shortcuts.
@@ -119,6 +121,8 @@ export default function HomeScreen({ navigation }) {
 
         <Text style={[TYPE.label, styles.sectionTitle]}>{t('home.recent')}</Text>
         <Card padded={false} style={styles.recentCard}>
+          {/* Until the trips have loaded, "no recent places" would not be true yet. */}
+          <SkeletonSwap loading={!loaded} skeleton={<RecentPlacesSkeleton />}>
           {recent.length === 0 && <Text style={[TYPE.caption, styles.recentEmpty]}>{t('home.recentEmpty')}</Text>}
           {recent.map(({ place, distance }, index) => (
             <View key={place.name}>
@@ -136,6 +140,7 @@ export default function HomeScreen({ navigation }) {
               </Pressable>
             </View>
           ))}
+          </SkeletonSwap>
         </Card>
 
         <View style={styles.safety}>

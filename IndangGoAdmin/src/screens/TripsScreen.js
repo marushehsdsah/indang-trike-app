@@ -35,6 +35,7 @@ import formatDate from '../formatDate';
 import StatusBadge from '../components/StatusBadge';
 import TopHeader from '../components/TopHeader';
 import LoadState, { RefreshError } from '../components/LoadState';
+import { TripListSkeleton, SkeletonSwap } from '../components/Skeleton';
 
 // Filter chip options shown at the top of the list, with the trip
 // statuses each one shows (All shows every trip).
@@ -116,7 +117,9 @@ export default function TripsScreen() {
         {error && trips && <RefreshError message={error} />}
 
         {/* ---- Trip list ---- */}
-        {!trips ? <LoadState loading={loading} error={error} onRetry={reload} /> : (
+        {/* The skeleton while the first load runs; then the data, or the error. */}
+        <SkeletonSwap loading={!trips && loading} skeleton={<TripListSkeleton />} style={styles.fill}>
+        {!trips ? <LoadState error={error} onRetry={reload} /> : (
         <FlatList
           data={filteredTrips}
           keyExtractor={(item) => item.key ?? item.id}
@@ -162,12 +165,17 @@ export default function TripsScreen() {
           )}
         />
         )}
+        </SkeletonSwap>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // Around the list, so it keeps the screen's height while it fades in.
+  fill: {
+    flex: 1,
+  },
   screen: {
     flex: 1,
     backgroundColor: colors.background,

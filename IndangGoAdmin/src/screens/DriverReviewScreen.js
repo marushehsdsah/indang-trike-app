@@ -1,9 +1,11 @@
 // =============================================================
 // screens/DriverReviewScreen.js
 // -------------------------------------------------------------
-// One driver's sign-up details, opened from Account Approval or
-// from a driver in Accounts, for the admin to compare with the
-// TODA's list of registered drivers and decide:
+// One driver's sign-up details and the photos of their license,
+// registration and franchise (components/DriverDocuments.js),
+// opened from Account Approval or from a driver in Accounts, for
+// the admin to compare with the TODA's list of registered drivers
+// and decide:
 // - Pending: Approve or Decline.
 // - Approved: Suspend or Delete.
 // - Suspended: Unblock (the driver waits for approval again).
@@ -32,6 +34,8 @@ import formatDate from '../formatDate';
 import { useAdminSession } from '../session';
 import StatusBadge from '../components/StatusBadge';
 import LoadState, { RefreshError } from '../components/LoadState';
+import { DriverReviewSkeleton, SkeletonSwap } from '../components/Skeleton';
+import DriverDocuments from '../components/DriverDocuments';
 
 const DECISIONS = {
   approve: {
@@ -136,7 +140,9 @@ export default function DriverReviewScreen({ navigation, route }) {
         <Text style={styles.topBarTitle}>Driver Review</Text>
       </View>
 
-      {!driver ? <LoadState loading={loading} error={error} onRetry={reload} /> : (
+      {/* The skeleton while the first load runs; then the data, or the error. */}
+      <SkeletonSwap loading={!driver && loading} skeleton={<DriverReviewSkeleton />} style={styles.fill}>
+      {!driver ? <LoadState error={error} onRetry={reload} /> : (
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -160,7 +166,7 @@ export default function DriverReviewScreen({ navigation, route }) {
           <View style={styles.notice}>
             <Ionicons name="list-outline" size={18} color={colors.brandGreenDark} />
             <Text style={styles.noticeText}>
-              Compare these details with {driver.toda || 'the TODA'}’s list of registered drivers. Until you approve, this driver can’t go online or get bookings.
+              Compare these details and the document photos below with {driver.toda || 'the TODA'}’s list of registered drivers. Until you approve, this driver can’t go online or get bookings.
             </Text>
           </View>
         )}
@@ -176,6 +182,9 @@ export default function DriverReviewScreen({ navigation, route }) {
             </View>
           ))}
         </View>
+
+        {/* ---- The photos of their license, registration and franchise ---- */}
+        {driver.documents && <DriverDocuments driverKey={key} documents={driver.documents} />}
 
         {/* ---- Optional reason, emailed if the driver is declined, suspended or deleted ---- */}
         {askReason && (
@@ -223,11 +232,16 @@ export default function DriverReviewScreen({ navigation, route }) {
         </View>
       </ScrollView>
       )}
+      </SkeletonSwap>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // Around the list, so it keeps the screen's height while it fades in.
+  fill: {
+    flex: 1,
+  },
   screen: {
     flex: 1,
     backgroundColor: colors.background,
